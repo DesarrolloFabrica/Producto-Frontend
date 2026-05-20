@@ -179,12 +179,10 @@ function NotificationCard({
     <motion.div {...fadeUp} {...softScale} className={cn('notification-card', notification.type === 'CRITICAL' && !notification.read && 'relative')}>
       <Card
         className={cn(
-          'group relative overflow-hidden bg-white rounded-[20px] shadow-[0_4px_18px_-10px_rgba(15,23,42,0.16)] transition-all duration-200 hover:shadow-[0_18px_38px_-24px_rgba(249,115,22,0.42)]',
+          'group relative overflow-hidden bg-white rounded-[20px] shadow-[0_4px_18px_-10px_rgba(15,23,42,0.16)] transition-all duration-200 hover:shadow-[0_18px_38_-24px_rgba(249,115,22,0.42)]',
           accent,
-          visual.card,
         )}
       >
-        <span className={cn('absolute inset-x-5 top-0 h-0.5 rounded-b-full opacity-80', visual.accent)} />
         <div className="flex w-full flex-col">
           <div className="flex items-start gap-3 px-5 pb-3 pt-5 sm:gap-4">
             <div className={cn('flex h-10 w-10 shrink-0 items-center justify-center rounded-full', iconStyle)}>

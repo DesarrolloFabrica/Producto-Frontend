@@ -4,9 +4,9 @@ import { SemesterWorkflowCard } from '../../components/cards/SemesterWorkflowCar
 import { StatusBadge } from '../../components/status/StatusBadge';
 import { Card } from '../../components/ui/Card';
 import { PageHeader } from '../../components/ui/PageHeader';
-import { ProgressBar } from '../../components/ui/ProgressBar';
 import { Tabs } from '../../components/ui/Tabs';
 import { EditProjectDrawer } from '../../components/forms/EditProjectDrawer';
+import { ProjectInfoDrawer } from '../../components/forms/ProjectInfoDrawer';
 import { Modal } from '../../components/ui/Modal';
 import { useOperations } from '../../features/operations/OperationsContext';
 import { useAuth } from '../auth/AuthContext';
@@ -20,7 +20,7 @@ import { FactoryProjectDetail } from './FactoryProjectDetail';
 
 const tabs = [
   { id: 'summary', label: 'Resumen' },
-  { id: 'semesters', label: 'Semestres' },
+  { id: 'semesters', label: 'Semestres', flow: true },
 ];
 
 const subjectChecklistLabels = [
@@ -73,7 +73,7 @@ export function ProjectDetailPage() {
   const { role } = useAuth();
   const project = projects.find((item) => item.id === projectId);
   const [activeTab, setActiveTab] = useState('summary');
-  const [showEditDrawer, setShowEditDrawer] = useState(false);
+  const [showInfoDrawer, setShowInfoDrawer] = useState(false);
   const [showAddSemesterModal, setShowAddSemesterModal] = useState(false);
 
   if (!project) return <Navigate to="/projects" replace />;
@@ -83,7 +83,7 @@ export function ProjectDetailPage() {
   }
 
   return (
-    <div className="space-y-7">
+    <div className="space-y-6">
       <PageHeader
         prominentEyebrow
         eyebrow={project.school}
@@ -91,25 +91,31 @@ export function ProjectDetailPage() {
         description={`${project.modality} · Responsable Product: ${project.productOwner}`}
       />
 
-      <Card variant="subjectPanel" className="p-0 overflow-hidden">
-        <div className="p-5 sm:p-6">
+      {/* Executive Summary Card */}
+      <Card className="overflow-hidden rounded-[20px] border-none bg-white shadow-[0_10px_25px_-5px_rgba(0,0,0,0.02)]">
+        <div className="p-6 sm:p-7">
           <div className="flex flex-wrap items-start justify-between gap-6">
-            <div className="grid min-w-0 flex-1 gap-5 sm:grid-cols-2 lg:grid-cols-4">
-              <Info label="Estado actual">
+            <div className="min-w-0 flex-1">
+              <div className="flex flex-wrap items-center gap-3">
                 <StatusBadge status={project.status} />
-              </Info>
-              <Info label="Entrega esperada por Fábrica">{formatDate(project.expectedDeliveryDate)}</Info>
-              <Info label="Solicitud creada">{formatDate(project.createdAt)}</Info>
-              <Info label="Semestres">{project.semesters.map((s) => s.semesterNumber).join(', ')}</Info>
-            </div>
-            <div className="flex min-w-[220px] flex-col gap-3">
-              <div className="relative h-2.5 overflow-hidden rounded-[10px] bg-[#E2E8F0]">
-                <div className="relative h-full rounded-[10px] bg-linear-to-r from-[#FF7E5F] to-[#FEB47B] progress-glass" style={{ width: `${project.progress}%` }} />
+                <span className="text-xs font-medium text-slate-400">·</span>
+                <span className="text-xs font-medium text-slate-500">Prioridad: {priorityLabels[project.priority]}</span>
               </div>
-              <Button variant="secondary" className="w-full py-2.5 text-[10px] font-bold" onClick={() => setShowEditDrawer(true)}>
-                <Eye className="h-3.5 w-3.5" /> Ver detalle
-              </Button>
+              <div className="mt-3 grid gap-x-8 gap-y-2 sm:grid-cols-2 lg:grid-cols-4">
+                <InfoCompact label="Entrega esperada">{formatDate(project.expectedDeliveryDate)}</InfoCompact>
+                <InfoCompact label="Solicitud creada">{formatDate(project.createdAt)}</InfoCompact>
+                <InfoCompact label="Semestres">{project.semesters.map((s) => s.semesterNumber).join(', ')}</InfoCompact>
+                <InfoCompact label="Progreso">{project.progress}%</InfoCompact>
+              </div>
             </div>
+              <div className="flex w-full min-w-[200px] flex-col gap-3 sm:w-auto">
+                <div className="relative h-2 overflow-hidden rounded-[100px] bg-slate-100">
+                  <div className="absolute left-0 top-0 h-full rounded-[100px] bg-linear-to-r from-orange-400 to-orange-500" style={{ width: `${project.progress}%` }} />
+                </div>
+                <Button variant="secondary" className="w-full py-2.5 text-xs font-bold" onClick={() => setShowInfoDrawer(true)}>
+                  <Eye className="h-3.5 w-3.5" /> Ver información
+                </Button>
+              </div>
           </div>
         </div>
       </Card>
@@ -121,7 +127,8 @@ export function ProjectDetailPage() {
         <Semesters project={project} onAddSemester={() => setShowAddSemesterModal(true)} />
       )}
 
-      <EditProjectDrawer isOpen={showEditDrawer} onClose={() => setShowEditDrawer(false)} project={project} />
+      <ProjectInfoDrawer isOpen={showInfoDrawer} onClose={() => setShowInfoDrawer(false)} project={project} />
+      <EditProjectDrawer isOpen={false} onClose={() => {}} project={project} />
       <AddSemesterModal
         isOpen={showAddSemesterModal}
         onClose={() => setShowAddSemesterModal(false)}
@@ -132,11 +139,20 @@ export function ProjectDetailPage() {
   );
 }
 
+function InfoCompact({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div>
+      <p className="mb-0.5 text-[10px] font-semibold uppercase tracking-[0.1em] text-slate-400">{label}</p>
+      <p className="text-sm font-semibold text-slate-700">{children}</p>
+    </div>
+  );
+}
+
 function Info({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div>
-      <p className="mb-1 text-[10px] font-semibold uppercase tracking-[0.1em] text-[#94A3B8]">{label}</p>
-      <div className="text-sm font-medium text-[#1E293B]">{children}</div>
+      <p className="mb-1 text-[10px] font-semibold uppercase tracking-[0.1em] text-slate-400">{label}</p>
+      <div className="text-sm font-medium text-slate-700">{children}</div>
     </div>
   );
 }
@@ -146,75 +162,86 @@ function Summary({ project }: { project: ReturnType<typeof useOperations>['proje
   const syllabusLink = project.links.find((l) => l.type === 'SYLLABUS');
 
   return (
-    <section className="tab-content-active space-y-6">
-      <Card variant="subjectPanel" className="p-6 sm:p-8">
-        <p className="text-[10px] font-black uppercase tracking-widest text-orange-500">Solicitud</p>
-        <h2 className="mt-1 text-lg font-black tracking-tight text-slate-950">Información base</h2>
+    <section className="tab-content-active space-y-5">
+      {/* Informacion base */}
+      <Card className="rounded-[20px] border-none bg-white shadow-[0_4px_6px_-1px_rgba(0,0,0,0.02),0_2px_4px_-1px_rgba(0,0,0,0.01)]">
+        <div className="p-6 sm:p-7">
+          <p className="text-[10px] font-black uppercase tracking-widest text-orange-500">Solicitud</p>
+          <h2 className="mt-1 text-lg font-black tracking-tight text-slate-900">Información base</h2>
 
-        <div className="mt-6 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
-          <Info label="Escuela">{project.school}</Info>
-          <Info label="Programa">{project.program}</Info>
-          <Info label="Modalidad">{project.modality}</Info>
-          <Info label="Prioridad">{priorityLabels[project.priority]}</Info>
-          <Info label="Fecha entrega Fábrica">{formatDate(project.expectedDeliveryDate)}</Info>
-          <Info label="Responsable Product">{project.productOwner}</Info>
-        </div>
+          <div className="mt-6 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+            <Info label="Escuela">{project.school}</Info>
+            <Info label="Programa">{project.program}</Info>
+            <Info label="Modalidad">{project.modality}</Info>
+            <Info label="Prioridad">{priorityLabels[project.priority]}</Info>
+            <Info label="Fecha entrega Fábrica">{formatDate(project.expectedDeliveryDate)}</Info>
+            <Info label="Responsable Product">{project.productOwner}</Info>
+          </div>
 
-        <div className="mt-6 grid gap-5 sm:grid-cols-2">
-          <div>
-            <p className="mb-1 text-[10px] font-semibold uppercase tracking-[0.1em] text-[#94A3B8]">Syllabus</p>
-            <div className="flex items-center gap-2">
-              {hasSyllabus ? (
-                <>
-                  <CheckCircle2 className="h-4 w-4 text-emerald-500" />
-                  <span className="text-sm font-medium text-slate-800">Sí</span>
-                  {syllabusLink && (
-                    <a href={syllabusLink.url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-xs font-bold text-orange-600 hover:text-orange-700">
-                      <FileText className="h-3.5 w-3.5" /> Abrir link
-                    </a>
-                  )}
-                </>
-              ) : (
-                <span className="text-sm font-medium text-slate-500">Sin syllabus registrado</span>
-              )}
+          <div className="mt-6 grid gap-5 sm:grid-cols-2">
+            <div>
+              <p className="mb-1 text-[10px] font-semibold uppercase tracking-[0.1em] text-slate-400">Syllabus</p>
+              <div className="flex items-center gap-2">
+                {hasSyllabus ? (
+                  <>
+                    <CheckCircle2 className="h-4 w-4 text-emerald-500" />
+                    <span className="text-sm font-medium text-slate-700">Sí</span>
+                    {syllabusLink && (
+                      <a href={syllabusLink.url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-xs font-bold text-orange-600 hover:text-orange-700">
+                        <FileText className="h-3.5 w-3.5" /> Abrir link
+                      </a>
+                    )}
+                  </>
+                ) : (
+                  <span className="text-sm font-medium text-slate-500">Sin syllabus registrado</span>
+                )}
+              </div>
             </div>
+            <Info label="Semestres seleccionados">{project.semesters.map((s) => `Semestre ${s.semesterNumber}`).join(', ')}</Info>
           </div>
-          <Info label="Semestres seleccionados">{project.semesters.map((s) => `Semestre ${s.semesterNumber}`).join(', ')}</Info>
-        </div>
 
-        {project.observations && (
-          <div className="mt-6">
-            <p className="mb-1 text-[10px] font-semibold uppercase tracking-[0.1em] text-[#94A3B8]">Observaciones iniciales</p>
-            <p className="rounded-[12px] bg-[#F8FAFC] p-4 text-sm font-medium leading-relaxed text-[#64748B]">{project.observations}</p>
-          </div>
-        )}
-      </Card>
-
-      <Card variant="subjectPanel" className="p-6 sm:p-8">
-        <p className="text-[10px] font-black uppercase tracking-widest text-orange-500">Estado</p>
-        <h2 className="mt-1 text-lg font-black tracking-tight text-slate-950">Avance general</h2>
-
-        <div className="mt-6 flex items-center gap-4">
-          <div className="flex-1">
-            <ProgressBar value={project.progress} showLabel={false} size="md" />
-          </div>
-          <span className="text-sm font-black text-orange-600">{project.progress}%</span>
-        </div>
-
-        <div className="mt-4">
-          <StatusBadge status={project.status} />
+          {project.observations && (
+            <div className="mt-6">
+              <p className="mb-1 text-[10px] font-semibold uppercase tracking-[0.1em] text-slate-400">Observaciones iniciales</p>
+              <p className="rounded-[12px] bg-slate-50 p-4 text-sm font-medium leading-relaxed text-slate-600">{project.observations}</p>
+            </div>
+          )}
         </div>
       </Card>
 
-      <Card variant="subjectPanel" className="p-6 sm:p-8">
-        <p className="text-[10px] font-black uppercase tracking-widest text-orange-500">Revisión</p>
-        <h2 className="mt-1 text-lg font-black tracking-tight text-slate-950">Próximos pasos</h2>
+      {/* Avance general */}
+      <Card className="rounded-[20px] border-none bg-white shadow-[0_4px_6px_-1px_rgba(0,0,0,0.02),0_2px_4px_-1px_rgba(0,0,0,0.01)]">
+        <div className="p-6 sm:p-7">
+          <p className="text-[10px] font-black uppercase tracking-widest text-orange-500">Estado</p>
+          <h2 className="mt-1 text-lg font-black tracking-tight text-slate-900">Avance general</h2>
 
-        <div className="mt-6 grid gap-3 sm:grid-cols-2">
-          <NextStepCard icon={ClipboardCheck} title="Revisar contenido entregado" description="Valida los entregables de Fábrica por asignatura y tema." />
-          <NextStepCard icon={BookOpen} title="Validar checklist de asignaturas" description="Revisa cada item del checklist y marca aprobado o rechazado." />
-          <NextStepCard icon={MessageSquare} title="Registrar observaciones" description="Si algo falta o necesita corrección, deja observaciones claras." />
-          <NextStepCard icon={CheckCircle2} title="Cerrar solicitud" description="Cuando todo esté aprobado, cierra la solicitud como completada." />
+          <div className="mt-6 flex items-center gap-4">
+            <div className="flex-1">
+              <div className="relative h-2 overflow-hidden rounded-[100px] bg-slate-100">
+                <div className="absolute left-0 top-0 h-full rounded-[100px] bg-linear-to-r from-orange-400 to-orange-500" style={{ width: `${project.progress}%` }} />
+              </div>
+            </div>
+            <span className="text-sm font-black text-orange-600">{project.progress}%</span>
+          </div>
+
+          <div className="mt-4">
+            <StatusBadge status={project.status} />
+          </div>
+        </div>
+      </Card>
+
+      {/* Próximos pasos */}
+      <Card className="rounded-[20px] border-none bg-white shadow-[0_4px_6px_-1px_rgba(0,0,0,0.02),0_2px_4px_-1px_rgba(0,0,0,0.01)]">
+        <div className="p-6 sm:p-7">
+          <p className="text-[10px] font-black uppercase tracking-widest text-orange-500">Revisión</p>
+          <h2 className="mt-1 text-lg font-black tracking-tight text-slate-900">Próximos pasos</h2>
+
+          <div className="mt-6 grid gap-3 sm:grid-cols-2">
+            <NextStepCard icon={ClipboardCheck} title="Revisar contenido entregado" description="Valida los entregables de Fábrica por asignatura y tema." />
+            <NextStepCard icon={BookOpen} title="Validar checklist de asignaturas" description="Revisa cada item del checklist y marca aprobado o rechazado." />
+            <NextStepCard icon={MessageSquare} title="Registrar observaciones" description="Si algo falta o necesita corrección, deja observaciones claras." />
+            <NextStepCard icon={CheckCircle2} title="Cerrar solicitud" description="Cuando todo esté aprobado, cierra la solicitud como completada." />
+          </div>
         </div>
       </Card>
     </section>
@@ -223,11 +250,9 @@ function Summary({ project }: { project: ReturnType<typeof useOperations>['proje
 
 function NextStepCard({ icon: Icon, title, description }: { icon: typeof ClipboardCheck; title: string; description: string }) {
   return (
-    <div className={cn(
-      'rounded-[16px] border border-orange-100/60 bg-white p-4 shadow-[0_4px_16px_-8px_rgba(249,115,22,0.2)] transition-all hover:border-orange-200 hover:shadow-md',
-    )}>
+    <div className="group rounded-[16px] border border-slate-100 bg-white p-4 shadow-sm transition-all hover:border-orange-200 hover:bg-orange-50/30 hover:shadow-md">
       <div className="flex items-start gap-3">
-        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-linear-to-br from-orange-400 to-orange-600 text-white shadow-sm">
+        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-slate-100 text-slate-500 transition-all group-hover:bg-orange-500 group-hover:text-white">
           <Icon className="h-4 w-4" />
         </div>
         <div>
@@ -249,76 +274,97 @@ function Semesters({ project, onAddSemester }: { project: ReturnType<typeof useO
   });
 
   return (
-    <div className="tab-content-active space-y-6">
-      {subjectsBySemester.map(({ semester, subjects }) => {
-        const totalChecklist = subjects.reduce((acc, s) => acc + s.checklist.length, 0);
-        const approvedChecklist = subjects.reduce((acc, s) => acc + s.checklist.filter((c) => c.status === 'APROBADO').length, 0);
-        const semesterProgress = totalChecklist > 0 ? Math.round((approvedChecklist / totalChecklist) * 100) : 0;
+    <div className="tab-content-active space-y-5">
+      {/* Header con boton Agregar semestre */}
+      <div className="flex items-center justify-between">
+        <div>
+          <p className="text-[10px] font-black uppercase tracking-widest text-orange-500">Semestres a virtualizar</p>
+          <p className="mt-1 text-sm font-medium text-slate-500">Gestiona las entregas por semestre, asignaturas y temas.</p>
+        </div>
+        {availableSemesters.length > 0 && (
+          <Button onClick={onAddSemester} className="shadow-lg shadow-orange-500/25">
+            <Plus className="h-3.5 w-3.5" /> Agregar semestre
+          </Button>
+        )}
+      </div>
 
-        return (
-          <Card key={semester.id} variant="subjectPanel" className="p-5 sm:p-6">
-            <div className="flex items-start justify-between gap-4">
-              <div>
-                <p className="text-[10px] font-black uppercase tracking-widest text-orange-500">Semestre</p>
-                <h3 className="mt-0.5 text-xl font-black tracking-tight text-slate-950">Semestre {semester.semesterNumber}</h3>
-              </div>
-              <div className="flex flex-col items-end gap-2">
-                <StatusBadge status={semester.factoryStatus} />
-                <span className="inline-flex items-center gap-1 text-[10px] font-medium text-slate-500">
-                  <CalendarDays className="h-3 w-3" /> Entrega: {formatDate(semester.factoryExpectedDate)}
-                </span>
-              </div>
-            </div>
+      {/* Lista de semestres */}
+      {subjectsBySemester.length === 0 ? (
+        <Card className="rounded-[20px] border-none bg-white p-8 text-center shadow-sm">
+          <BookOpen className="mx-auto h-10 w-10 text-slate-300" />
+          <p className="mt-3 text-sm font-bold text-slate-700">No hay semestres registrados</p>
+          <p className="mt-1 text-xs font-medium text-slate-500">Agrega el primer semestre para comenzar la producción.</p>
+          {availableSemesters.length > 0 && (
+            <Button onClick={onAddSemester} className="mt-4" variant="secondary">
+              <Plus className="h-3.5 w-3.5" /> Agregar semestre
+            </Button>
+          )}
+        </Card>
+      ) : (
+        <div className="space-y-4">
+          {subjectsBySemester.map(({ semester, subjects }) => {
+            const totalChecklist = subjects.reduce((acc, s) => acc + s.checklist.length, 0);
+            const approvedChecklist = subjects.reduce((acc, s) => acc + s.checklist.filter((c) => c.status === 'APROBADO').length, 0);
+            const semesterProgress = totalChecklist > 0 ? Math.round((approvedChecklist / totalChecklist) * 100) : 0;
 
-            <div className="mt-4 flex items-center gap-3">
-              <div className="flex-1">
-                <ProgressBar value={semesterProgress} showLabel={false} size="sm" />
-              </div>
-              <span className="text-xs font-black text-orange-600">{semesterProgress}%</span>
-            </div>
+            return (
+              <Card key={semester.id} className="rounded-[20px] border-none bg-white shadow-[0_4px_6px_-1px_rgba(0,0,0,0.02),0_2px_4px_-1px_rgba(0,0,0,0.01)]">
+                <div className="p-6 sm:p-7">
+                  <div className="flex items-start justify-between gap-4">
+                    <div>
+                      <p className="text-[10px] font-black uppercase tracking-widest text-orange-500">Semestre</p>
+                      <h3 className="mt-0.5 text-xl font-black tracking-tight text-slate-900">Semestre {semester.semesterNumber}</h3>
+                    </div>
+                    <div className="flex flex-col items-end gap-2">
+                      <StatusBadge status={semester.factoryStatus} />
+                      <span className="inline-flex items-center gap-1 text-[10px] font-medium text-slate-500">
+                        <CalendarDays className="h-3 w-3" /> Entrega: {formatDate(semester.factoryExpectedDate)}
+                      </span>
+                    </div>
+                  </div>
 
-            <div className="mt-4 flex flex-wrap gap-4 text-xs font-medium text-slate-600">
-              <span className="inline-flex items-center gap-1.5">
-                <BookOpen className="h-3.5 w-3.5 text-orange-400" />
-                {subjects.length} asignatura{subjects.length !== 1 ? 's' : ''}
-              </span>
-              <span className="inline-flex items-center gap-1.5">
-                <ClipboardCheck className="h-3.5 w-3.5 text-orange-400" />
-                {totalChecklist} entregables
-              </span>
-            </div>
+                  <div className="mt-4 flex items-center gap-3">
+                    <div className="relative h-2 flex-1 overflow-hidden rounded-[100px] bg-slate-100">
+                      <div className="absolute left-0 top-0 h-full rounded-[100px] bg-linear-to-r from-orange-400 to-orange-500" style={{ width: `${semesterProgress}%` }} />
+                    </div>
+                    <span className="text-xs font-black text-orange-600">{semesterProgress}%</span>
+                  </div>
 
-            {semester.observations && (
-              <p className="mt-4 rounded-[12px] bg-[#F8FAFC] p-3 text-xs font-medium text-[#64748B]">{semester.observations}</p>
-            )}
+                  <div className="mt-4 flex flex-wrap gap-4 text-xs font-medium text-slate-600">
+                    <span className="inline-flex items-center gap-1.5">
+                      <BookOpen className="h-3.5 w-3.5 text-orange-400" />
+                      {subjects.length} asignatura{subjects.length !== 1 ? 's' : ''}
+                    </span>
+                    <span className="inline-flex items-center gap-1.5">
+                      <ClipboardCheck className="h-3.5 w-3.5 text-orange-400" />
+                      {totalChecklist} entregables
+                    </span>
+                  </div>
 
-            {subjects.length > 0 && (
-              <div className="mt-5">
-                <Link
-                  to={`/projects/${project.id}/semesters/${semester.semesterNumber}`}
-                  className="inline-flex items-center gap-1.5 rounded-2xl bg-linear-to-br from-orange-400 to-orange-600 px-4 py-2.5 text-xs font-black text-white shadow-lg shadow-orange-500/30 transition-all hover:from-orange-500 hover:to-orange-700"
-                >
-                  <Eye className="h-3.5 w-3.5" /> Ver asignaturas
-                  <ArrowRight className="h-3.5 w-3.5" />
-                </Link>
-              </div>
-            )}
-          </Card>
-        );
-      })}
+                  {semester.observations && (
+                    <p className="mt-4 rounded-[12px] bg-slate-50 p-3 text-xs font-medium text-slate-600">{semester.observations}</p>
+                  )}
 
-      {availableSemesters.length > 0 && (
-        <button
-          type="button"
-          onClick={onAddSemester}
-          className="w-full flex items-center justify-center gap-2 rounded-2xl border-2 border-dashed border-orange-200 bg-orange-50/20 py-4 text-sm font-bold text-orange-600 hover:border-orange-300 hover:bg-orange-50/40 transition-all"
-        >
-          <Plus className="h-4 w-4" /> Agregar semestre
-        </button>
+                  {subjects.length > 0 && (
+                    <div className="mt-5">
+                      <Link
+                        to={`/projects/${project.id}/semesters/${semester.semesterNumber}`}
+                        className="inline-flex items-center gap-1.5 rounded-2xl bg-linear-to-br from-orange-400 to-orange-500 px-4 py-2.5 text-xs font-black text-white shadow-lg shadow-orange-500/30 transition-all hover:from-orange-500 hover:to-orange-600"
+                      >
+                        <Eye className="h-3.5 w-3.5" /> Ver asignaturas
+                        <ArrowRight className="h-3.5 w-3.5" />
+                      </Link>
+                    </div>
+                  )}
+                </div>
+              </Card>
+            );
+          })}
+        </div>
       )}
 
       {availableSemesters.length === 0 && project.semesters.length > 0 && (
-        <Card variant="subjectPanel" className="p-6 text-center">
+        <Card className="rounded-[20px] border-none bg-white p-6 text-center shadow-sm">
           <p className="text-sm font-bold text-slate-700">Todos los semestres están registrados</p>
           <p className="mt-1 text-xs font-medium text-slate-500">No hay más semestres disponibles para agregar.</p>
         </Card>
@@ -345,6 +391,7 @@ function AddSemesterModal({ isOpen, onClose, project, onAdd }: AddSemesterModalP
   const availableSemesters = Array.from({ length: 10 }, (_, i) => i + 1).filter((n) => !existingNumbers.includes(n));
 
   const [selectedSemester, setSelectedSemester] = useState<number | null>(null);
+  const [expectedDate, setExpectedDate] = useState(project.expectedDeliveryDate);
   const [subjects, setSubjects] = useState<FormSubject[]>([]);
   const [errors, setErrors] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
@@ -398,6 +445,7 @@ function AddSemesterModal({ isOpen, onClose, project, onAdd }: AddSemesterModalP
   const validate = (): boolean => {
     const newErrors: string[] = [];
     if (!selectedSemester) newErrors.push('Selecciona un semestre.');
+    if (!expectedDate) newErrors.push('Ingresa la fecha de entrega esperada del semestre.');
     if (subjects.length === 0) newErrors.push('Agrega al menos una asignatura.');
     subjects.forEach((subj) => {
       if (!subj.name.trim()) newErrors.push('Una asignatura no tiene nombre.');
@@ -420,7 +468,7 @@ function AddSemesterModal({ isOpen, onClose, project, onAdd }: AddSemesterModalP
       semesterNumber: selectedSemester,
       curriculumStatus: 'PENDIENTE' as ChecklistStatus,
       factoryStatus: 'PENDIENTE' as ChecklistStatus,
-      factoryExpectedDate: project.expectedDeliveryDate,
+      factoryExpectedDate: expectedDate,
       continuationDate: '',
       observations: '',
     };
@@ -447,6 +495,7 @@ function AddSemesterModal({ isOpen, onClose, project, onAdd }: AddSemesterModalP
 
   const handleClose = () => {
     setSelectedSemester(null);
+    setExpectedDate(project.expectedDeliveryDate);
     setSubjects([]);
     setErrors([]);
     onClose();
@@ -456,7 +505,7 @@ function AddSemesterModal({ isOpen, onClose, project, onAdd }: AddSemesterModalP
   const labelClass = 'block mb-2 text-[10px] font-black uppercase tracking-widest text-slate-400';
 
   return (
-    <Modal isOpen={isOpen} onClose={handleClose} title="Agregar semestre" description="Usa esta opción cuando Product necesite ampliar el alcance de virtualización. Los nuevos entregables quedarán en Pendiente para revisión." size="lg">
+    <Modal isOpen={isOpen} onClose={handleClose} title="Agregar semestre" description="Este semestre se agregará como una nueva entrega operativa. Define la fecha esperada de entrega y las asignaturas correspondientes." size="lg">
       <div className="space-y-5">
         {errors.length > 0 && (
           <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4">
@@ -488,6 +537,18 @@ function AddSemesterModal({ isOpen, onClose, project, onAdd }: AddSemesterModalP
               </button>
             ))}
           </div>
+        </div>
+
+        <div>
+          <label className={labelClass}>Fecha entrega esperada del semestre</label>
+          <input
+            required
+            type="date"
+            className={inputClass}
+            value={expectedDate}
+            onChange={(e) => setExpectedDate(e.target.value)}
+          />
+          <p className="mt-1 text-[10px] font-medium text-slate-400">Esta fecha será la entrega operativa para este semestre.</p>
         </div>
 
         <div className="border-t border-slate-100" />

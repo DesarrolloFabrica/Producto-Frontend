@@ -6,6 +6,7 @@ import { LoginPage } from '../features/auth/LoginPage';
 import { FactoryDashboardPage } from '../features/dashboard/FactoryDashboardPage';
 import { ProductDashboardPage } from '../features/dashboard/ProductDashboardPage';
 import { NotificationsPage } from '../features/notifications/NotificationsPage';
+import { NotificationSettings } from '../components/settings/NotificationSettings';
 import { ProjectDetailPage } from '../features/projects/ProjectDetailPage';
 import { ProjectSemesterSubjectsPage } from '../features/projects/ProjectSemesterSubjectsPage';
 import { ProjectsPage } from '../features/projects/ProjectsPage';
@@ -43,6 +44,7 @@ export const router = createBrowserRouter([
       { path: 'projects/:projectId/semesters/:semesterNumber', element: <ProjectSemesterSubjectsPage /> },
       { path: 'subjects/:subjectId', element: <SubjectDetailPage /> },
       { path: 'notifications', element: <NotificationsPage /> },
+      { path: 'notifications/settings', element: <NotificationSettings /> },
       { path: 'audit', element: <AuditPage /> },
     ],
   },

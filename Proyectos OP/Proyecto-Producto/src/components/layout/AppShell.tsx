@@ -1,4 +1,4 @@
-import { Bell, Factory, FolderKanban, Home, LogOut } from 'lucide-react';
+import { Bell, Factory, FolderKanban, Home, LogOut, Settings } from 'lucide-react';
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../features/auth/AuthContext';
 import { ContextPanelDrawer } from '../../features/context-panel/ContextPanelProvider';
@@ -39,6 +39,13 @@ export function AppShell() {
           </nav>
           <div className="flex items-center gap-2">
             <GlobalSearch />
+            <NavLink
+              to="/notifications/settings"
+              className="flex h-9 w-9 items-center justify-center rounded-xl text-slate-400 transition-all hover:bg-slate-100 hover:text-slate-600"
+              title="Configuración"
+            >
+              <Settings className="h-4 w-4" />
+            </NavLink>
             <div className="hidden items-center gap-2 rounded-xl border border-slate-200/60 bg-slate-50/80 px-3 py-1.5 lg:flex">
               <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-orange-500 text-[9px] font-bold text-white">{initials(role ?? 'NA')}</div>
               <div className="leading-tight">

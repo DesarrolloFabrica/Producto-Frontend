@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Navigate, useParams, Link, useNavigate } from 'react-router-dom';
-import { ArrowLeft, BookOpen, CheckCircle2, MessageSquare, Plus, X, Loader2, AlertCircle, Check } from 'lucide-react';
+import { ArrowLeft, BookOpen, CheckCircle2, MessageSquare, Plus, X, Loader2, AlertCircle, ChevronDown, Check } from 'lucide-react';
 import { StatusBadge } from '../../components/status/StatusBadge';
 import { Card } from '../../components/ui/Card';
 import { PageHeader } from '../../components/ui/PageHeader';
@@ -18,13 +18,14 @@ type ProductReviewStatus = 'pendiente' | 'aprobado' | 'rechazado';
 
 function toProductReviewStatus(status: string): ProductReviewStatus {
   if (status === 'APROBADO') return 'aprobado';
+  if (status === 'RECHAZADO') return 'rechazado';
   return 'pendiente';
 }
 
-const reviewStatusTone: Record<ProductReviewStatus, string> = {
-  pendiente: 'bg-amber-50 text-amber-700 ring-1 ring-amber-200/80',
-  aprobado: 'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200/80',
-  rechazado: 'bg-rose-50 text-rose-700 ring-1 ring-rose-200/80',
+const reviewStatusConfig: Record<ProductReviewStatus, { bg: string; text: string; ring: string; dot: string }> = {
+  pendiente: { bg: 'bg-amber-50', text: 'text-amber-700', ring: 'ring-amber-200/80', dot: 'bg-amber-500' },
+  aprobado: { bg: 'bg-emerald-50', text: 'text-emerald-700', ring: 'ring-emerald-200/80', dot: 'bg-emerald-500' },
+  rechazado: { bg: 'bg-rose-50', text: 'text-rose-700', ring: 'ring-rose-200/80', dot: 'bg-rose-500' },
 };
 
 const reviewStatusLabels: Record<ProductReviewStatus, string> = {
@@ -44,6 +45,278 @@ function buildTopicChecklist(seed: number): ChecklistItem[] {
     updatedAt: new Date().toISOString(),
     observations: '',
   }));
+}
+
+const CHECKLIST_CATEGORIES = [
+  {
+    id: 'informacion_base',
+    title: 'Información base',
+    items: ['Presentación de la asignatura', 'Foro de presentación', 'Syllabus', 'Lecturas y bibliografía'],
+  },
+  {
+    id: 'evaluacion_competencias',
+    title: 'Evaluación y competencias',
+    items: ['Resultados de aprendizaje y competencias', 'Evaluación diagnóstica de entrada', 'Evaluaciones', 'Evaluación diagnóstica de salida'],
+  },
+  {
+    id: 'actividades_recursos',
+    title: 'Actividades y recursos',
+    items: ['ACA Actividad de Conocimiento Aplicado', 'Foro Taller', 'Taller RAE', 'Seminario Alemán'],
+  },
+];
+
+function getCategoryForItem(itemLabel: string): string {
+  for (const category of CHECKLIST_CATEGORIES) {
+    if (category.items.some((i) => i.toLowerCase() === itemLabel.toLowerCase())) {
+      return category.id;
+    }
+  }
+  return 'informacion_base';
+}
+
+type FilterStatus = 'todos' | 'pendiente' | 'aprobado' | 'rechazado';
+
+interface ChecklistItemCardProps {
+  item: ChecklistItem;
+  status: ProductReviewStatus;
+  onUpdate: (id: string, newStatus: ProductReviewStatus, label: string) => void;
+  onCreateObservation: (label: string) => void;
+}
+
+function ChecklistItemCard({ item, status, onUpdate, onCreateObservation }: ChecklistItemCardProps) {
+  const config = reviewStatusConfig[status];
+
+  return (
+    <div className={cn(
+      'group relative rounded-xl border p-3 transition-all duration-200 hover:shadow-md',
+      'border-slate-100 bg-white hover:border-orange-200'
+    )}>
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2">
+            <h4 className="text-[13px] font-bold text-slate-900 truncate">{item.label}</h4>
+          </div>
+          <div className="mt-1.5 flex items-center gap-2">
+            <span className={cn(
+              'inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold ring-1',
+              config.bg, config.text, config.ring
+            )}>
+              <span className={cn('h-1 w-1 rounded-full', config.dot)} />
+              {reviewStatusLabels[status]}
+            </span>
+            <span className="text-[9px] font-medium text-slate-400">{item.ownerRole}</span>
+          </div>
+        </div>
+        <StatusSelector value={status} onChange={(s) => onUpdate(item.id, s, item.label)} />
+      </div>
+    </div>
+  );
+}
+
+function StatusSelector({ value, onChange }: { value: ProductReviewStatus; onChange: (s: ProductReviewStatus) => void }) {
+  const [isOpen, setIsOpen] = useState(false);
+  const [dropdownStyle, setDropdownStyle] = useState<React.CSSProperties | null>(null);
+  const config = reviewStatusConfig[value];
+
+  const handleClick = (e: React.MouseEvent<HTMLButtonElement>) => {
+    e.stopPropagation();
+    const button = e.currentTarget;
+    const rect = button.getBoundingClientRect();
+    const menuWidth = 160;
+    const viewportPadding = 12;
+    const left = Math.min(
+      Math.max(rect.right - menuWidth, viewportPadding),
+      window.innerWidth - menuWidth - viewportPadding,
+    );
+    setDropdownStyle({
+      position: 'fixed',
+      top: rect.bottom + 8,
+      left,
+      width: menuWidth,
+      zIndex: 100,
+    });
+    setIsOpen(!isOpen);
+  };
+
+  return (
+    <div className="relative">
+      <button
+        type="button"
+        onClick={handleClick}
+        className={cn(
+          'inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[10px] font-bold transition-colors ring-1',
+          config.bg, config.text, config.ring
+        )}
+      >
+        {reviewStatusLabels[value]}
+        <ChevronDown className="h-3 w-3" />
+      </button>
+      {isOpen && dropdownStyle && (
+        <>
+          <div className="fixed inset-0 z-[99]" onClick={() => { setIsOpen(false); setDropdownStyle(null); }} />
+          <div
+            className="flex flex-col gap-1 rounded-xl border border-slate-200 bg-white p-1 shadow-lg"
+            style={dropdownStyle}
+          >
+            <div className="border-b border-slate-100 px-2.5 py-1.5">
+              <span className="text-[9px] font-semibold uppercase tracking-widest text-slate-400">Cambiar a</span>
+            </div>
+            {(['pendiente', 'aprobado', 'rechazado'] as ProductReviewStatus[]).map((status) => {
+              const statusConfig = reviewStatusConfig[status];
+              return (
+                <button
+                  key={status}
+                  type="button"
+                  onClick={() => {
+                    onChange(status);
+                    setIsOpen(false);
+                    setDropdownStyle(null);
+                  }}
+                  className={cn(
+                    'flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-[11px] font-medium transition-colors',
+                    value === status ? statusConfig.bg : 'hover:bg-slate-50'
+                  )}
+                >
+                  <span className={cn('h-1.5 w-1.5 rounded-full', statusConfig.dot)} />
+                  <span className={cn(value === status ? statusConfig.text : 'text-slate-600')}>
+                    {reviewStatusLabels[status]}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+function CategorySection({
+  title,
+  items,
+  checklist,
+  onUpdate,
+  onCreateObservation,
+}: {
+  title: string;
+  items: string[];
+  checklist: ChecklistItem[];
+  onUpdate: (id: string, newStatus: ProductReviewStatus, label: string) => void;
+  onCreateObservation: (label: string) => void;
+}) {
+  const categoryItems = checklist.filter((item) => getCategoryForItem(item.label) === getCategoryForItem(items[0]));
+  const approved = categoryItems.filter((i) => toProductReviewStatus(i.status) === 'aprobado').length;
+  const total = categoryItems.length;
+  const progress = total > 0 ? Math.round((approved / total) * 100) : 0;
+
+  if (categoryItems.length === 0) return null;
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center justify-between">
+        <h3 className="text-xs font-bold uppercase tracking-widest text-slate-500">{title}</h3>
+        <div className="flex items-center gap-2">
+          <span className="text-[10px] font-bold text-slate-600">{approved}/{total}</span>
+          <div className="w-20">
+            <ProgressBar value={progress} showLabel={false} size="sm" />
+          </div>
+        </div>
+      </div>
+      <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+        {categoryItems.map((item) => (
+          <ChecklistItemCard
+            key={item.id}
+            item={item}
+            status={toProductReviewStatus(item.status)}
+            onUpdate={onUpdate}
+            onCreateObservation={onCreateObservation}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+interface TopicCardProps {
+  topic: { id: string; name: string; order: number };
+  checklist: Record<string, ProductReviewStatus>;
+  onUpdate: (topicId: string, label: string, status: ProductReviewStatus) => void;
+}
+
+interface TopicCardProps {
+  topic: { id: string; name: string; order: number };
+  checklist: Record<string, ProductReviewStatus>;
+  onUpdate: (topicId: string, label: string, status: ProductReviewStatus) => void;
+}
+
+function TopicCard({ topic, checklist, onUpdate }: TopicCardProps) {
+  const [expanded, setExpanded] = useState(false);
+  const topicChecklist = checklist ?? {};
+  const approved = Object.values(topicChecklist).filter((s) => s === 'aprobado').length;
+  const total = 4;
+
+  return (
+    <div className="rounded-2xl border border-slate-100 bg-white overflow-hidden transition-all duration-200 hover:shadow-md">
+      <button
+        type="button"
+        onClick={() => setExpanded(!expanded)}
+        className="flex w-full items-center justify-between p-4 text-left"
+      >
+        <div className="flex items-center gap-3">
+          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-orange-400 to-orange-600 text-xs font-black text-white shadow-sm">
+            {topic.order}
+          </span>
+          <div className="text-left">
+            <h4 className="text-sm font-bold text-slate-900">{topic.name}</h4>
+            <p className="text-[10px] font-medium text-slate-500">{approved}/{total} materiales aprobados</p>
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          <div className="hidden items-center gap-1 sm:flex">
+            {approved === total ? (
+              <span className="flex items-center gap-1 text-[10px] font-bold text-emerald-600">
+                <CheckCircle2 className="h-3.5 w-3.5" /> Completo
+              </span>
+            ) : (
+              <span className="text-[10px] font-medium text-amber-600">{total - approved} pendientes</span>
+            )}
+          </div>
+          <span className={cn(
+            'text-xs font-medium transition-transform',
+            expanded ? 'rotate-180' : ''
+          )}>
+            ▼
+          </span>
+        </div>
+      </button>
+
+      {expanded && (
+        <div className="border-t border-slate-100 bg-slate-50/50 p-4">
+          <p className="mb-3 text-[10px] font-medium text-slate-500">
+            Cada tema debe contar con material descargable, podcast, video e infografía.
+          </p>
+          <div className="grid gap-2 sm:grid-cols-2">
+            {topicChecklistLabels.map((label) => {
+              const status = topicChecklist[label] ?? 'pendiente';
+              const config = reviewStatusConfig[status];
+
+              return (
+                <div key={label} className="rounded-xl border border-slate-100 bg-white p-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-[11px] font-bold text-slate-800">{label}</span>
+                    <StatusSelector
+                      value={status}
+                      onChange={(newStatus) => onUpdate(topic.id, label, newStatus)}
+                    />
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+    </div>
+  );
 }
 
 export function SubjectDetailPage() {
@@ -68,11 +341,13 @@ export function SubjectDetailPage() {
   const [newTopicName, setNewTopicName] = useState('');
   const [savingTopic, setSavingTopic] = useState(false);
   const [observationError, setObservationError] = useState('');
-  const [rejectedItemId, setRejectedItemId] = useState<string | null>(null);
-  const [rejectedItemLabel, setRejectedItemLabel] = useState('');
+  const [checklistFilter, setChecklistFilter] = useState<FilterStatus>('todos');
+  const observationFormRef = useState<HTMLDivElement | null>(null);
 
   const totalChecklist = subject.checklist.length;
   const approvedChecklist = subject.checklist.filter((c) => c.status === 'APROBADO').length;
+  const pendingChecklist = subject.checklist.filter((c) => c.status === 'PENDIENTE').length;
+  const rejectedChecklist = subject.checklist.filter((c) => c.status === 'RECHAZADO').length;
   const subjectProgress = totalChecklist > 0 ? Math.round((approvedChecklist / totalChecklist) * 100) : 0;
 
   const subjectObservations = projectObservations.filter(
@@ -88,15 +363,9 @@ export function SubjectDetailPage() {
     order: index + 1,
   })) ?? [];
 
-  const handleChecklistUpdate = (checklistItemId: string, newStatus: string, itemLabel: string) => {
-    updateChecklistItem(project.id, subject.id, checklistItemId, newStatus as any);
-    if (newStatus === 'PENDIENTE') {
-      setRejectedItemId(checklistItemId);
-      setRejectedItemLabel(itemLabel);
-    } else {
-      setRejectedItemId(null);
-      setRejectedItemLabel('');
-    }
+  const handleChecklistUpdate = (checklistItemId: string, newStatus: ProductReviewStatus, itemLabel: string) => {
+    const mappedStatus: ChecklistStatus = newStatus === 'aprobado' ? 'APROBADO' : newStatus === 'rechazado' ? 'RECHAZADO' : 'PENDIENTE';
+    updateChecklistItem(project.id, subject.id, checklistItemId, mappedStatus);
   };
 
   const handleTopicChecklistUpdate = (topicId: string, itemLabel: string, status: ProductReviewStatus) => {
@@ -154,15 +423,29 @@ export function SubjectDetailPage() {
     setShowAddTopicForm(false);
   };
 
-  const handleCreateObsFromRejection = () => {
+  const filteredChecklist = subject.checklist.filter((item) => {
+    if (checklistFilter === 'todos') return true;
+    const productStatus = toProductReviewStatus(item.status);
+    return productStatus === checklistFilter;
+  });
+
+  const handleCreateObservation = (itemLabel: string) => {
     setShowObservationForm(true);
-    setObservationForm({ text: `El item "${rejectedItemLabel}" fue rechazado. Por favor revisar y corregir.`, level: 'subject', topicId: '' });
-    setRejectedItemId(null);
-    setRejectedItemLabel('');
+    setObservationForm({ text: `Revisar "${itemLabel}", fue marcado como rechazado.`, level: 'subject', topicId: '' });
+    setTimeout(() => {
+      const formElement = document.getElementById('observation-form');
+      if (formElement) {
+        formElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        const textarea = formElement.querySelector('textarea');
+        if (textarea) {
+          textarea.focus();
+        }
+      }
+    }, 100);
   };
 
   return (
-    <div className="space-y-7">
+    <div className="space-y-6">
       <PageHeader
         prominentEyebrow
         eyebrow={`${project.program} · Semestre ${subject.semesterNumber}`}
@@ -178,9 +461,9 @@ export function SubjectDetailPage() {
         }
       />
 
-      <Card variant="subjectPanel" className="p-5 sm:p-7">
+      <Card variant="subjectPanel" className="p-5 sm:p-6">
         <div className="flex items-center gap-3 border-b border-orange-100/90 pb-4">
-          <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-linear-to-br from-orange-400 to-orange-600 text-white shadow-md shadow-orange-500/25">
+          <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-gradient-to-br from-orange-400 to-orange-600 text-white shadow-md shadow-orange-500/25">
             <BookOpen className="h-5 w-5" />
           </div>
           <div>
@@ -212,113 +495,102 @@ export function SubjectDetailPage() {
         </div>
       </Card>
 
-      <Card variant="subjectPanel" className="p-5 sm:p-6">
-        <div className="flex items-center justify-between gap-3 border-b border-orange-100/90 pb-4">
-          <div>
-            <p className="text-[10px] font-black uppercase tracking-widest text-orange-500">Entregables</p>
-            <h2 className="text-sm font-black tracking-tight text-slate-950">Checklist de asignatura</h2>
+      <Card variant="subjectPanel" className="p-0 overflow-hidden">
+        <div className="border-b border-slate-100 bg-gradient-to-r from-orange-50/30 to-white px-5 py-4">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <p className="text-[10px] font-black uppercase tracking-widest text-orange-500">Entregables</p>
+              <h2 className="text-sm font-black tracking-tight text-slate-950">Revisión general de asignatura</h2>
+              <p className="mt-0.5 text-[11px] font-medium text-slate-500">Valida los entregables principales antes de cerrar la asignatura.</p>
+            </div>
+            <div className="text-right">
+              <p className="text-sm font-black text-orange-600">{approvedChecklist}/{totalChecklist}</p>
+              <div className="mt-1 w-24">
+                <ProgressBar value={subjectProgress} showLabel={false} size="sm" />
+              </div>
+            </div>
           </div>
-          <span className="rounded-full bg-orange-50 px-2.5 py-0.5 text-[10px] font-black text-orange-700 ring-1 ring-orange-200/80">
-            {approvedChecklist}/{totalChecklist} aprobados
-          </span>
         </div>
 
-        <div className="mt-5 grid gap-3 md:grid-cols-2">
-          {subject.checklist.map((item) => {
-            const productStatus = toProductReviewStatus(item.status);
-            const isRejected = productStatus === 'rechazado';
-            return (
-              <div
-                key={item.id}
-                className={cn(
-                  'rounded-[16px] border bg-white p-4 transition-all hover:shadow-sm',
-                  isRejected ? 'border-rose-200 bg-rose-50/30' : 'border-orange-100/60',
-                )}
-              >
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <h3 className="text-sm font-bold text-slate-900">{item.label}</h3>
-                    <p className="mt-0.5 text-[10px] font-medium text-slate-500">
-                      {item.ownerRole} · {formatDate(item.updatedAt)}
-                    </p>
-                  </div>
-                  <span className={cn('shrink-0 rounded-full px-2.5 py-0.5 text-[10px] font-bold ring-1', reviewStatusTone[productStatus])}>
-                    {reviewStatusLabels[productStatus]}
-                  </span>
-                </div>
+        <div className="border-b border-slate-100 bg-white px-5 py-2.5">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex items-center gap-1.5">
+              {(['todos', 'pendiente', 'aprobado', 'rechazado'] as FilterStatus[]).map((filter) => (
+                <button
+                  key={filter}
+                  type="button"
+                  onClick={() => setChecklistFilter(filter)}
+                  className={cn(
+                    'rounded-full px-3 py-1.5 text-[10px] font-bold transition-all',
+                    checklistFilter === filter
+                      ? 'bg-orange-500 text-white shadow-sm'
+                      : 'bg-white text-slate-600 ring-1 ring-slate-200 hover:bg-slate-50',
+                  )}
+                >
+                  {filter.charAt(0).toUpperCase() + filter.slice(1)}
+                </button>
+              ))}
+            </div>
+            <div className="flex items-center gap-3 text-[10px] font-medium text-slate-500">
+              <span className="flex items-center gap-1">
+                <span className="h-1.5 w-1.5 rounded-full bg-amber-500" /> {pendingChecklist}
+              </span>
+              <span className="flex items-center gap-1">
+                <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" /> {approvedChecklist}
+              </span>
+              <span className="flex items-center gap-1">
+                <span className="h-1.5 w-1.5 rounded-full bg-rose-500" /> {rejectedChecklist}
+              </span>
+            </div>
+          </div>
+        </div>
 
-                <div className="mt-3 flex gap-1.5">
-                  {(['pendiente', 'aprobado', 'rechazado'] as ProductReviewStatus[]).map((status) => (
-                    <button
-                      key={status}
-                      type="button"
-                      onClick={() => {
-                        const mappedStatus = status === 'aprobado' ? 'APROBADO' : 'PENDIENTE';
-                        handleChecklistUpdate(item.id, mappedStatus, item.label);
-                      }}
-                      className={cn(
-                        'flex-1 rounded-lg px-2 py-1.5 text-[10px] font-bold transition-all',
-                        productStatus === status
-                          ? reviewStatusTone[status]
-                          : 'bg-slate-50 text-slate-500 hover:bg-slate-100',
-                      )}
-                    >
-                      {reviewStatusLabels[status]}
-                    </button>
-                  ))}
-                </div>
-
-                {isRejected && (
-                  <div className="mt-3 flex items-start gap-2 rounded-xl border border-rose-100 bg-rose-50/50 p-2.5">
-                    <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-rose-500" />
-                    <div className="min-w-0 flex-1">
-                      <p className="text-[10px] font-bold text-rose-700">Item rechazado</p>
-                      <p className="text-[10px] font-medium text-rose-600">Registra una observación para que Fábrica pueda corregirlo.</p>
-                      <button
-                        type="button"
-                        onClick={handleCreateObsFromRejection}
-                        className="mt-1.5 inline-flex items-center gap-1 text-[10px] font-bold text-rose-700 hover:text-rose-800"
-                      >
-                        <MessageSquare className="h-3 w-3" /> Crear observación
-                      </button>
-                    </div>
-                  </div>
-                )}
-
-                {item.observations && (
-                  <p className="mt-3 rounded-xl bg-orange-50/40 px-3 py-2 text-[11px] font-medium text-slate-600">
-                    {item.observations}
-                  </p>
-                )}
-              </div>
-            );
-          })}
+        <div className="p-5">
+          {filteredChecklist.length === 0 ? (
+            <EmptyState icon={CheckCircle2} title="Sin entregables" description="No hay entregables que coincidan con el filtro seleccionado." cardVariant="subjectPanel" />
+          ) : (
+            <div className="space-y-6">
+              {CHECKLIST_CATEGORIES.map((category) => (
+                <CategorySection
+                  key={category.id}
+                  title={category.title}
+                  items={category.items}
+                  checklist={filteredChecklist}
+                  onUpdate={handleChecklistUpdate}
+                  onCreateObservation={handleCreateObservation}
+                />
+              ))}
+            </div>
+          )}
         </div>
       </Card>
 
       {topics.length > 0 && (
-        <Card variant="subjectPanel" className="p-5 sm:p-6">
-          <div className="flex items-center justify-between gap-3 border-b border-orange-100/90 pb-4">
-            <div>
-              <p className="text-[10px] font-black uppercase tracking-widest text-orange-500">Contenido</p>
-              <h2 className="text-sm font-black tracking-tight text-slate-950">Temas / Gránulos</h2>
-            </div>
-            <div className="flex items-center gap-2">
-              <span className="rounded-full bg-orange-50 px-2.5 py-0.5 text-[10px] font-black text-orange-700 ring-1 ring-orange-200/80">
-                {topics.length} temas
-              </span>
-              <button
-                type="button"
-                onClick={() => setShowAddTopicForm(true)}
-                className="inline-flex items-center gap-1 text-[10px] font-bold text-orange-600 hover:text-orange-700"
-              >
-                <Plus className="h-3 w-3" /> Agregar tema
-              </button>
+        <Card variant="subjectPanel" className="p-0 overflow-hidden">
+          <div className="border-b border-slate-100 bg-gradient-to-r from-orange-50/30 to-white px-5 py-4">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <p className="text-[10px] font-black uppercase tracking-widest text-orange-500">Contenido</p>
+                <h2 className="text-sm font-black tracking-tight text-slate-950">Revisión por temas / gránulos</h2>
+                <p className="mt-0.5 text-[11px] font-medium text-slate-500">Cada tema debe contar con material descargable, podcast, video e infografía.</p>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="rounded-full bg-orange-50 px-3 py-1.5 text-[10px] font-bold text-orange-700 ring-1 ring-orange-200/80">
+                  {topics.length} temas
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setShowAddTopicForm(true)}
+                  className="inline-flex items-center gap-1 text-[10px] font-bold text-orange-600 hover:text-orange-700"
+                >
+                  <Plus className="h-3.5 w-3.5" /> Agregar
+                </button>
+              </div>
             </div>
           </div>
 
           {showAddTopicForm && (
-            <div className="mt-4 rounded-xl border border-orange-200 bg-orange-50/30 p-3">
+            <div className="mx-5 mt-4 rounded-xl border border-orange-200 bg-orange-50/30 p-3">
               <div className="flex items-center justify-between gap-2">
                 <p className="text-xs font-bold text-slate-900">Nuevo tema/gránulo</p>
                 <button type="button" onClick={() => { setShowAddTopicForm(false); setNewTopicName(''); }} className="text-slate-400 hover:text-slate-600">
@@ -342,61 +614,17 @@ export function SubjectDetailPage() {
             </div>
           )}
 
-          <div className="mt-5 space-y-3">
-            {topics.map((topic) => {
-              const expanded = expandedTopicId === topic.id;
-              const topicChecklist = localTopicChecklist[topic.id] ?? {};
-
-              return (
-                <div key={topic.id} className="rounded-[16px] border border-orange-100/60 bg-white overflow-hidden">
-                  <button
-                    type="button"
-                    onClick={() => setExpandedTopicId(expanded ? null : topic.id)}
-                    className="flex w-full items-center justify-between p-4 text-left transition-colors hover:bg-orange-50/30"
-                  >
-                    <div className="flex items-center gap-3">
-                      <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-xl bg-linear-to-br from-orange-400 to-orange-600 text-[11px] font-black text-white">
-                        {topic.order}
-                      </span>
-                      <span className="text-sm font-bold text-slate-900">{topic.name}</span>
-                    </div>
-                    <span className="text-xs font-medium text-slate-400">{expanded ? 'Cerrar' : 'Ver checklist'}</span>
-                  </button>
-
-                  {expanded && (
-                    <div className="border-t border-orange-100/60 p-4">
-                      <div className="grid gap-2 sm:grid-cols-2">
-                        {topicChecklistLabels.map((label) => {
-                          const currentStatus = topicChecklist[label] ?? 'pendiente';
-                          return (
-                            <div key={label} className="rounded-xl border border-slate-100 bg-slate-50/50 p-3">
-                              <p className="text-xs font-bold text-slate-800">{label}</p>
-                              <div className="mt-2 flex gap-1.5">
-                                {(['pendiente', 'aprobado', 'rechazado'] as ProductReviewStatus[]).map((status) => (
-                                  <button
-                                    key={status}
-                                    type="button"
-                                    onClick={() => handleTopicChecklistUpdate(topic.id, label, status)}
-                                    className={cn(
-                                      'flex-1 rounded-md px-2 py-1 text-[9px] font-bold transition-all',
-                                      currentStatus === status
-                                        ? reviewStatusTone[status]
-                                        : 'bg-white text-slate-400 hover:bg-slate-100',
-                                    )}
-                                  >
-                                    {reviewStatusLabels[status]}
-                                  </button>
-                                ))}
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              );
-            })}
+          <div className="p-5">
+            <div className="space-y-3">
+              {topics.map((topic) => (
+                <TopicCard
+                  key={topic.id}
+                  topic={topic}
+                  checklist={localTopicChecklist[topic.id] ?? {}}
+                  onUpdate={handleTopicChecklistUpdate}
+                />
+              ))}
+            </div>
           </div>
         </Card>
       )}
@@ -413,7 +641,7 @@ export function SubjectDetailPage() {
         </div>
 
         {showObservationForm && (
-          <div className="mt-5 rounded-[16px] border border-orange-200 bg-orange-50/30 p-4">
+          <div id="observation-form" className="mt-5 rounded-[16px] border border-orange-200 bg-orange-50/30 p-4">
             <div className="flex items-start justify-between gap-3">
               <div>
                 <p className="text-xs font-bold text-slate-900">Enviar observación a Fábrica</p>

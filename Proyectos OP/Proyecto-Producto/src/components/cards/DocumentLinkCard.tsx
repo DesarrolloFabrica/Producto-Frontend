@@ -56,31 +56,31 @@ export function DocumentLinkCard({
 
   return (
     <a href={link.url} target="_blank" rel="noreferrer" className="group block">
-      <Card variant={cardVariant} className="p-3 transition-all duration-300 group-hover:-translate-y-0.5 group-hover:shadow-[0_12px_30px_-10px_rgba(0,0,0,0.1)]">
+      <Card variant={cardVariant} className="p-4 transition-all duration-300 group-hover:-translate-y-0.5 group-hover:shadow-lg">
         <div className="flex items-start gap-3">
-          <div className={cn('flex h-9 w-9 shrink-0 items-center justify-center rounded-[12px]', typeStyle.bg, typeStyle.color)}>
-            <Icon className="h-4 w-4" />
+          <div className={cn('flex h-10 w-10 shrink-0 items-center justify-center rounded-xl', typeStyle.bg, typeStyle.color)}>
+            <Icon className="h-5 w-5" />
           </div>
           <div className="min-w-0 flex-1">
             <div className="flex items-start justify-between gap-2">
               <div className="min-w-0">
-                <p className="line-clamp-2 text-sm font-bold leading-snug tracking-[-0.02em] text-[#1E293B]">{link.title}</p>
-                <p className="mt-0.5 truncate text-[10px] font-medium text-[#64748B]">{projectName}</p>
+                <p className="line-clamp-2 text-sm font-bold text-slate-900">{link.title}</p>
+                <p className="mt-0.5 truncate text-[10px] font-medium text-slate-500">{projectName}</p>
               </div>
-              <span className="shrink-0 rounded-[12px] bg-white/80 px-2 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-[#64748B] ring-1 ring-slate-200/50">Disponible</span>
+              <span className="shrink-0 rounded-full bg-slate-100 px-2.5 py-1 text-[9px] font-semibold uppercase tracking-wide text-slate-500">{link.type}</span>
             </div>
-            <div className="mt-2.5 grid grid-cols-1 gap-2 sm:grid-cols-[1fr_auto] sm:items-center">
-              <p className="min-w-0 text-[10px] font-medium text-[#64748B]">
-                {link.type.replace('_', ' ')} · {link.uploadedBy} · {formatDate(link.createdAt)}
+            <div className="mt-3 flex items-center justify-between">
+              <p className="text-[10px] font-medium text-slate-400">
+                {formatDate(link.createdAt)} · {link.uploadedBy}
               </p>
-              <div className="flex shrink-0 items-center justify-end gap-1 sm:justify-end">
-                <button type="button" onClick={handleContext} className="rounded-[12px] p-1.5 text-[#94A3B8] transition-colors hover:bg-[#EEF2FF] hover:text-[#6366F1]">
+              <div className={cn('flex items-center gap-1 rounded-xl bg-slate-100 p-1 transition-opacity', 'opacity-80 group-hover:opacity-100')}>
+                <button type="button" onClick={handleContext} className="rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-white hover:text-orange-600" title="Ver contexto">
                   <Eye className="h-3.5 w-3.5" />
                 </button>
-                <button type="button" onClick={handleCopy} className="rounded-[12px] p-1.5 text-[#94A3B8] transition-colors hover:bg-[#EEF2FF] hover:text-[#6366F1]">
-                  {copied ? <span className="text-[10px] font-semibold text-[#64748B]">Copiado</span> : <Copy className="h-3.5 w-3.5" />}
+                <button type="button" onClick={handleCopy} className="rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-white hover:text-orange-600" title="Copiar enlace">
+                  {copied ? <span className="text-[9px] font-bold text-emerald-600">OK</span> : <Copy className="h-3.5 w-3.5" />}
                 </button>
-                <span className="p-1.5 text-[#FF6B00]">
+                <span className="rounded-lg p-1.5 text-slate-400" title="Abrir enlace">
                   <ExternalLink className="h-3.5 w-3.5" />
                 </span>
               </div>
