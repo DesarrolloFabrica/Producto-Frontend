@@ -2,6 +2,7 @@ import { Package, ArrowRight, MessageSquare, CheckCircle2, AlertTriangle } from 
 import { Link } from 'react-router-dom';
 import { StatusBadge } from '../../components/status/StatusBadge';
 import { Card } from '../../components/ui/Card';
+import { ProjectsLoadNotice } from '../../components/feedback/ProjectsLoadNotice';
 import { useOperations } from '../../features/operations/OperationsContext';
 import { formatDate } from '../../utils/formatters';
 import { cn } from '../../components/ui/tokens';
@@ -18,7 +19,8 @@ const FILTERS: { key: FactoryFilter; label: string; icon: typeof Package; color:
 ];
 
 export function FactoryProjectsList() {
-  const { projects, projectObservations } = useOperations();
+  const { projects, projectObservations, isLoadingProjects, projectsError, refreshProjects, backendEnabled } =
+    useOperations();
   const [activeFilter, setActiveFilter] = useState<FactoryFilter>('all');
 
   const openProductObs = projectObservations.filter(
@@ -51,6 +53,16 @@ export function FactoryProjectsList() {
         <h1 className="text-2xl font-bold tracking-[-0.02em] text-[#1E293B]">Solicitudes para producción</h1>
         <p className="mt-1 text-[0.9rem] text-[#64748B]">Gestiona las solicitudes enviadas por Product, entrega contenido y responde correcciones.</p>
       </div>
+
+      {backendEnabled && (
+        <ProjectsLoadNotice
+          isLoading={isLoadingProjects && projects.length === 0}
+          error={projectsError}
+          isEmpty={!isLoadingProjects && !projectsError && factoryProjects.length === 0}
+          onRefresh={() => void refreshProjects()}
+          emptyMessage="No hay solicitudes visibles para Fábrica en este momento."
+        />
+      )}
 
       <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <FilterMetric label="Listas" value={counts.ready} icon={Package} color="text-[#FF6B00]" />

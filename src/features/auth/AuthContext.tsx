@@ -1,30 +1,112 @@
-import { createContext, useContext, useMemo, useState, type ReactNode } from 'react';
+import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import type { Role } from '../../types/domain';
+import type { AuthUser } from '../../services/authApi';
+import { authApi } from '../../services/authApi';
+
+const TOKEN_KEY = 'producto_access_token';
+const USER_KEY = 'producto_auth_user';
 
 interface AuthContextValue {
+  user: AuthUser | null;
   role: Role | null;
-  login: (role: Role) => void;
+  isAuthenticated: boolean;
+  isLoading: boolean;
+  login: (email: string, password: string) => Promise<void>;
   logout: () => void;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
-const STORAGE_KEY = 'fabrica-academica-role';
-
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [role, setRole] = useState<Role | null>(() => (localStorage.getItem(STORAGE_KEY) as Role | null) ?? null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [user, setUser] = useState<AuthUser | null>(() => {
+    try {
+      const raw = localStorage.getItem(USER_KEY);
+      return raw ? (JSON.parse(raw) as AuthUser) : null;
+    } catch {
+      return null;
+    }
+  });
+
+  const role = user?.role ?? null;
+
+  const logout = () => {
+    try {
+      localStorage.removeItem(TOKEN_KEY);
+      localStorage.removeItem(USER_KEY);
+    } catch {
+      // ignore
+    }
+    setUser(null);
+  };
+
+  useEffect(() => {
+    const onUnauthorized = () => {
+      logout();
+    };
+    window.addEventListener('auth:unauthorized', onUnauthorized);
+    return () => window.removeEventListener('auth:unauthorized', onUnauthorized);
+  }, []);
+
+  useEffect(() => {
+    const token = (() => {
+      try {
+        return localStorage.getItem(TOKEN_KEY);
+      } catch {
+        return null;
+      }
+    })();
+
+    // No token => not authenticated.
+    if (!token) {
+      setIsLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+    setIsLoading(true);
+    authApi
+      .me()
+      .then((me) => {
+        if (cancelled) return;
+        setUser(me);
+        try {
+          localStorage.setItem(USER_KEY, JSON.stringify(me));
+        } catch {
+          // ignore
+        }
+      })
+      .catch(() => {
+        if (cancelled) return;
+        logout();
+      })
+      .finally(() => {
+        if (cancelled) return;
+        setIsLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const value = useMemo<AuthContextValue>(() => ({
+    user,
     role,
-    login: (nextRole) => {
-      localStorage.setItem(STORAGE_KEY, nextRole);
-      setRole(nextRole);
+    isAuthenticated: Boolean(user),
+    isLoading,
+    login: async (email: string, password: string) => {
+      const { accessToken, user: nextUser } = await authApi.login(email, password);
+      try {
+        localStorage.setItem(TOKEN_KEY, accessToken);
+        localStorage.setItem(USER_KEY, JSON.stringify(nextUser));
+      } catch {
+        // ignore
+      }
+      setUser(nextUser);
     },
-    logout: () => {
-      localStorage.removeItem(STORAGE_KEY);
-      setRole(null);
-    },
-  }), [role]);
+    logout,
+  }), [user, role, isLoading]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

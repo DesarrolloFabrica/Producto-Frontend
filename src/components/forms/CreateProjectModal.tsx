@@ -1,6 +1,9 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Plus, Loader2, ChevronDown, ChevronUp, X, Check, FileText, Calendar } from 'lucide-react';
+import { useAuth } from '../../features/auth/AuthContext';
+import type { CreateProjectFormInput } from '../../features/operations/apiMappers';
+import { getApiErrorMessage } from '../../features/operations/apiMappers';
 import { useOperations } from '../../features/operations/OperationsContext';
 import { useToast } from '../ui/ToastProvider';
 import { Modal } from '../ui/Modal';
@@ -91,7 +94,8 @@ function buildSubjectTopicChecklists(seed: number, topicNames: string[]): TopicC
 }
 
 export function CreateProjectModal({ isOpen, onClose }: CreateProjectModalProps) {
-  const { createProject } = useOperations();
+  const { createProject, createProjectFromApi, backendEnabled } = useOperations();
+  const { user } = useAuth();
   const { showToast } = useToast();
   const [saving, setSaving] = useState(false);
   const [errors, setErrors] = useState<string[]>([]);
@@ -101,7 +105,13 @@ export function CreateProjectModal({ isOpen, onClose }: CreateProjectModalProps)
   const [modality, setModality] = useState('Virtual');
   const [priority, setPriority] = useState<Priority>('MEDIUM');
   const [expectedDeliveryDate, setExpectedDeliveryDate] = useState('');
-  const [productOwner, setProductOwner] = useState('');
+  const [productOwner, setProductOwner] = useState(user?.name ?? '');
+
+  useEffect(() => {
+    if (isOpen && user?.name && !productOwner.trim()) {
+      setProductOwner(user.name);
+    }
+  }, [isOpen, user?.name, productOwner]);
   const [observations, setObservations] = useState('');
 
   const [hasSyllabus, setHasSyllabus] = useState<boolean | null>(null);
@@ -268,7 +278,34 @@ export function CreateProjectModal({ isOpen, onClose }: CreateProjectModalProps)
     if (!validate()) return;
 
     setSaving(true);
-    await new Promise((r) => setTimeout(r, 500));
+    setErrors([]);
+
+    try {
+      if (backendEnabled) {
+        const formInput: CreateProjectFormInput = {
+          school,
+          program,
+          modality,
+          priority,
+          expectedDeliveryDate,
+          observations: observations.trim() || undefined,
+          hasSyllabus,
+          syllabusUrl: syllabusLink.trim() || undefined,
+          semesters: semesters.map((sem) => ({
+            number: sem.number,
+            subjects: sem.subjects.map((subj) => ({
+              name: subj.name.trim(),
+              topics: subj.topics.map((t) => t.name.trim()).filter(Boolean),
+            })),
+          })),
+        };
+
+        await createProjectFromApi(formInput);
+        showToast('Solicitud creada correctamente');
+        resetForm();
+        onClose();
+        return;
+      }
 
     const allSubjects: VirtualizationProject['subjects'] = [];
     const semesterData: VirtualizationProject['semesters'] = [];
@@ -344,14 +381,22 @@ export function CreateProjectModal({ isOpen, onClose }: CreateProjectModalProps)
 
     createProject(newProject);
     showToast('Solicitud creada correctamente');
-    setSaving(false);
+    resetForm();
+    onClose();
+    } catch (error) {
+      setErrors([getApiErrorMessage(error)]);
+    } finally {
+      setSaving(false);
+    }
+  };
 
+  const resetForm = () => {
     setSchool('');
     setProgram('');
     setModality('Virtual');
     setPriority('MEDIUM');
     setExpectedDeliveryDate('');
-    setProductOwner('');
+    setProductOwner(user?.name ?? '');
     setObservations('');
     setHasSyllabus(null);
     setSyllabusLink('');
@@ -359,8 +404,6 @@ export function CreateProjectModal({ isOpen, onClose }: CreateProjectModalProps)
     setSemesters([]);
     setExpandedSemesters([]);
     setErrors([]);
-
-    onClose();
   };
 
   const inputClass = 'w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-bold text-slate-900 focus:border-orange-300 focus:ring-2 focus:ring-orange-100 focus:outline-none transition-all';

@@ -1,15 +1,19 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Link, Navigate, useParams } from 'react-router-dom';
 import { StatusBadge } from '../../components/status/StatusBadge';
 import { Card } from '../../components/ui/Card';
 import { ProgressBar } from '../../components/ui/ProgressBar';
 import { Tabs } from '../../components/ui/Tabs';
+import { ProjectsLoadNotice } from '../../components/feedback/ProjectsLoadNotice';
 import { useOperations } from '../../features/operations/OperationsContext';
+import { useEnsureProjectDetail } from '../operations/useEnsureProjectDetail';
 import { formatDate } from '../../utils/formatters';
 import { ArrowRight, BookOpen, CalendarDays, CheckCircle2, ClipboardCheck, FileText, MessageSquare, Package } from 'lucide-react';
 import { Button } from '../../components/ui/Button';
 import { priorityLabels } from '../../utils/status';
 import { cn } from '../../components/ui/tokens';
+import { useToast } from '../../components/ui/ToastProvider';
+import { getApiErrorMessage } from '../operations/apiMappers';
 
 const tabs = [
   { id: 'summary', label: 'Resumen' },
@@ -26,9 +30,45 @@ const nextStepMessages: Record<string, string> = {
 
 export function FactoryProjectDetail() {
   const { projectId } = useParams();
-  const { projects, projectObservations, startProjectProduction, deliverProjectToProduct } = useOperations();
-  const project = projects.find((item) => item.id === projectId);
+  const { projectObservations, startProjectProduction, deliverProjectToProduct, refreshProjects, backendEnabled } = useOperations();
+  const { project, isLoading, error } = useEnsureProjectDetail(projectId);
   const [activeTab, setActiveTab] = useState('summary');
+  const [isStartingProduction, setIsStartingProduction] = useState(false);
+  const { showToast } = useToast();
+
+  const isReadyToDeliver = useMemo(() => {
+    if (!project) return false;
+    const all = new Map<string, { status: string }>();
+    for (const subject of project.subjects) {
+      for (const item of subject.checklist) {
+        all.set(item.id, { status: item.status });
+      }
+      for (const tc of subject.topicChecklists ?? []) {
+        for (const item of tc.items) {
+          all.set(item.id, { status: item.status });
+        }
+      }
+    }
+    const items = [...all.values()];
+    if (items.length === 0) return false;
+    return items.every((i) => i.status === 'ENTREGADO' || i.status === 'APROBADO');
+  }, [project]);
+
+  if (isLoading) {
+    return (
+      <div className="space-y-6">
+        <ProjectsLoadNotice isLoading />
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="space-y-6">
+        <ProjectsLoadNotice error={error} onRefresh={() => void refreshProjects()} />
+      </div>
+    );
+  }
 
   if (!project) return <Navigate to="/projects" replace />;
 
@@ -40,15 +80,42 @@ export function FactoryProjectDetail() {
     switch (project.status) {
       case 'READY_FOR_PRODUCTION':
         return (
-          <Button onClick={() => startProjectProduction(project.id)} className="w-full py-3 text-sm font-bold">
+          <Button
+            onClick={() => {
+              setIsStartingProduction(true);
+              void startProjectProduction(project.id)
+                .catch((e) => showToast(getApiErrorMessage(e), 'error'))
+                .finally(() => setIsStartingProduction(false));
+            }}
+            disabled={isStartingProduction}
+            className="w-full py-3 text-sm font-bold"
+          >
             <Package className="h-4 w-4" /> Marcar en producción
           </Button>
         );
       case 'IN_PRODUCTION':
         return (
-          <Button onClick={() => deliverProjectToProduct(project.id)} className="w-full py-3 text-sm font-bold">
-            <CheckCircle2 className="h-4 w-4" /> Entregar a Product
-          </Button>
+          <div className="space-y-3">
+            {!isReadyToDeliver && (
+              <div className="rounded-[12px] bg-amber-50 px-4 py-3 text-sm font-medium text-amber-700">
+                Completa todos los entregables antes de entregar a Product.
+              </div>
+            )}
+            <Button
+              onClick={() => {
+                // No endpoint to deliver a whole project; delivery is per subject (POST /subjects/:id/submit).
+                if (backendEnabled) {
+                  showToast('Entrega por proyecto no está disponible. Entrega cada asignatura desde su detalle.', 'error');
+                  return;
+                }
+                deliverProjectToProduct(project.id);
+              }}
+              disabled={!isReadyToDeliver}
+              className="w-full py-3 text-sm font-bold"
+            >
+              <CheckCircle2 className="h-4 w-4" /> Entregar a Product
+            </Button>
+          </div>
         );
       case 'FEEDBACK_PENDING':
         return (

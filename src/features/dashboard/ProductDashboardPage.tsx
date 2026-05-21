@@ -6,13 +6,14 @@ import { Button } from '../../components/ui/Button';
 import { Card } from '../../components/ui/Card';
 import { PageHeader } from '../../components/ui/PageHeader';
 import { CreateProjectModal } from '../../components/forms/CreateProjectModal';
+import { ProjectsLoadNotice } from '../../components/feedback/ProjectsLoadNotice';
 import { useOperations } from '../../features/operations/OperationsContext';
 import { useContextPanel } from '../../features/context-panel/ContextPanelProvider';
 import { formatDate } from '../../utils/formatters';
 import { isProjectLate, projectStatusLabels } from '../../utils/status';
 
 export function ProductDashboardPage() {
-  const { projects } = useOperations();
+  const { projects, isLoadingProjects, projectsError, refreshProjects, backendEnabled } = useOperations();
   const { openContextPanel } = useContextPanel();
   const [showCreateModal, setShowCreateModal] = useState(false);
 
@@ -38,6 +39,14 @@ export function ProductDashboardPage() {
           </Button>
         }
       />
+
+      {backendEnabled && (
+        <ProjectsLoadNotice
+          isLoading={isLoadingProjects && projects.length === 0}
+          error={projectsError}
+          onRefresh={() => void refreshProjects()}
+        />
+      )}
 
       <section className="grid gap-3 md:grid-cols-4">
         <MetricCard variant="subjectPanel" label="Solicitudes activas" value={active} icon={FolderKanban} />

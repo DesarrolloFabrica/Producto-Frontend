@@ -7,7 +7,9 @@ import { ProgressBar } from '../../components/ui/ProgressBar';
 import { StatusBadge } from '../../components/status/StatusBadge';
 import { Modal } from '../../components/ui/Modal';
 import { Button } from '../../components/ui/Button';
+import { ProjectsLoadNotice } from '../../components/feedback/ProjectsLoadNotice';
 import { useOperations } from '../../features/operations/OperationsContext';
+import { useEnsureProjectDetail } from '../operations/useEnsureProjectDetail';
 import { useAuth } from '../auth/AuthContext';
 import { formatDate } from '../../utils/formatters';
 import { cn } from '../../components/ui/tokens';
@@ -63,11 +65,27 @@ function buildSubjectTopicChecklists(seed: number, topicNames: string[]): TopicC
 
 export function ProjectSemesterSubjectsPage() {
   const { projectId, semesterNumber } = useParams();
-  const { projects, projectObservations, addSubjectToSemester } = useOperations();
+  const { projectObservations, addSubjectToSemester, refreshProjects } = useOperations();
   const { role } = useAuth();
-  const project = projects.find((p) => p.id === projectId);
+  const { project, isLoading, error } = useEnsureProjectDetail(projectId);
   const semesterNum = parseInt(semesterNumber ?? '0', 10);
   const [showAddSubjectModal, setShowAddSubjectModal] = useState(false);
+
+  if (isLoading) {
+    return (
+      <div className="space-y-6">
+        <ProjectsLoadNotice isLoading />
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="space-y-6">
+        <ProjectsLoadNotice error={error} onRefresh={() => void refreshProjects()} />
+      </div>
+    );
+  }
 
   if (!project || isNaN(semesterNum)) return <Navigate to="/projects" replace />;
 

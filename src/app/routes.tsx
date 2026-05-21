@@ -13,19 +13,25 @@ import { ProjectsPage } from '../features/projects/ProjectsPage';
 import { SubjectDetailPage } from '../features/subjects/SubjectDetailPage';
 
 function RequireAuth() {
-  const { role } = useAuth();
-  if (!role) return <Navigate to="/login" replace />;
+  const { isAuthenticated, isLoading } = useAuth();
+  if (isLoading) return null;
+  if (!isAuthenticated) return <Navigate to="/login" replace />;
   return <AppShell />;
 }
 
 function HomeRedirect() {
-  const { role } = useAuth();
-  if (!role) return <Navigate to="/login" replace />;
-  return <Navigate to={role === 'FABRICA' ? '/factory/dashboard' : '/product/dashboard'} replace />;
+  const { role, isAuthenticated, isLoading } = useAuth();
+  if (isLoading) return null;
+  if (!isAuthenticated) return <Navigate to="/login" replace />;
+  if (role === 'FABRICA') return <Navigate to="/factory/dashboard" replace />;
+  // ADMIN falls back to product dashboard for now.
+  return <Navigate to="/product/dashboard" replace />;
 }
 
 function RoleRedirect({ expectedRole, children }: { expectedRole: 'PRODUCT' | 'FABRICA'; children: React.ReactNode }) {
-  const { role } = useAuth();
+  const { role, isAuthenticated, isLoading } = useAuth();
+  if (isLoading) return null;
+  if (!isAuthenticated) return <Navigate to="/login" replace />;
   if (role !== expectedRole) return <Navigate to={role === 'FABRICA' ? '/factory/dashboard' : '/product/dashboard'} replace />;
   return children;
 }

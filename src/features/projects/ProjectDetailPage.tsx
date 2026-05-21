@@ -1,4 +1,6 @@
 import { useState } from 'react';
+import { ProjectsLoadNotice } from '../../components/feedback/ProjectsLoadNotice';
+import { useEnsureProjectDetail } from '../operations/useEnsureProjectDetail';
 import { Link, Navigate, useParams } from 'react-router-dom';
 import { SemesterWorkflowCard } from '../../components/cards/SemesterWorkflowCard';
 import { StatusBadge } from '../../components/status/StatusBadge';
@@ -77,12 +79,28 @@ function buildSubjectTopicChecklists(seed: number, topicNames: string[]): TopicC
 
 export function ProjectDetailPage() {
   const { projectId } = useParams();
-  const { projects, addSemesterToProject } = useOperations();
+  const { addSemesterToProject, refreshProjects, backendEnabled } = useOperations();
   const { role } = useAuth();
-  const project = projects.find((item) => item.id === projectId);
+  const { project, isLoading, error } = useEnsureProjectDetail(projectId);
   const [activeTab, setActiveTab] = useState('summary');
   const [showInfoDrawer, setShowInfoDrawer] = useState(false);
   const [showAddSemesterModal, setShowAddSemesterModal] = useState(false);
+
+  if (isLoading) {
+    return (
+      <div className="space-y-6">
+        <ProjectsLoadNotice isLoading />
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="space-y-6">
+        <ProjectsLoadNotice error={error} onRefresh={() => void refreshProjects()} />
+      </div>
+    );
+  }
 
   if (!project) return <Navigate to="/projects" replace />;
 

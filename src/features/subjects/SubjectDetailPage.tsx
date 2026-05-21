@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Navigate, useParams, Link, useNavigate } from 'react-router-dom';
 import { ArrowLeft, BookOpen, CheckCircle2, MessageSquare, Plus, X, Loader2, AlertCircle, ChevronDown, Check } from 'lucide-react';
 import { StatusBadge } from '../../components/status/StatusBadge';
@@ -6,12 +6,16 @@ import { Card } from '../../components/ui/Card';
 import { PageHeader } from '../../components/ui/PageHeader';
 import { ProgressBar } from '../../components/ui/ProgressBar';
 import { EmptyState } from '../../components/ui/EmptyState';
+import { getApiErrorMessage } from '../operations/apiMappers';
 import { useOperations } from '../../features/operations/OperationsContext';
+import { useToast } from '../../components/ui/ToastProvider';
 import { useAuth } from '../auth/AuthContext';
 import { formatDate } from '../../utils/formatters';
 import { Button } from '../../components/ui/Button';
 import { cn } from '../../components/ui/tokens';
 import type { ChecklistItem, ChecklistStatus, Role } from '../../types/domain';
+import { ProjectsLoadNotice } from '../../components/feedback/ProjectsLoadNotice';
+import { useEnsureSubjectDetail } from '../operations/useEnsureSubjectDetail';
 import { FactorySubjectDetail } from './FactorySubjectDetail';
 
 type ProductReviewStatus = 'pendiente' | 'aprobado' | 'rechazado';
@@ -79,7 +83,7 @@ type FilterStatus = 'todos' | 'pendiente' | 'aprobado' | 'rechazado';
 interface ChecklistItemCardProps {
   item: ChecklistItem;
   status: ProductReviewStatus;
-  onUpdate: (id: string, newStatus: ProductReviewStatus, label: string) => void;
+  onUpdate: (id: string, newStatus: ProductReviewStatus, label: string) => void | Promise<void>;
   onCreateObservation: (label: string) => void;
 }
 
@@ -107,19 +111,38 @@ function ChecklistItemCard({ item, status, onUpdate, onCreateObservation }: Chec
             <span className="text-[9px] font-medium text-slate-400">{item.ownerRole}</span>
           </div>
         </div>
-        <StatusSelector value={status} onChange={(s) => onUpdate(item.id, s, item.label)} />
+        <StatusSelector value={status} checklistStatus={item.status} onChange={(s) => void onUpdate(item.id, s, item.label)} />
       </div>
     </div>
   );
 }
 
-function StatusSelector({ value, onChange }: { value: ProductReviewStatus; onChange: (s: ProductReviewStatus) => void }) {
+function StatusSelector({
+  value,
+  checklistStatus,
+  onChange,
+}: {
+  value: ProductReviewStatus;
+  checklistStatus: ChecklistStatus;
+  onChange: (s: ProductReviewStatus) => void;
+}) {
   const [isOpen, setIsOpen] = useState(false);
   const [dropdownStyle, setDropdownStyle] = useState<React.CSSProperties | null>(null);
   const config = reviewStatusConfig[value];
 
+  const allowed: ProductReviewStatus[] =
+    checklistStatus === 'ENTREGADO'
+      ? ['aprobado', 'rechazado']
+      : checklistStatus === 'APROBADO'
+        ? ['rechazado']
+        : checklistStatus === 'RECHAZADO'
+          ? ['aprobado']
+          : [];
+  const disabled = allowed.length === 0;
+
   const handleClick = (e: React.MouseEvent<HTMLButtonElement>) => {
     e.stopPropagation();
+    if (disabled) return;
     const button = e.currentTarget;
     const rect = button.getBoundingClientRect();
     const menuWidth = 160;
@@ -143,9 +166,13 @@ function StatusSelector({ value, onChange }: { value: ProductReviewStatus; onCha
       <button
         type="button"
         onClick={handleClick}
+        disabled={disabled}
         className={cn(
           'inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[10px] font-bold transition-colors ring-1',
-          config.bg, config.text, config.ring
+          config.bg,
+          config.text,
+          config.ring,
+          disabled && 'cursor-not-allowed opacity-60',
         )}
       >
         {reviewStatusLabels[value]}
@@ -161,7 +188,7 @@ function StatusSelector({ value, onChange }: { value: ProductReviewStatus; onCha
             <div className="border-b border-slate-100 px-2.5 py-1.5">
               <span className="text-[9px] font-semibold uppercase tracking-widest text-slate-400">Cambiar a</span>
             </div>
-            {(['pendiente', 'aprobado', 'rechazado'] as ProductReviewStatus[]).map((status) => {
+            {allowed.map((status) => {
               const statusConfig = reviewStatusConfig[status];
               return (
                 <button
@@ -201,7 +228,7 @@ function CategorySection({
   title: string;
   items: string[];
   checklist: ChecklistItem[];
-  onUpdate: (id: string, newStatus: ProductReviewStatus, label: string) => void;
+  onUpdate: (id: string, newStatus: ProductReviewStatus, label: string) => void | Promise<void>;
   onCreateObservation: (label: string) => void;
 }) {
   const categoryItems = checklist.filter((item) => getCategoryForItem(item.label) === getCategoryForItem(items[0]));
@@ -240,7 +267,7 @@ function CategorySection({
 interface TopicCardProps {
   topic: { name: string; order: number };
   items: ChecklistItem[];
-  onUpdate: (topicName: string, checklistItemId: string, status: ProductReviewStatus) => void;
+  onUpdate: (topicName: string, checklistItemId: string, status: ProductReviewStatus) => void | Promise<void>;
 }
 
 function TopicCard({ topic, items, onUpdate }: TopicCardProps) {
@@ -297,7 +324,8 @@ function TopicCard({ topic, items, onUpdate }: TopicCardProps) {
                     <span className="text-[11px] font-bold text-slate-800">{item.label}</span>
                     <StatusSelector
                       value={status}
-                      onChange={(newStatus) => onUpdate(topic.name, item.id, newStatus)}
+                      checklistStatus={item.status}
+                      onChange={(newStatus) => void onUpdate(topic.name, item.id, newStatus)}
                     />
                   </div>
                 </div>
@@ -313,16 +341,24 @@ function TopicCard({ topic, items, onUpdate }: TopicCardProps) {
 export function SubjectDetailPage() {
   const { subjectId } = useParams();
   const navigate = useNavigate();
-  const { projects, projectObservations, updateChecklistItem, updateFactoryTopicChecklistItem, addObservation, addTopicToSubject, resolveObservation } = useOperations();
+  const {
+    projectObservations,
+    updateChecklistItem,
+    updateFactoryTopicChecklistItem,
+    addObservation,
+    addTopicToSubject,
+    resolveObservation,
+    refreshProjects,
+    loadProjectObservations,
+    createObservationFromApi,
+    approveSubjectFromApi,
+    rejectSubjectFromApi,
+    backendEnabled,
+    isMutating,
+  } = useOperations();
   const { role } = useAuth();
-  const project = projects.find((item) => item.subjects.some((subject) => subject.id === subjectId));
-  const subject = project?.subjects.find((item) => item.id === subjectId);
-
-  if (!project || !subject) return <Navigate to="/projects" replace />;
-
-  if (role === 'FABRICA') {
-    return <FactorySubjectDetail />;
-  }
+  const { showToast } = useToast();
+  const { project, subject, isLoading, error } = useEnsureSubjectDetail(subjectId);
 
   const [expandedTopicId, setExpandedTopicId] = useState<string | null>(null);
   const [showObservationForm, setShowObservationForm] = useState(false);
@@ -331,9 +367,40 @@ export function SubjectDetailPage() {
   const [showAddTopicForm, setShowAddTopicForm] = useState(false);
   const [newTopicName, setNewTopicName] = useState('');
   const [savingTopic, setSavingTopic] = useState(false);
+  const [savingObservation, setSavingObservation] = useState(false);
+  const [subjectAction, setSubjectAction] = useState<'approve' | 'reject' | null>(null);
+  const [rejectReason, setRejectReason] = useState('');
   const [observationError, setObservationError] = useState('');
   const [checklistFilter, setChecklistFilter] = useState<FilterStatus>('todos');
   const observationFormRef = useState<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (backendEnabled && project?.id) {
+      void loadProjectObservations(project.id);
+    }
+  }, [backendEnabled, project?.id, loadProjectObservations]);
+
+  if (isLoading) {
+    return (
+      <div className="space-y-6">
+        <ProjectsLoadNotice isLoading />
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="space-y-6">
+        <ProjectsLoadNotice error={error} onRefresh={() => void refreshProjects()} />
+      </div>
+    );
+  }
+
+  if (!project || !subject) return <Navigate to="/projects" replace />;
+
+  if (role === 'FABRICA') {
+    return <FactorySubjectDetail />;
+  }
 
   const totalChecklist = subject.checklist.length;
   const approvedChecklist = subject.checklist.filter((c) => c.status === 'APROBADO').length;
@@ -342,29 +409,51 @@ export function SubjectDetailPage() {
   const subjectProgress = subject.progress ?? 0;
 
   const subjectObservations = projectObservations.filter(
-    (o) => o.subjectId === subject.id && o.status === 'ABIERTA'
+    (o) => o.subjectId === subject.id && (o.status === 'ABIERTA' || o.status === 'EN_CORRECCION')
   );
   const resolvedObservations = projectObservations.filter(
     (o) => o.subjectId === subject.id && o.status === 'RESUELTA'
   );
 
-  const topics = subject.contentTopics?.map((topic, index) => ({
-    id: `${subject.id}-topic-${index}`,
-    name: topic,
-    order: index + 1,
-  })) ?? [];
+  const topics = subject.topicChecklists.map((topic, index) => ({
+    id: topic.id ?? `${subject.id}-topic-${index}`,
+    name: topic.topicName,
+    order: topic.topicOrder,
+  }));
 
-  const handleChecklistUpdate = (checklistItemId: string, newStatus: ProductReviewStatus, itemLabel: string) => {
-    const mappedStatus: ChecklistStatus = newStatus === 'aprobado' ? 'APROBADO' : newStatus === 'rechazado' ? 'RECHAZADO' : 'PENDIENTE';
-    updateChecklistItem(project.id, subject.id, checklistItemId, mappedStatus);
+  const handleChecklistUpdate = async (
+    checklistItemId: string,
+    newStatus: ProductReviewStatus,
+    _itemLabel: string,
+  ) => {
+    const mappedStatus: ChecklistStatus =
+      newStatus === 'aprobado' ? 'APROBADO' : newStatus === 'rechazado' ? 'RECHAZADO' : 'PENDIENTE';
+
+    try {
+      await updateChecklistItem(project.id, subject.id, checklistItemId, mappedStatus);
+      showToast(`Revisión actualizada: ${reviewStatusLabels[newStatus]}`);
+    } catch (error) {
+      showToast(getApiErrorMessage(error), 'error');
+    }
   };
 
-  const handleTopicChecklistUpdate = (topicName: string, checklistItemId: string, status: ProductReviewStatus) => {
-    const mappedStatus: ChecklistStatus = status === 'aprobado' ? 'APROBADO' : status === 'rechazado' ? 'RECHAZADO' : 'PENDIENTE';
-    updateFactoryTopicChecklistItem(project.id, subject.id, topicName, checklistItemId, mappedStatus);
+  const handleTopicChecklistUpdate = async (
+    topicName: string,
+    checklistItemId: string,
+    status: ProductReviewStatus,
+  ) => {
+    const mappedStatus: ChecklistStatus =
+      status === 'aprobado' ? 'APROBADO' : status === 'rechazado' ? 'RECHAZADO' : 'PENDIENTE';
+
+    try {
+      await updateFactoryTopicChecklistItem(project.id, subject.id, topicName, checklistItemId, mappedStatus);
+      showToast(`Revisión de tema actualizada: ${reviewStatusLabels[status]}`);
+    } catch (error) {
+      showToast(getApiErrorMessage(error), 'error');
+    }
   };
 
-  const handleAddObservation = () => {
+  const handleAddObservation = async () => {
     setObservationError('');
     if (!observationForm.text.trim()) {
       setObservationError('El texto de la observación es requerido.');
@@ -378,24 +467,75 @@ export function SubjectDetailPage() {
       ? topics.find((t) => t.id === observationForm.topicId)?.name ?? subject.name
       : subject.name;
 
-    addObservation(project.id, {
-      id: `obs-${Date.now()}`,
-      projectId: project.id,
-      subjectId: subject.id,
-      author: 'Product Owner',
-      role: 'PRODUCT',
-      text: observationForm.text,
-      status: 'ABIERTA',
-      relatedEntity: referenceName,
-      createdAt: new Date().toISOString(),
-    });
-    setObservationForm({ text: '', level: 'subject', topicId: '' });
-    setShowObservationForm(false);
-    setObservationError('');
+    setSavingObservation(true);
+    try {
+      if (backendEnabled) {
+        await createObservationFromApi({
+          projectId: project.id,
+          subjectId: subject.id,
+          topicId: observationForm.level === 'topic' ? observationForm.topicId : undefined,
+          relatedEntityType: observationForm.level === 'topic' ? 'TOPIC' : 'SUBJECT',
+          relatedEntityId: observationForm.level === 'topic' ? observationForm.topicId : subject.id,
+          text: observationForm.text,
+          priority: 'MEDIUM',
+        });
+      } else {
+        await addObservation(project.id, {
+          id: `obs-${Date.now()}`,
+          projectId: project.id,
+          subjectId: subject.id,
+          author: 'Product Owner',
+          role: 'PRODUCT',
+          text: observationForm.text,
+          status: 'ABIERTA',
+          relatedEntity: referenceName,
+          createdAt: new Date().toISOString(),
+        });
+      }
+      setObservationForm({ text: '', level: 'subject', topicId: '' });
+      setShowObservationForm(false);
+      setObservationError('');
+      showToast('Observación enviada a Fábrica');
+    } catch (error) {
+      setObservationError(getApiErrorMessage(error));
+      showToast(getApiErrorMessage(error), 'error');
+    } finally {
+      setSavingObservation(false);
+    }
   };
 
-  const handleResolveObservation = (obsId: string, obs: typeof projectObservations[number]) => {
-    resolveObservation(project.id, obsId, obs);
+  const handleResolveObservation = async (obsId: string, obs: typeof projectObservations[number]) => {
+    try {
+      await resolveObservation(project.id, obsId, obs);
+      showToast('Observación validada como resuelta');
+    } catch (error) {
+      showToast(getApiErrorMessage(error), 'error');
+    }
+  };
+
+  const handleApproveSubject = async () => {
+    setSubjectAction('approve');
+    try {
+      await approveSubjectFromApi(subject.id, project.id);
+      showToast('Asignatura aprobada');
+    } catch (error) {
+      showToast(getApiErrorMessage(error), 'error');
+    } finally {
+      setSubjectAction(null);
+    }
+  };
+
+  const handleRejectSubject = async () => {
+    setSubjectAction('reject');
+    try {
+      await rejectSubjectFromApi(subject.id, project.id, rejectReason);
+      setRejectReason('');
+      showToast('Asignatura rechazada');
+    } catch (error) {
+      showToast(getApiErrorMessage(error), 'error');
+    } finally {
+      setSubjectAction(null);
+    }
   };
 
   const handleAddTopic = async () => {
@@ -476,6 +616,34 @@ export function SubjectDetailPage() {
             <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Avance</p>
             <div className="mt-2">
               <ProgressBar value={subjectProgress} showLabel={false} />
+            </div>
+          </div>
+        </div>
+      </Card>
+
+      <Card variant="subjectPanel" className="p-5 sm:p-6">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <p className="text-[10px] font-black uppercase tracking-widest text-orange-500">Cierre Product</p>
+            <h2 className="text-sm font-black tracking-tight text-slate-950">Aprobación de asignatura</h2>
+            <p className="mt-1 text-xs font-medium text-slate-500">Rechazar no crea observaciones automáticamente. Registra el feedback manualmente si aplica.</p>
+          </div>
+          <div className="flex flex-col gap-2 sm:min-w-80">
+            <input
+              value={rejectReason}
+              onChange={(event) => setRejectReason(event.target.value)}
+              placeholder="Motivo opcional para rechazar"
+              className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-800 focus:border-orange-300 focus:outline-none focus:ring-2 focus:ring-orange-100"
+            />
+            <div className="flex gap-2">
+              <Button size="sm" className="flex-1" onClick={handleApproveSubject} disabled={isMutating || subjectAction !== null || !subject.id}>
+                {subjectAction === 'approve' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}
+                Aprobar asignatura
+              </Button>
+              <Button variant="secondary" size="sm" className="flex-1" onClick={handleRejectSubject} disabled={isMutating || subjectAction !== null || !subject.id}>
+                {subjectAction === 'reject' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <X className="h-3.5 w-3.5" />}
+                Rechazar asignatura
+              </Button>
             </div>
           </div>
         </div>
@@ -689,8 +857,9 @@ export function SubjectDetailPage() {
 
               <div className="flex justify-end gap-2">
                 <Button variant="secondary" size="sm" onClick={() => { setShowObservationForm(false); setObservationError(''); }}>Cancelar</Button>
-                <Button size="sm" onClick={handleAddObservation} disabled={!observationForm.text.trim()}>
-                  <MessageSquare className="h-3.5 w-3.5" /> Enviar observación
+                <Button size="sm" onClick={handleAddObservation} disabled={!observationForm.text.trim() || savingObservation}>
+                  {savingObservation ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <MessageSquare className="h-3.5 w-3.5" />}
+                  Enviar observación
                 </Button>
               </div>
             </div>
@@ -713,8 +882,9 @@ export function SubjectDetailPage() {
               <div className="space-y-2">
                 {subjectObservations.map((obs) => {
                   const isTopicObs = topics.some((t) => obs.relatedEntity === t.name);
+                  const canValidate = obs.status === 'EN_CORRECCION';
                   return (
-                    <div key={obs.id} className="rounded-xl border border-amber-100/60 bg-amber-50/30 p-4">
+                    <div key={obs.id} className={cn('rounded-xl border p-4', canValidate ? 'border-emerald-100/60 bg-emerald-50/20' : 'border-amber-100/60 bg-amber-50/30')}>
                       <div className="flex items-start justify-between gap-3">
                         <div className="min-w-0 flex-1">
                           <div className="flex flex-wrap items-center gap-2">
@@ -727,6 +897,9 @@ export function SubjectDetailPage() {
                               {isTopicObs ? 'Tema' : 'Asignatura'}
                             </span>
                             <span className="text-[10px] font-medium text-slate-500">Ref: {obs.relatedEntity}</span>
+                            <span className={cn('rounded-full px-2 py-0.5 text-[9px] font-bold ring-1', canValidate ? 'bg-emerald-50 text-emerald-700 ring-emerald-200/80' : 'bg-amber-50 text-amber-700 ring-amber-200/80')}>
+                              {canValidate ? 'En corrección' : 'Abierta'}
+                            </span>
                           </div>
                           <p className="mt-2 text-xs font-medium text-slate-800">{obs.text}</p>
                           <div className="mt-2 flex flex-wrap items-center gap-3 text-[10px] font-medium text-slate-500">
@@ -740,7 +913,13 @@ export function SubjectDetailPage() {
                         <button
                           type="button"
                           onClick={() => handleResolveObservation(obs.id, obs)}
-                          className="shrink-0 inline-flex items-center gap-1.5 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-[10px] font-bold text-emerald-700 transition-all hover:bg-emerald-100"
+                          disabled={!canValidate || isMutating}
+                          className={cn(
+                            'shrink-0 inline-flex items-center gap-1.5 rounded-xl border px-3 py-2 text-[10px] font-bold transition-all',
+                            canValidate
+                              ? 'border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
+                              : 'cursor-not-allowed border-slate-200 bg-slate-50 text-slate-400',
+                          )}
                         >
                           <Check className="h-3.5 w-3.5" /> Validar resuelta
                         </button>

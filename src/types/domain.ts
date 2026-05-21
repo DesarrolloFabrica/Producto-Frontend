@@ -76,6 +76,7 @@ export interface SubjectVirtualization {
 }
 
 export interface TopicChecklist {
+  id?: string;
   topicName: string;
   topicOrder: number;
   items: ChecklistItem[];
@@ -83,6 +84,8 @@ export interface TopicChecklist {
 
 export interface ChecklistItem {
   id: string;
+  subjectId?: string;
+  topicId?: string | null;
   label: string;
   status: ChecklistStatus;
   ownerRole: Role;

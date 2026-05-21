@@ -4,12 +4,14 @@ import { MetricCard } from '../../components/cards/MetricCard';
 import { StatusBadge } from '../../components/status/StatusBadge';
 import { Card } from '../../components/ui/Card';
 import { PageHeader } from '../../components/ui/PageHeader';
+import { ProjectsLoadNotice } from '../../components/feedback/ProjectsLoadNotice';
 import { useOperations } from '../../features/operations/OperationsContext';
 import { formatDate } from '../../utils/formatters';
 import { cn } from '../../components/ui/tokens';
 
 export function FactoryDashboardPage() {
-  const { projects, projectObservations } = useOperations();
+  const { projects, projectObservations, isLoadingProjects, projectsError, refreshProjects, backendEnabled } =
+    useOperations();
   const navigate = useNavigate();
 
   const readyForProduction = projects.filter((p) => p.status === 'READY_FOR_PRODUCTION');
@@ -42,6 +44,14 @@ export function FactoryDashboardPage() {
   return (
     <div className="space-y-6">
       <PageHeader eyebrow="Bandeja de trabajo" title="Solicitudes de producción" description="Revisa qué debes producir, qué tiene correcciones y qué está listo para entregar." />
+
+      {backendEnabled && (
+        <ProjectsLoadNotice
+          isLoading={isLoadingProjects && projects.length === 0}
+          error={projectsError}
+          onRefresh={() => void refreshProjects()}
+        />
+      )}
 
       <section className="grid gap-4 md:grid-cols-4">
         <MetricCard label="Listas para producción" value={readyCount} icon={Package} tone="text-[#FF6B00]" />

@@ -6,6 +6,7 @@ import { initials } from '../../utils/formatters';
 import { cn } from '../ui/tokens';
 import { BrandMark } from './BrandMark';
 import { GlobalSearch } from '../search/GlobalSearch';
+import { useOperations } from '../../features/operations/OperationsContext';
 
 const productLinks = [
   { to: '/product/dashboard', label: 'Dashboard', icon: Home },
@@ -21,8 +22,10 @@ const factoryLinks = [
 
 export function AppShell() {
   const { role, logout } = useAuth();
+  const { notifications } = useOperations();
   const navigate = useNavigate();
   const links = role === 'FABRICA' ? factoryLinks : productLinks;
+  const unreadNotifications = notifications.filter((item) => !item.read && (item.roleTarget === role || role === 'ADMIN')).length;
 
   const handleLogout = () => {
     logout();
@@ -35,7 +38,7 @@ export function AppShell() {
         <div className="mx-auto flex max-w-7xl items-center justify-between gap-3">
           <BrandMark />
           <nav className="hidden items-center gap-1 rounded-2xl border border-slate-200/60 bg-slate-50/80 p-1 lg:flex">
-            {links.map((link) => <ShellLink key={link.to} {...link} />)}
+            {links.map((link) => <ShellLink key={link.to} {...link} badge={link.to === '/notifications' ? unreadNotifications : 0} />)}
           </nav>
           <div className="flex items-center gap-2">
             <GlobalSearch />
@@ -58,7 +61,7 @@ export function AppShell() {
           </div>
         </div>
         <nav className="mx-auto mt-2 flex max-w-7xl gap-1.5 overflow-x-auto pb-0.5 lg:hidden">
-          {links.map((link) => <ShellLink key={link.to} {...link} />)}
+          {links.map((link) => <ShellLink key={link.to} {...link} badge={link.to === '/notifications' ? unreadNotifications : 0} />)}
         </nav>
       </header>
 
@@ -70,14 +73,18 @@ export function AppShell() {
   );
 }
 
-function ShellLink({ to, label, icon: Icon }: { to: string; label: string; icon: typeof Home }) {
+function ShellLink({ to, label, icon: Icon, badge = 0 }: { to: string; label: string; icon: typeof Home; badge?: number }) {
   return (
     <NavLink
       to={to}
       className={({ isActive }) => cn('flex shrink-0 items-center gap-1.5 rounded-xl px-3 py-2 text-xs font-medium transition-all', isActive ? 'bg-white text-orange-600 shadow-sm' : 'text-slate-500 hover:bg-white/60 hover:text-slate-700')}
     >
-      <Icon className="h-3.5 w-3.5" />
+      <span className="relative">
+        <Icon className="h-3.5 w-3.5" />
+        {badge > 0 && <span className="absolute -right-2 -top-2 h-2 w-2 rounded-full bg-orange-500" />}
+      </span>
       <span className="hidden xl:inline">{label}</span>
+      {badge > 0 && <span className="rounded-full bg-orange-500 px-1.5 py-0.5 text-[9px] font-black text-white">{badge}</span>}
     </NavLink>
   );
 }

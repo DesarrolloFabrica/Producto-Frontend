@@ -1,22 +1,43 @@
-import { useState } from 'react';
-import { ArrowRight, BookOpenCheck, Factory, Lock, Sparkles } from 'lucide-react';
+import { useMemo, useState } from 'react';
+import { ArrowRight, BookOpenCheck, Factory, Lock, Shield, Sparkles, AlertTriangle } from 'lucide-react';
 import { motion } from 'motion/react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '../../components/ui/Button';
 import { Card } from '../../components/ui/Card';
 import { cn } from '../../components/ui/tokens';
-import type { Role } from '../../types/domain';
 import { useAuth } from './AuthContext';
 
 export function LoginPage() {
-  const [selectedRole, setSelectedRole] = useState<Role>('PRODUCT');
-  const { login } = useAuth();
+  const { login, isLoading } = useAuth();
   const navigate = useNavigate();
 
-  const handleSubmit = (event: React.FormEvent) => {
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const devAccounts = useMemo(
+    () => [
+      { label: 'Product', email: 'product@local', password: 'Product123!', icon: BookOpenCheck },
+      { label: 'Fábrica', email: 'fabrica@local', password: 'Fabrica123!', icon: Factory },
+      { label: 'Admin', email: 'admin@local', password: 'Admin123!', icon: Shield },
+    ],
+    [],
+  );
+
+  const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
-    login(selectedRole);
-    navigate(selectedRole === 'PRODUCT' ? '/product/dashboard' : '/factory/dashboard', { replace: true });
+    setError(null);
+    setSubmitting(true);
+    try {
+      await login(email, password);
+      // AuthContext sets user.role; routing will handle redirects from /.
+      navigate('/', { replace: true });
+    } catch (e: any) {
+      setError(e?.message ? String(e.message) : 'No se pudo iniciar sesión');
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -48,38 +69,74 @@ export function LoginPage() {
               <div className="mb-3 flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-orange-500">
                 <Lock className="h-4 w-4" /> Acceso temporal
               </div>
-              <h2 className="text-3xl font-black tracking-tight text-slate-950">Selecciona tu rol</h2>
-              <p className="mt-2 text-xs font-bold uppercase tracking-widest text-slate-400">La sesion se guarda en localStorage</p>
+              <h2 className="text-3xl font-black tracking-tight text-slate-950">Inicia sesión</h2>
+              <p className="mt-2 text-xs font-bold uppercase tracking-widest text-slate-400">Sesión JWT local</p>
             </div>
             <form onSubmit={handleSubmit} className="space-y-5">
-              <RoleOption role="PRODUCT" selectedRole={selectedRole} onSelect={setSelectedRole} icon={BookOpenCheck} description="Registra solicitudes, documentos y seguimiento general." />
-              <RoleOption role="FABRICA" selectedRole={selectedRole} onSelect={setSelectedRole} icon={Factory} description="Produce contenidos, revisa links y actualiza avances." />
-              <Button type="submit" className="mt-4 flex w-full items-center justify-center gap-3 py-5">
-                Entrar al dashboard <ArrowRight className="h-5 w-5" />
+              {error && (
+                <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4">
+                  <div className="flex items-start gap-2 text-rose-700">
+                    <AlertTriangle className="mt-0.5 h-4 w-4" />
+                    <div>
+                      <p className="text-xs font-bold">Error de autenticación</p>
+                      <p className="mt-1 text-[11px] font-medium text-rose-600">{error}</p>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              <div>
+                <label className="mb-2 block text-[10px] font-black uppercase tracking-widest text-slate-400">Email</label>
+                <input
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="product@local"
+                  className="w-full rounded-[18px] border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-bold text-slate-900 focus:border-orange-300 focus:ring-2 focus:ring-orange-100 focus:outline-none transition-all"
+                  autoComplete="username"
+                />
+              </div>
+              <div>
+                <label className="mb-2 block text-[10px] font-black uppercase tracking-widest text-slate-400">Password</label>
+                <input
+                  type="password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="••••••••"
+                  className="w-full rounded-[18px] border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-bold text-slate-900 focus:border-orange-300 focus:ring-2 focus:ring-orange-100 focus:outline-none transition-all"
+                  autoComplete="current-password"
+                />
+              </div>
+
+              <Button
+                type="submit"
+                disabled={submitting || isLoading}
+                className="mt-2 flex w-full items-center justify-center gap-3 py-5"
+              >
+                Iniciar sesión <ArrowRight className="h-5 w-5" />
               </Button>
+
+              <div className="pt-2">
+                <p className="mb-2 text-[10px] font-black uppercase tracking-widest text-slate-400">Accesos DEV</p>
+                <div className="grid grid-cols-3 gap-2">
+                  {devAccounts.map((acc) => (
+                    <button
+                      key={acc.label}
+                      type="button"
+                      onClick={() => {
+                        setEmail(acc.email);
+                        setPassword(acc.password);
+                      }}
+                      className="flex items-center justify-center gap-2 rounded-[16px] border border-slate-100 bg-white px-3 py-2 text-[11px] font-bold text-slate-700 transition-all hover:border-orange-100 hover:bg-orange-50"
+                    >
+                      <acc.icon className="h-4 w-4" /> {acc.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
             </form>
           </Card>
         </motion.section>
       </div>
     </main>
-  );
-}
-
-function RoleOption({ role, selectedRole, onSelect, icon: Icon, description }: { role: Role; selectedRole: Role; onSelect: (role: Role) => void; icon: typeof BookOpenCheck; description: string }) {
-  const active = role === selectedRole;
-  return (
-    <button
-      type="button"
-      onClick={() => onSelect(role)}
-      className={cn('flex w-full items-center gap-4 rounded-[28px] border p-5 text-left transition-all', active ? 'border-orange-200 bg-orange-50 shadow-sm' : 'border-slate-100 bg-white hover:border-orange-100')}
-    >
-      <div className={cn('flex h-12 w-12 items-center justify-center rounded-2xl', active ? 'bg-orange-500 text-white' : 'bg-slate-50 text-slate-400')}>
-        <Icon className="h-6 w-6" />
-      </div>
-      <div>
-        <p className="text-sm font-black tracking-tight text-slate-950">{role}</p>
-        <p className="mt-1 text-xs font-semibold leading-5 text-slate-400">{description}</p>
-      </div>
-    </button>
   );
 }

@@ -1,10 +1,14 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link, Navigate, useParams } from 'react-router-dom';
 import { ArrowLeft, BookOpen, CheckCircle2, MessageSquare, Package, AlertCircle, Clock3 } from 'lucide-react';
 import { StatusBadge } from '../../components/status/StatusBadge';
 import { Card } from '../../components/ui/Card';
 import { ProgressBar } from '../../components/ui/ProgressBar';
+import { ProjectsLoadNotice } from '../../components/feedback/ProjectsLoadNotice';
+import { getApiErrorMessage } from '../operations/apiMappers';
 import { useOperations } from '../../features/operations/OperationsContext';
+import { useToast } from '../../components/ui/ToastProvider';
+import { useEnsureSubjectDetail } from '../operations/useEnsureSubjectDetail';
 import { formatDate } from '../../utils/formatters';
 import { Button } from '../../components/ui/Button';
 import { cn } from '../../components/ui/tokens';
@@ -43,43 +47,146 @@ function fromFactoryStatus(status: FactoryStatus): ChecklistStatus {
   return 'PENDIENTE';
 }
 
+function dedupeChecklistItems<T extends { id: string }>(items: T[]): T[] {
+  const seen = new Set<string>();
+  return items.filter((item) => {
+    if (seen.has(item.id)) return false;
+    seen.add(item.id);
+    return true;
+  });
+}
+
+function getAllChecklistItemsForSubject(subject: {
+  checklist: { id: string; status: ChecklistStatus }[];
+  topicChecklists: { items: { id: string; status: ChecklistStatus }[] }[];
+}) {
+  return dedupeChecklistItems([
+    ...subject.checklist,
+    ...subject.topicChecklists.flatMap((tc) => tc.items),
+  ]);
+}
+
 export function FactorySubjectDetail() {
   const { subjectId } = useParams();
-  const { projects, projectObservations, updateFactoryChecklistItem, updateFactoryTopicChecklistItem, markObservationCorrectionApplied, markSubjectDelivered } = useOperations();
-  const project = projects.find((item) => item.subjects.some((subject) => subject.id === subjectId));
-  const subject = project?.subjects.find((item) => item.id === subjectId);
+  const {
+    projectObservations,
+    updateFactoryChecklistItem,
+    updateFactoryTopicChecklistItem,
+    markObservationCorrectionApplied,
+    markSubjectDelivered,
+    refreshProjects,
+    loadProjectObservations,
+    backendEnabled,
+    isMutating,
+  } = useOperations();
+  const { showToast } = useToast();
+  const { project, subject, isLoading, error } = useEnsureSubjectDetail(subjectId);
+
+  const [expandedTopicId, setExpandedTopicId] = useState<string | null>(null);
+  const [updatingChecklistId, setUpdatingChecklistId] = useState<string | null>(null);
+  const [updatingObservationId, setUpdatingObservationId] = useState<string | null>(null);
+  const [deliveringSubject, setDeliveringSubject] = useState(false);
+
+  useEffect(() => {
+    if (backendEnabled && project?.id) {
+      void loadProjectObservations(project.id);
+    }
+  }, [backendEnabled, project?.id, loadProjectObservations]);
+
+  if (isLoading) {
+    return (
+      <div className="space-y-6">
+        <ProjectsLoadNotice isLoading />
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="space-y-6">
+        <ProjectsLoadNotice error={error} onRefresh={() => void refreshProjects()} />
+      </div>
+    );
+  }
 
   if (!project || !subject) return <Navigate to="/projects" replace />;
 
-  const totalChecklist = subject.checklist.length;
-  const deliveredChecklist = subject.checklist.filter((c) => c.status === 'ENTREGADO' || c.status === 'APROBADO').length;
+  const allChecklistItems = getAllChecklistItemsForSubject(subject);
+  const totalChecklist = allChecklistItems.length;
+  const deliveredChecklist = allChecklistItems.filter(
+    (c) => c.status === 'ENTREGADO' || c.status === 'APROBADO',
+  ).length;
   const subjectProgress = totalChecklist > 0 ? Math.round((deliveredChecklist / totalChecklist) * 100) : 0;
 
   const openProductObs = projectObservations.filter(
     (o) => o.subjectId === subject.id && o.role === 'PRODUCT' && (o.status === 'ABIERTA' || o.status === 'EN_CORRECCION')
   );
 
-  const [expandedTopicId, setExpandedTopicId] = useState<string | null>(null);
+  const blockingStatuses: ChecklistStatus[] = ['PENDIENTE', 'EN_PRODUCCION', 'NO_EXISTE', 'RECHAZADO'];
+  const allChecklistDelivered =
+    totalChecklist > 0 &&
+    allChecklistItems.every((c) => c.status === 'ENTREGADO' || c.status === 'APROBADO');
+  const hasBlockingChecklist = totalChecklist === 0 || allChecklistItems.some((c) => blockingStatuses.includes(c.status));
 
-  const allChecklistDelivered = subject.checklist.every((c) => c.status === 'ENTREGADO' || c.status === 'APROBADO');
-
-  const handleChecklistUpdate = (checklistItemId: string, newStatus: FactoryStatus) => {
+  const handleChecklistUpdate = async (checklistItemId: string, newStatus: FactoryStatus) => {
     if (newStatus === 'aprobado' || newStatus === 'rechazado') return;
-    updateFactoryChecklistItem(project.id, subject.id, checklistItemId, fromFactoryStatus(newStatus));
+    const item = subject.checklist.find((c) => c.id === checklistItemId);
+    if (item && toFactoryStatus(item.status) === newStatus) return;
+
+    setUpdatingChecklistId(checklistItemId);
+    try {
+      await updateFactoryChecklistItem(project.id, subject.id, checklistItemId, fromFactoryStatus(newStatus));
+      showToast(`Estado actualizado: ${factoryStatusLabels[newStatus]}`);
+    } catch (error) {
+      showToast(getApiErrorMessage(error), 'error');
+    } finally {
+      setUpdatingChecklistId(null);
+    }
   };
 
-  const handleTopicChecklistUpdate = (topicName: string, checklistItemId: string, status: FactoryStatus) => {
+  const handleTopicChecklistUpdate = async (topicName: string, checklistItemId: string, status: FactoryStatus) => {
     if (status === 'aprobado' || status === 'rechazado') return;
-    updateFactoryTopicChecklistItem(project.id, subject.id, topicName, checklistItemId, fromFactoryStatus(status));
+
+    setUpdatingChecklistId(checklistItemId);
+    try {
+      await updateFactoryTopicChecklistItem(
+        project.id,
+        subject.id,
+        topicName,
+        checklistItemId,
+        fromFactoryStatus(status),
+      );
+      showToast(`Estado actualizado: ${factoryStatusLabels[status]}`);
+    } catch (error) {
+      showToast(getApiErrorMessage(error), 'error');
+    } finally {
+      setUpdatingChecklistId(null);
+    }
   };
 
-  const handleMarkCorrectionApplied = (obsId: string, obs: typeof projectObservations[number]) => {
-    markObservationCorrectionApplied(project.id, obsId, obs);
+  const handleMarkCorrectionApplied = async (obsId: string, obs: typeof projectObservations[number]) => {
+    setUpdatingObservationId(obsId);
+    try {
+      await markObservationCorrectionApplied(project.id, obsId, obs);
+      showToast('Corrección marcada como aplicada');
+    } catch (error) {
+      showToast(getApiErrorMessage(error), 'error');
+    } finally {
+      setUpdatingObservationId(null);
+    }
   };
 
-  const handleDeliverSubject = () => {
+  const handleDeliverSubject = async () => {
     if (!allChecklistDelivered) return;
-    markSubjectDelivered(project.id, subject.id, subject.name);
+    setDeliveringSubject(true);
+    try {
+      await markSubjectDelivered(project.id, subject.id, subject.name);
+      showToast('Asignatura entregada a revisión');
+    } catch (error) {
+      showToast(getApiErrorMessage(error), 'error');
+    } finally {
+      setDeliveringSubject(false);
+    }
   };
 
   const semester = project.semesters.find((s) => s.semesterNumber === subject.semesterNumber);
@@ -164,8 +271,9 @@ export function FactorySubjectDetail() {
                     ) : (
                       <button
                         type="button"
-                        onClick={() => handleMarkCorrectionApplied(obs.id, obs)}
-                        className="inline-flex items-center gap-1.5 rounded-[12px] bg-emerald-50 px-3 py-2 text-xs font-bold text-emerald-700 hover:bg-emerald-100 transition-all"
+                        onClick={() => void handleMarkCorrectionApplied(obs.id, obs)}
+                        disabled={updatingObservationId === obs.id || isMutating}
+                        className="inline-flex items-center gap-1.5 rounded-[12px] bg-emerald-50 px-3 py-2 text-xs font-bold text-emerald-700 hover:bg-emerald-100 transition-all disabled:cursor-wait disabled:opacity-60"
                       >
                         <CheckCircle2 className="h-3.5 w-3.5" /> Marcar corrección aplicada
                       </button>
@@ -193,6 +301,8 @@ export function FactorySubjectDetail() {
           {subject.checklist.map((item) => {
             const factoryStatus = toFactoryStatus(item.status);
             const isApproved = factoryStatus === 'aprobado';
+            const canToProduction = item.status === 'PENDIENTE' || item.status === 'ENTREGADO';
+            const canToDelivered = item.status === 'EN_PRODUCCION';
             return (
               <div
                 key={item.id}
@@ -216,12 +326,20 @@ export function FactorySubjectDetail() {
                 {!isApproved && (
                   <div className="mt-3 flex gap-1.5">
                     {(['pendiente', 'en_produccion', 'entregado'] as FactoryStatus[]).map((status) => (
+                      (() => {
+                        const disabledByTransition =
+                          (status === 'en_produccion' && !canToProduction) ||
+                          (status === 'entregado' && !canToDelivered) ||
+                          (status === 'pendiente' && item.status !== 'EN_PRODUCCION');
+                        return (
                       <button
                         key={status}
                         type="button"
-                        onClick={() => handleChecklistUpdate(item.id, status)}
+                        onClick={() => void handleChecklistUpdate(item.id, status)}
+                        disabled={updatingChecklistId === item.id || disabledByTransition}
                         className={cn(
                           'flex-1 rounded-lg px-2 py-1.5 text-[10px] font-bold transition-all',
+                          (updatingChecklistId === item.id || disabledByTransition) && 'cursor-not-allowed opacity-50',
                           factoryStatus === status
                             ? factoryStatusTone[status]
                             : 'bg-slate-50 text-slate-500 hover:bg-slate-100',
@@ -229,6 +347,8 @@ export function FactorySubjectDetail() {
                       >
                         {factoryStatusLabels[status]}
                       </button>
+                        );
+                      })()
                     ))}
                   </div>
                 )}
@@ -293,17 +413,27 @@ export function FactorySubjectDetail() {
                       <div className="grid gap-2 sm:grid-cols-2">
                         {tc.items.map((item) => {
                           const currentStatus = toFactoryStatus(item.status);
+                          const canToProduction = item.status === 'PENDIENTE' || item.status === 'ENTREGADO';
+                          const canToDelivered = item.status === 'EN_PRODUCCION';
                           return (
                             <div key={item.id} className="rounded-xl border border-slate-100 bg-slate-50/50 p-3">
                               <p className="text-xs font-bold text-slate-800">{item.label}</p>
                               <div className="mt-2 flex gap-1.5">
                                 {(['pendiente', 'en_produccion', 'entregado'] as FactoryStatus[]).map((status) => (
+                                  (() => {
+                                    const disabledByTransition =
+                                      (status === 'en_produccion' && !canToProduction) ||
+                                      (status === 'entregado' && !canToDelivered) ||
+                                      (status === 'pendiente' && item.status !== 'EN_PRODUCCION');
+                                    return (
                                   <button
                                     key={status}
                                     type="button"
-                                    onClick={() => handleTopicChecklistUpdate(tc.topicName, item.id, status)}
+                                    onClick={() => void handleTopicChecklistUpdate(tc.topicName, item.id, status)}
+                                    disabled={updatingChecklistId === item.id || disabledByTransition}
                                     className={cn(
                                       'flex-1 rounded-md px-2 py-1 text-[9px] font-bold transition-all',
+                                      (updatingChecklistId === item.id || disabledByTransition) && 'cursor-not-allowed opacity-50',
                                       currentStatus === status
                                         ? factoryStatusTone[status]
                                         : 'bg-white text-slate-400 hover:bg-slate-100',
@@ -311,6 +441,8 @@ export function FactorySubjectDetail() {
                                   >
                                     {factoryStatusLabels[status]}
                                   </button>
+                                    );
+                                  })()
                                 ))}
                               </div>
                             </div>
@@ -337,18 +469,19 @@ export function FactorySubjectDetail() {
           </div>
         </div>
 
-        {allChecklistDelivered ? (
+        {!hasBlockingChecklist ? (
           <div className="space-y-3">
             <div className="rounded-[12px] bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-700 flex items-center gap-2">
               <CheckCircle2 className="h-4 w-4" /> Todos los entregables están listos. Puedes entregar la asignatura.
             </div>
-            <Button onClick={handleDeliverSubject} className="w-full py-3 text-sm font-bold">
-              <Package className="h-4 w-4" /> Entregar asignatura a Product
+            <Button onClick={() => void handleDeliverSubject()} disabled={deliveringSubject || isMutating} className="w-full py-3 text-sm font-bold">
+              {deliveringSubject ? <Clock3 className="h-4 w-4 animate-spin" /> : <Package className="h-4 w-4" />}
+              Entregar a Product
             </Button>
           </div>
         ) : (
           <div className="rounded-[12px] bg-amber-50 px-4 py-3 text-sm font-medium text-amber-700 flex items-center gap-2">
-            <AlertCircle className="h-4 w-4" /> Aún hay entregables pendientes. Completa todos los items para poder entregar.
+            <AlertCircle className="h-4 w-4" /> Completa todos los entregables antes de entregar a Product.
           </div>
         )}
       </Card>

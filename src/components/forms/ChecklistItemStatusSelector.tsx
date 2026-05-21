@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { ChevronDown } from 'lucide-react';
+import { getApiErrorMessage } from '../../features/operations/apiMappers';
 import { useOperations } from '../../features/operations/OperationsContext';
 import { useToast } from '../ui/ToastProvider';
 import type { ChecklistStatus } from '../../types/domain';
@@ -28,15 +29,24 @@ export function ChecklistItemStatusSelector({ projectId, subjectId, checklistIte
   const { updateChecklistItem } = useOperations();
   const { showToast } = useToast();
   const [selectedStatus, setSelectedStatus] = useState<ChecklistStatus>(currentStatus);
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     setSelectedStatus(currentStatus);
   }, [currentStatus]);
 
-  const handleUpdate = () => {
-    if (selectedStatus === currentStatus) return;
-    updateChecklistItem(projectId, subjectId, checklistItemId, selectedStatus);
-    showToast(`Checklist actualizado a: ${checklistStatusLabels[selectedStatus]}`);
+  const handleUpdate = async () => {
+    if (selectedStatus === currentStatus || saving) return;
+    setSaving(true);
+    try {
+      await updateChecklistItem(projectId, subjectId, checklistItemId, selectedStatus);
+      showToast(`Checklist actualizado a: ${checklistStatusLabels[selectedStatus]}`);
+    } catch (error) {
+      showToast(getApiErrorMessage(error), 'error');
+      setSelectedStatus(currentStatus);
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
@@ -62,7 +72,7 @@ export function ChecklistItemStatusSelector({ projectId, subjectId, checklistIte
       <button
         type="button"
         onClick={handleUpdate}
-        disabled={selectedStatus === currentStatus}
+        disabled={selectedStatus === currentStatus || saving}
         className={cn(
           'h-11 shrink-0 rounded-[22px] px-5 text-xs font-black uppercase tracking-wide transition-all sm:min-w-[7.5rem]',
           selectedStatus === currentStatus
@@ -70,7 +80,7 @@ export function ChecklistItemStatusSelector({ projectId, subjectId, checklistIte
             : 'border border-orange-400/30 bg-linear-to-br from-orange-400 to-orange-600 text-white shadow-lg shadow-orange-500/35 hover:from-orange-500 hover:to-orange-700',
         )}
       >
-        Actualizar
+        {saving ? 'Guardando...' : 'Actualizar'}
       </button>
     </div>
   );

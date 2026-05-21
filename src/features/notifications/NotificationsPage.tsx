@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { motion } from 'motion/react';
 import { AlertTriangle, Bell, CheckCircle2, Clock3, Eye, Check, ArrowRight, CalendarDays, User } from 'lucide-react';
 import { Link } from 'react-router-dom';
@@ -45,10 +45,26 @@ const typeIconBg: Record<NonNullable<Notification['type']>, string> = {
 
 export function NotificationsPage() {
   const { role } = useAuth();
-  const { notifications, projects, markNotificationRead } = useOperations();
+  const {
+    notifications,
+    projects,
+    markNotificationRead,
+    markAllNotificationsReadFromApi,
+    loadNotifications,
+    isLoadingNotifications,
+    notificationsError,
+    backendEnabled,
+  } = useOperations();
   const { openContextPanel } = useContextPanel();
   const { showToast } = useToast();
   const [filter, setFilter] = useState<Filter>('ALL');
+
+  useEffect(() => {
+    if (backendEnabled) {
+      void loadNotifications();
+    }
+  }, [backendEnabled, loadNotifications]);
+
   const visible = notifications.filter((notification) => notification.roleTarget === role || role === 'ADMIN');
   const sorted = [...visible].sort((a, b) => {
     const stateRank = notificationPriorityRank(getNotificationOperationalState(a, projects)) - notificationPriorityRank(getNotificationOperationalState(b, projects));
@@ -66,14 +82,22 @@ export function NotificationsPage() {
   const hasUnread = visible.some((n) => !n.read);
   const criticalCount = visible.filter((n) => n.type === 'CRITICAL' && !n.read).length;
 
-  const handleMarkRead = (id: string) => {
-    markNotificationRead(id);
-    showToast('Notificación marcada como leída');
+  const handleMarkRead = async (id: string) => {
+    try {
+      await markNotificationRead(id);
+      showToast('Notificación marcada como leída');
+    } catch (error) {
+      showToast('No se pudo marcar la notificación como leída', 'error');
+    }
   };
 
-  const handleMarkAllRead = () => {
-    visible.filter((n) => !n.read).forEach((n) => markNotificationRead(n.id));
-    showToast('Todas las notificaciones marcadas como leídas');
+  const handleMarkAllRead = async () => {
+    try {
+      await markAllNotificationsReadFromApi();
+      showToast('Todas las notificaciones marcadas como leídas');
+    } catch (error) {
+      showToast('No se pudieron marcar todas las notificaciones', 'error');
+    }
   };
 
   const handleContext = (notification: Notification) => {
@@ -89,6 +113,21 @@ export function NotificationsPage() {
         description="Bandeja operacional de novedades, acciones requeridas, vencimientos y eventos críticos por rol."
       />
       <OperationalHelp topic="notifications" />
+
+      {isLoadingNotifications && (
+        <Card variant="subjectPanel" className="p-4 text-sm font-bold text-slate-500">
+          Cargando notificaciones reales...
+        </Card>
+      )}
+
+      {notificationsError && (
+        <Card variant="subjectPanel" className="flex items-center justify-between gap-3 border-rose-100 bg-rose-50/40 p-4">
+          <p className="text-sm font-bold text-rose-700">{notificationsError}</p>
+          <button type="button" onClick={() => void loadNotifications()} className="rounded-xl bg-white px-3 py-2 text-xs font-bold text-rose-700 ring-1 ring-rose-200">
+            Reintentar
+          </button>
+        </Card>
+      )}
 
       <section className="grid gap-4 md:grid-cols-4">
         <MetricCard variant="subjectPanel" label="Total" value={visible.length} icon={Bell} active={filter === 'ALL'} onClick={() => setFilter('ALL')} />
@@ -133,7 +172,7 @@ export function NotificationsPage() {
           <p className="mb-3 text-[10px] font-black uppercase tracking-widest text-slate-400">Ordenado por prioridad operacional: requiere accion, seguimiento e informativas</p>
           <div className="grid gap-4 lg:grid-cols-2">
           {filtered.map((notification) => (
-            <NotificationCard key={notification.id} notification={notification} projects={projects} onContext={handleContext} onMarkRead={handleMarkRead} />
+             <NotificationCard key={notification.id} notification={notification} projects={projects} onContext={handleContext} onMarkRead={handleMarkRead} />
           ))}
           </div>
         </div>
@@ -165,7 +204,7 @@ function NotificationCard({
   notification: Notification;
   projects: ReturnType<typeof useOperations>['projects'];
   onContext: (notification: Notification) => void;
-  onMarkRead: (id: string) => void;
+  onMarkRead: (id: string) => Promise<void>;
 }) {
   const metaType = notification.type ?? 'INFO';
   const accent = leftAccent[metaType];
@@ -236,7 +275,7 @@ function NotificationCard({
               {!notification.read && (
                 <button
                   type="button"
-                  onClick={() => onMarkRead(notification.id)}
+                  onClick={() => void onMarkRead(notification.id)}
                   className="inline-flex items-center gap-1 rounded-[8px] px-2.5 py-1.5 text-[11px] font-medium text-[#64748B] transition-all duration-200 hover:bg-[#F1F5F9]"
                 >
                   <Check className="h-3 w-3" /> Vista

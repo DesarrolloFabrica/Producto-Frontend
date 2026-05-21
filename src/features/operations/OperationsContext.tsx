@@ -1,4 +1,22 @@
 import { createContext, useContext, useReducer, useCallback, type ReactNode } from 'react';
+import { env } from '../../config/env';
+import { checklistApi } from '../../services/checklistApi';
+import { notificationsApi } from '../../services/notificationsApi';
+import { observationsApi } from '../../services/observationsApi';
+import { projectsApi } from '../../services/projectsApi';
+import { subjectsApi } from '../../services/subjectsApi';
+import {
+  getApiErrorMessage,
+  mapCreateObservationToApi,
+  mapCreateProjectToApi,
+  mapNotificationsFromApi,
+  mapObservationsFromApi,
+  mapProjectDetailFromApi,
+  mapProjectsFromApi,
+  type CreateObservationInput,
+  type CreateProjectFormInput,
+} from './apiMappers';
+import { ProjectsBootstrap } from './ProjectsBootstrap';
 import type {
   ActivityEvent,
   AuditLog,
@@ -23,8 +41,19 @@ interface OperationsState {
   activityEvents: ActivityEvent[];
   notifications: Notification[];
   projectObservations: OperationalObservation[];
+  observationsByProject: Record<string, OperationalObservation[]>;
   comments: OperationalComment[];
   recentlyUpdated: string[];
+  isLoadingProjects: boolean;
+  isLoadingProjectDetail: boolean;
+  isLoadingObservations: boolean;
+  isLoadingNotifications: boolean;
+  isMutating: boolean;
+  projectsError: string | null;
+  selectedProjectError: string | null;
+  observationsError: string | null;
+  notificationsError: string | null;
+  backendEnabled: boolean;
 }
 
 type OperationsAction =
@@ -48,16 +77,47 @@ type OperationsAction =
   | { type: 'RESOLVE_OBSERVATION'; payload: { projectId: string; observationId: string; observation: OperationalObservation } }
   | { type: 'MARK_OBSERVATION_CORRECTION_APPLIED'; payload: { projectId: string; observationId: string; observation: OperationalObservation } }
   | { type: 'UPDATE_TOPIC_CHECKLIST_ITEM'; payload: { projectId: string; subjectId: string; topicName: string; checklistItemId: string; newStatus: ChecklistStatus } }
-  | { type: 'MARK_SUBJECT_DELIVERED'; payload: { projectId: string; subjectId: string } };
+  | { type: 'MARK_SUBJECT_DELIVERED'; payload: { projectId: string; subjectId: string } }
+  | { type: 'SET_MUTATING'; payload: boolean }
+  | { type: 'LOAD_PROJECTS_START' }
+  | { type: 'LOAD_PROJECTS_SUCCESS'; payload: VirtualizationProject[] }
+  | { type: 'LOAD_PROJECTS_ERROR'; payload: string }
+  | { type: 'LOAD_PROJECT_DETAIL_START' }
+  | { type: 'LOAD_PROJECT_DETAIL_SUCCESS'; payload: VirtualizationProject }
+  | { type: 'LOAD_PROJECT_DETAIL_ERROR'; payload: string }
+  | { type: 'LOAD_OBSERVATIONS_START' }
+  | { type: 'LOAD_PROJECT_OBSERVATIONS_SUCCESS'; payload: { projectId: string; observations: OperationalObservation[] } }
+  | { type: 'LOAD_SUBJECT_OBSERVATIONS_SUCCESS'; payload: { observations: OperationalObservation[] } }
+  | { type: 'LOAD_OBSERVATIONS_ERROR'; payload: string }
+  | { type: 'LOAD_NOTIFICATIONS_START' }
+  | { type: 'LOAD_NOTIFICATIONS_SUCCESS'; payload: Notification[] }
+  | { type: 'LOAD_NOTIFICATIONS_ERROR'; payload: string }
+  | { type: 'MARK_ALL_NOTIFICATIONS_READ' };
+
+const useMocks = env.useMocks;
 
 const initialState: OperationsState = {
-  projects: initialProjects,
-  auditLogs: initialAuditLogs,
-  activityEvents: initialActivityEvents,
-  notifications: initialNotifications,
-  projectObservations: initialProjectObservations,
+  projects: useMocks ? initialProjects : [],
+  auditLogs: useMocks ? initialAuditLogs : [],
+  activityEvents: useMocks ? initialActivityEvents : [],
+  notifications: useMocks ? initialNotifications : [],
+  projectObservations: useMocks ? initialProjectObservations : [],
+  observationsByProject: useMocks ? initialProjectObservations.reduce<Record<string, OperationalObservation[]>>((acc, observation) => {
+    acc[observation.projectId] = [observation, ...(acc[observation.projectId] ?? [])];
+    return acc;
+  }, {}) : {},
   comments: [],
   recentlyUpdated: [],
+  isLoadingProjects: false,
+  isLoadingProjectDetail: false,
+  isLoadingObservations: false,
+  isLoadingNotifications: false,
+  isMutating: false,
+  projectsError: null,
+  selectedProjectError: null,
+  observationsError: null,
+  notificationsError: null,
+  backendEnabled: !useMocks,
 };
 
 function operationsReducer(state: OperationsState, action: OperationsAction): OperationsState {
@@ -89,6 +149,82 @@ function operationsReducer(state: OperationsState, action: OperationsAction): Op
     projects.map((p) => recalcProject(p, observations));
 
   switch (action.type) {
+    case 'SET_MUTATING':
+      return { ...state, isMutating: action.payload };
+    case 'LOAD_PROJECTS_START':
+      return { ...state, isLoadingProjects: true, projectsError: null };
+    case 'LOAD_PROJECTS_SUCCESS':
+      return {
+        ...state,
+        projects: recalcProjects(action.payload),
+        isLoadingProjects: false,
+        projectsError: null,
+      };
+    case 'LOAD_PROJECTS_ERROR':
+      return { ...state, isLoadingProjects: false, projectsError: action.payload };
+    case 'LOAD_PROJECT_DETAIL_START':
+      return { ...state, isLoadingProjectDetail: true, selectedProjectError: null };
+    case 'LOAD_PROJECT_DETAIL_SUCCESS': {
+      const detail = recalcProject(action.payload);
+      const exists = state.projects.some((p) => p.id === detail.id);
+      return {
+        ...state,
+        projects: exists
+          ? state.projects.map((p) => (p.id === detail.id ? detail : recalcProject(p)))
+          : [detail, ...state.projects.map((p) => recalcProject(p))],
+        isLoadingProjectDetail: false,
+        selectedProjectError: null,
+      };
+    }
+    case 'LOAD_PROJECT_DETAIL_ERROR':
+      return { ...state, isLoadingProjectDetail: false, selectedProjectError: action.payload };
+    case 'LOAD_OBSERVATIONS_START':
+      return { ...state, isLoadingObservations: true, observationsError: null };
+    case 'LOAD_PROJECT_OBSERVATIONS_SUCCESS': {
+      const otherObservations = state.projectObservations.filter((item) => item.projectId !== action.payload.projectId);
+      const nextObservations = [...action.payload.observations, ...otherObservations];
+      return {
+        ...state,
+        projectObservations: nextObservations,
+        observationsByProject: { ...state.observationsByProject, [action.payload.projectId]: action.payload.observations },
+        projects: recalcProjects(state.projects, nextObservations),
+        isLoadingObservations: false,
+        observationsError: null,
+      };
+    }
+    case 'LOAD_SUBJECT_OBSERVATIONS_SUCCESS': {
+      const ids = new Set(action.payload.observations.map((item) => item.id));
+      const nextObservations = [
+        ...action.payload.observations,
+        ...state.projectObservations.filter((item) => !ids.has(item.id)),
+      ];
+      const observationsByProject = action.payload.observations.reduce<Record<string, OperationalObservation[]>>(
+        (acc, observation) => {
+          const current = acc[observation.projectId] ?? state.observationsByProject[observation.projectId] ?? [];
+          acc[observation.projectId] = [observation, ...current.filter((item) => item.id !== observation.id)];
+          return acc;
+        },
+        { ...state.observationsByProject },
+      );
+      return {
+        ...state,
+        projectObservations: nextObservations,
+        observationsByProject,
+        projects: recalcProjects(state.projects, nextObservations),
+        isLoadingObservations: false,
+        observationsError: null,
+      };
+    }
+    case 'LOAD_OBSERVATIONS_ERROR':
+      return { ...state, isLoadingObservations: false, observationsError: action.payload };
+    case 'LOAD_NOTIFICATIONS_START':
+      return { ...state, isLoadingNotifications: true, notificationsError: null };
+    case 'LOAD_NOTIFICATIONS_SUCCESS':
+      return { ...state, notifications: action.payload, isLoadingNotifications: false, notificationsError: null };
+    case 'LOAD_NOTIFICATIONS_ERROR':
+      return { ...state, isLoadingNotifications: false, notificationsError: action.payload };
+    case 'MARK_ALL_NOTIFICATIONS_READ':
+      return { ...state, notifications: state.notifications.map((notification) => ({ ...notification, read: true })) };
     case 'CREATE_PROJECT':
       return { ...state, projects: [recalcProject(action.payload), ...state.projects.map((p) => recalcProject(p))] };
     case 'UPDATE_PROJECT':
@@ -190,6 +326,13 @@ function operationsReducer(state: OperationsState, action: OperationsAction): Op
           ...state,
           projects,
           projectObservations: nextObservations,
+          observationsByProject: {
+            ...state.observationsByProject,
+            [action.payload.projectId]: [
+              action.payload.observation,
+              ...(state.observationsByProject[action.payload.projectId] ?? []),
+            ],
+          },
         auditLogs: [
           {
             id: `aud-${Date.now()}`,
@@ -454,6 +597,12 @@ function operationsReducer(state: OperationsState, action: OperationsAction): Op
           ...state,
           projects: recalcProjects(state.projects, nextObservations),
           projectObservations: nextObservations,
+          observationsByProject: {
+            ...state.observationsByProject,
+            [action.payload.projectId]: (state.observationsByProject[action.payload.projectId] ?? []).map((o) =>
+              o.id === action.payload.observationId ? { ...o, status: 'RESUELTA' as const } : o,
+            ),
+          },
         auditLogs: [
           {
             id: `aud-${Date.now()}`,
@@ -492,6 +641,12 @@ function operationsReducer(state: OperationsState, action: OperationsAction): Op
           ...state,
           projects: recalcProjects(state.projects, nextObservations),
           projectObservations: nextObservations,
+          observationsByProject: {
+            ...state.observationsByProject,
+            [action.payload.projectId]: (state.observationsByProject[action.payload.projectId] ?? []).map((o) =>
+              o.id === action.payload.observationId ? { ...o, status: 'EN_CORRECCION' as const } : o,
+            ),
+          },
         auditLogs: [
           {
             id: `aud-${Date.now()}`,
@@ -603,14 +758,33 @@ function operationsReducer(state: OperationsState, action: OperationsAction): Op
 }
 
 interface OperationsContextValue extends OperationsState {
+  loadProjects: () => Promise<void>;
+  loadProjectDetail: (projectId: string) => Promise<void>;
+  loadProjectObservations: (projectId: string) => Promise<void>;
+  loadSubjectObservations: (subjectId: string) => Promise<void>;
+  loadNotifications: () => Promise<void>;
+  refreshProjects: () => Promise<void>;
+  createProjectFromApi: (input: CreateProjectFormInput) => Promise<void>;
+  createObservationFromApi: (input: CreateObservationInput) => Promise<void>;
+  markObservationCorrectionAppliedFromApi: (observationId: string, projectId?: string) => Promise<void>;
+  validateObservationFromApi: (observationId: string, projectId?: string) => Promise<void>;
+  submitSubjectFromApi: (subjectId: string, projectId: string) => Promise<void>;
+  approveSubjectFromApi: (subjectId: string, projectId: string) => Promise<void>;
+  rejectSubjectFromApi: (subjectId: string, projectId: string, reason?: string) => Promise<void>;
   createProject: (project: VirtualizationProject) => void;
   updateProject: (id: string, updates: Partial<VirtualizationProject>) => void;
   updateProjectStatus: (id: string, newStatus: ProjectStatus) => void;
   addProjectLink: (projectId: string, link: LinkResource) => void;
-  addObservation: (projectId: string, observation: OperationalObservation) => void;
-  resolveObservation: (projectId: string, observationId: string, observation: OperationalObservation) => void;
-  updateChecklistItem: (projectId: string, subjectId: string, checklistItemId: string, newStatus: ChecklistStatus) => void;
-  markNotificationRead: (notificationId: string) => void;
+  addObservation: (projectId: string, observation: OperationalObservation) => Promise<void>;
+  resolveObservation: (projectId: string, observationId: string, observation: OperationalObservation) => Promise<void>;
+  updateChecklistItem: (
+    projectId: string,
+    subjectId: string,
+    checklistItemId: string,
+    newStatus: ChecklistStatus,
+  ) => Promise<void>;
+  markNotificationRead: (notificationId: string) => Promise<void>;
+  markAllNotificationsReadFromApi: () => Promise<void>;
   addComment: (comment: Omit<OperationalComment, 'id' | 'createdAt'>) => void;
   replyComment: (parentId: string, message: string, authorName: string, authorRole: Role) => void;
   resolveComment: (commentId: string) => void;
@@ -619,12 +793,23 @@ interface OperationsContextValue extends OperationsState {
   addSemesterToProject: (projectId: string, semester: VirtualizationProject['semesters'][0], subjects: VirtualizationProject['subjects']) => void;
   addSubjectToSemester: (projectId: string, subject: VirtualizationProject['subjects'][0]) => void;
   addTopicToSubject: (projectId: string, subjectId: string, topicName: string, checklist: VirtualizationProject['subjects'][0]['checklist'], topicChecklistItems: VirtualizationProject['subjects'][0]['checklist']) => void;
-  startProjectProduction: (projectId: string) => void;
+  startProjectProduction: (projectId: string) => Promise<void>;
   deliverProjectToProduct: (projectId: string) => void;
-  updateFactoryChecklistItem: (projectId: string, subjectId: string, checklistItemId: string, newStatus: ChecklistStatus) => void;
-  updateFactoryTopicChecklistItem: (projectId: string, subjectId: string, topicName: string, checklistItemId: string, newStatus: ChecklistStatus) => void;
-  markObservationCorrectionApplied: (projectId: string, observationId: string, observation: OperationalObservation) => void;
-  markSubjectDelivered: (projectId: string, subjectId: string, subjectName: string) => void;
+  updateFactoryChecklistItem: (
+    projectId: string,
+    subjectId: string,
+    checklistItemId: string,
+    newStatus: ChecklistStatus,
+  ) => Promise<void>;
+  updateFactoryTopicChecklistItem: (
+    projectId: string,
+    subjectId: string,
+    topicName: string,
+    checklistItemId: string,
+    newStatus: ChecklistStatus,
+  ) => Promise<void>;
+  markObservationCorrectionApplied: (projectId: string, observationId: string, observation: OperationalObservation) => Promise<void>;
+  markSubjectDelivered: (projectId: string, subjectId: string, subjectName: string) => Promise<void>;
   markProjectFeedbackPending: (projectId: string) => void;
   markProjectDeliveredToLms: (projectId: string) => void;
   closeProject: (projectId: string) => void;
@@ -653,6 +838,197 @@ export function OperationsProvider({ children }: { children: ReactNode }) {
         return { ...updatedProject, progress: calculateProjectProgress(updatedProject) };
       }),
     }),
+  );
+
+  const loadProjects = useCallback(async () => {
+    if (!state.backendEnabled) return;
+    dispatch({ type: 'LOAD_PROJECTS_START' });
+    try {
+      const apiProjects = await projectsApi.getProjects();
+      dispatch({ type: 'LOAD_PROJECTS_SUCCESS', payload: mapProjectsFromApi(apiProjects) });
+    } catch (error) {
+      dispatch({ type: 'LOAD_PROJECTS_ERROR', payload: getApiErrorMessage(error) });
+    }
+  }, [state.backendEnabled]);
+
+  const loadProjectDetail = useCallback(
+    async (projectId: string) => {
+      if (!state.backendEnabled) return;
+      dispatch({ type: 'LOAD_PROJECT_DETAIL_START' });
+      try {
+        const apiProject = await projectsApi.getProjectById(projectId);
+        dispatch({ type: 'LOAD_PROJECT_DETAIL_SUCCESS', payload: mapProjectDetailFromApi(apiProject) });
+      } catch (error) {
+        dispatch({ type: 'LOAD_PROJECT_DETAIL_ERROR', payload: getApiErrorMessage(error) });
+      }
+    },
+    [state.backendEnabled],
+  );
+
+  const loadProjectObservations = useCallback(
+    async (projectId: string) => {
+      if (!state.backendEnabled) return;
+      dispatch({ type: 'LOAD_OBSERVATIONS_START' });
+      try {
+        const apiObservations = await observationsApi.getProjectObservations(projectId);
+        dispatch({
+          type: 'LOAD_PROJECT_OBSERVATIONS_SUCCESS',
+          payload: { projectId, observations: mapObservationsFromApi(apiObservations) },
+        });
+      } catch (error) {
+        dispatch({ type: 'LOAD_OBSERVATIONS_ERROR', payload: getApiErrorMessage(error) });
+      }
+    },
+    [state.backendEnabled],
+  );
+
+  const loadSubjectObservations = useCallback(
+    async (subjectId: string) => {
+      if (!state.backendEnabled) return;
+      dispatch({ type: 'LOAD_OBSERVATIONS_START' });
+      try {
+        const apiObservations = await observationsApi.getSubjectObservations(subjectId);
+        dispatch({
+          type: 'LOAD_SUBJECT_OBSERVATIONS_SUCCESS',
+          payload: { observations: mapObservationsFromApi(apiObservations) },
+        });
+      } catch (error) {
+        dispatch({ type: 'LOAD_OBSERVATIONS_ERROR', payload: getApiErrorMessage(error) });
+      }
+    },
+    [state.backendEnabled],
+  );
+
+  const loadNotifications = useCallback(async () => {
+    if (!state.backendEnabled) return;
+    dispatch({ type: 'LOAD_NOTIFICATIONS_START' });
+    try {
+      const apiNotifications = await notificationsApi.getNotifications();
+      dispatch({ type: 'LOAD_NOTIFICATIONS_SUCCESS', payload: mapNotificationsFromApi(apiNotifications) });
+    } catch (error) {
+      dispatch({ type: 'LOAD_NOTIFICATIONS_ERROR', payload: getApiErrorMessage(error) });
+    }
+  }, [state.backendEnabled]);
+
+  const refetchProjectWorkflow = useCallback(
+    async (projectId?: string) => {
+      await Promise.all([
+        projectId ? loadProjectDetail(projectId) : Promise.resolve(),
+        projectId ? loadProjectObservations(projectId) : Promise.resolve(),
+        loadNotifications(),
+      ]);
+    },
+    [loadProjectDetail, loadProjectObservations, loadNotifications],
+  );
+
+  const refreshProjects = useCallback(async () => {
+    await loadProjects();
+  }, [loadProjects]);
+
+  const createProjectFromApi = useCallback(
+    async (input: CreateProjectFormInput) => {
+      if (!state.backendEnabled) {
+        throw new Error('Backend deshabilitado. Activa la API o usa VITE_USE_MOCKS=true.');
+      }
+      await projectsApi.createProject(mapCreateProjectToApi(input));
+      await loadProjects();
+    },
+    [state.backendEnabled, loadProjects],
+  );
+
+  const createObservationFromApi = useCallback(
+    async (input: CreateObservationInput) => {
+      if (!state.backendEnabled) throw new Error('Backend deshabilitado.');
+      if (!input.projectId || !input.relatedEntityId || !input.text.trim()) {
+        throw new Error('La observación requiere proyecto, entidad relacionada y texto.');
+      }
+      dispatch({ type: 'SET_MUTATING', payload: true });
+      try {
+        await observationsApi.createObservation(mapCreateObservationToApi(input));
+        await Promise.all([
+          refetchProjectWorkflow(input.projectId),
+          input.subjectId ? loadSubjectObservations(input.subjectId) : Promise.resolve(),
+        ]);
+      } finally {
+        dispatch({ type: 'SET_MUTATING', payload: false });
+      }
+    },
+    [state.backendEnabled, refetchProjectWorkflow, loadSubjectObservations],
+  );
+
+  const markObservationCorrectionAppliedFromApi = useCallback(
+    async (observationId: string, projectId?: string) => {
+      if (!state.backendEnabled) throw new Error('Backend deshabilitado.');
+      dispatch({ type: 'SET_MUTATING', payload: true });
+      try {
+        const observation = await observationsApi.markCorrectionApplied(observationId);
+        const mapped = mapObservationsFromApi([observation])[0];
+        await refetchProjectWorkflow(projectId ?? mapped.projectId);
+      } finally {
+        dispatch({ type: 'SET_MUTATING', payload: false });
+      }
+    },
+    [state.backendEnabled, refetchProjectWorkflow],
+  );
+
+  const validateObservationFromApi = useCallback(
+    async (observationId: string, projectId?: string) => {
+      if (!state.backendEnabled) throw new Error('Backend deshabilitado.');
+      dispatch({ type: 'SET_MUTATING', payload: true });
+      try {
+        const observation = await observationsApi.validateObservation(observationId);
+        const mapped = mapObservationsFromApi([observation])[0];
+        await refetchProjectWorkflow(projectId ?? mapped.projectId);
+      } finally {
+        dispatch({ type: 'SET_MUTATING', payload: false });
+      }
+    },
+    [state.backendEnabled, refetchProjectWorkflow],
+  );
+
+  const submitSubjectFromApi = useCallback(
+    async (subjectId: string, projectId: string) => {
+      if (!state.backendEnabled) throw new Error('Backend deshabilitado.');
+      if (!subjectId || !projectId) throw new Error('No se pudo identificar la asignatura o el proyecto.');
+      dispatch({ type: 'SET_MUTATING', payload: true });
+      try {
+        await subjectsApi.submitSubject(subjectId);
+        await refetchProjectWorkflow(projectId);
+      } finally {
+        dispatch({ type: 'SET_MUTATING', payload: false });
+      }
+    },
+    [state.backendEnabled, refetchProjectWorkflow],
+  );
+
+  const approveSubjectFromApi = useCallback(
+    async (subjectId: string, projectId: string) => {
+      if (!state.backendEnabled) throw new Error('Backend deshabilitado.');
+      if (!subjectId) throw new Error('No se pudo identificar la asignatura.');
+      dispatch({ type: 'SET_MUTATING', payload: true });
+      try {
+        await subjectsApi.approveSubject(subjectId);
+        await refetchProjectWorkflow(projectId);
+      } finally {
+        dispatch({ type: 'SET_MUTATING', payload: false });
+      }
+    },
+    [state.backendEnabled, refetchProjectWorkflow],
+  );
+
+  const rejectSubjectFromApi = useCallback(
+    async (subjectId: string, projectId: string, reason?: string) => {
+      if (!state.backendEnabled) throw new Error('Backend deshabilitado.');
+      if (!subjectId) throw new Error('No se pudo identificar la asignatura.');
+      dispatch({ type: 'SET_MUTATING', payload: true });
+      try {
+        await subjectsApi.rejectSubject(subjectId, reason);
+        await refetchProjectWorkflow(projectId);
+      } finally {
+        dispatch({ type: 'SET_MUTATING', payload: false });
+      }
+    },
+    [state.backendEnabled, refetchProjectWorkflow],
   );
 
   const createProject = useCallback((project: VirtualizationProject) => {
@@ -764,25 +1140,95 @@ export function OperationsProvider({ children }: { children: ReactNode }) {
     dispatch({ type: 'ADD_PROJECT_LINK', payload: { projectId, link, project } });
   }, [state.projects]);
 
-  const addObservation = useCallback((projectId: string, observation: OperationalObservation) => {
+  const addObservation = useCallback(async (projectId: string, observation: OperationalObservation) => {
+    if (state.backendEnabled) {
+      await createObservationFromApi({
+        projectId,
+        subjectId: observation.subjectId,
+        relatedEntityType: observation.subjectId ? 'SUBJECT' : 'PROJECT',
+        relatedEntityId: observation.subjectId ?? projectId,
+        text: observation.text,
+        priority: 'MEDIUM',
+      });
+      return;
+    }
     const project = state.projects.find((p) => p.id === projectId);
     if (!project) return;
     dispatch({ type: 'ADD_OBSERVATION', payload: { projectId, observation, project } });
-  }, [state.projects]);
+  }, [state.backendEnabled, state.projects, createObservationFromApi]);
 
-  const resolveObservation = useCallback((projectId: string, observationId: string, observation: OperationalObservation) => {
+  const resolveObservation = useCallback(async (projectId: string, observationId: string, observation: OperationalObservation) => {
+    if (state.backendEnabled) {
+      await validateObservationFromApi(observationId, projectId);
+      return;
+    }
     dispatch({ type: 'RESOLVE_OBSERVATION', payload: { projectId, observationId, observation } });
-  }, []);
+  }, [state.backendEnabled, validateObservationFromApi]);
 
-  const updateChecklistItem = useCallback((projectId: string, subjectId: string, checklistItemId: string, newStatus: ChecklistStatus) => {
-    const project = state.projects.find((p) => p.id === projectId);
-    if (!project) return;
-    dispatch({ type: 'UPDATE_CHECKLIST_ITEM', payload: { projectId, subjectId, checklistItemId, newStatus, project } });
-  }, [state.projects]);
+  const applyChecklistUpdateLocal = useCallback(
+    (
+      projectId: string,
+      subjectId: string,
+      checklistItemId: string,
+      newStatus: ChecklistStatus,
+      topicName?: string,
+    ) => {
+      const project = state.projects.find((p) => p.id === projectId);
+      if (!project) return;
 
-  const markNotificationRead = useCallback((notificationId: string) => {
+      if (topicName) {
+        dispatch({
+          type: 'UPDATE_TOPIC_CHECKLIST_ITEM',
+          payload: { projectId, subjectId, topicName, checklistItemId, newStatus },
+        });
+        return;
+      }
+
+      dispatch({
+        type: 'UPDATE_CHECKLIST_ITEM',
+        payload: { projectId, subjectId, checklistItemId, newStatus, project },
+      });
+    },
+    [state.projects],
+  );
+
+  const patchChecklistStatus = useCallback(
+    async (projectId: string, checklistItemId: string, newStatus: ChecklistStatus) => {
+      if (state.backendEnabled) {
+        await checklistApi.updateStatus(checklistItemId, { status: newStatus });
+        await loadProjectDetail(projectId);
+        return;
+      }
+    },
+    [state.backendEnabled, loadProjectDetail],
+  );
+
+  const updateChecklistItem = useCallback(
+    async (projectId: string, subjectId: string, checklistItemId: string, newStatus: ChecklistStatus) => {
+      if (state.backendEnabled) {
+        await patchChecklistStatus(projectId, checklistItemId, newStatus);
+        return;
+      }
+      applyChecklistUpdateLocal(projectId, subjectId, checklistItemId, newStatus);
+    },
+    [state.backendEnabled, patchChecklistStatus, applyChecklistUpdateLocal],
+  );
+
+  const markNotificationRead = useCallback(async (notificationId: string) => {
+    if (state.backendEnabled) {
+      await notificationsApi.markNotificationRead(notificationId);
+    }
     dispatch({ type: 'MARK_NOTIFICATION_READ', payload: { notificationId } });
-  }, []);
+  }, [state.backendEnabled]);
+
+  const markAllNotificationsReadFromApi = useCallback(async () => {
+    if (state.backendEnabled) {
+      await notificationsApi.markAllNotificationsRead();
+      await loadNotifications();
+      return;
+    }
+    dispatch({ type: 'MARK_ALL_NOTIFICATIONS_READ' });
+  }, [state.backendEnabled, loadNotifications]);
 
   const addComment = useCallback((comment: Omit<OperationalComment, 'id' | 'createdAt'>) => {
     dispatch({
@@ -840,10 +1286,26 @@ export function OperationsProvider({ children }: { children: ReactNode }) {
     dispatch({ type: 'ADD_TOPIC_TO_SUBJECT', payload: { projectId, subjectId, topicName, checklist, topicChecklistItems } });
   }, []);
 
-  const startProjectProduction = useCallback((projectId: string) => {
+  const startProjectProduction = useCallback(async (projectId: string) => {
     const project = state.projects.find((p) => p.id === projectId);
     if (!project) return;
-    dispatch({ type: 'UPDATE_PROJECT_STATUS', payload: { id: projectId, newStatus: 'IN_PRODUCTION', oldStatus: project.status, project } });
+
+    if (state.backendEnabled) {
+      dispatch({ type: 'SET_MUTATING', payload: true });
+      try {
+        await projectsApi.startProduction(projectId);
+        await loadProjectDetail(projectId);
+        await loadProjects();
+      } finally {
+        dispatch({ type: 'SET_MUTATING', payload: false });
+      }
+      return;
+    }
+
+    dispatch({
+      type: 'UPDATE_PROJECT_STATUS',
+      payload: { id: projectId, newStatus: 'IN_PRODUCTION', oldStatus: project.status, project },
+    });
     dispatch({
       type: 'ADD_NOTIFICATION',
       payload: {
@@ -857,7 +1319,7 @@ export function OperationsProvider({ children }: { children: ReactNode }) {
         projectId,
       },
     });
-  }, [state.projects]);
+  }, [state.projects, state.backendEnabled, loadProjectDetail, loadProjects]);
 
   const deliverProjectToProduct = useCallback((projectId: string) => {
     const project = state.projects.find((p) => p.id === projectId);
@@ -878,33 +1340,52 @@ export function OperationsProvider({ children }: { children: ReactNode }) {
     });
   }, [state.projects]);
 
-  const updateFactoryChecklistItem = useCallback((projectId: string, subjectId: string, checklistItemId: string, newStatus: ChecklistStatus) => {
-    const project = state.projects.find((p) => p.id === projectId);
-    if (!project) return;
-    dispatch({ type: 'UPDATE_CHECKLIST_ITEM', payload: { projectId, subjectId, checklistItemId, newStatus, project } });
-  }, [state.projects]);
+  const updateFactoryChecklistItem = useCallback(
+    async (projectId: string, subjectId: string, checklistItemId: string, newStatus: ChecklistStatus) => {
+      if (state.backendEnabled) {
+        await patchChecklistStatus(projectId, checklistItemId, newStatus);
+        return;
+      }
+      applyChecklistUpdateLocal(projectId, subjectId, checklistItemId, newStatus);
+    },
+    [state.backendEnabled, patchChecklistStatus, applyChecklistUpdateLocal],
+  );
 
-  const updateFactoryTopicChecklistItem = useCallback((projectId: string, subjectId: string, topicName: string, checklistItemId: string, newStatus: ChecklistStatus) => {
-    const project = state.projects.find((p) => p.id === projectId);
-    if (!project) return;
-    const subject = project.subjects.find((s) => s.id === subjectId);
-    if (!subject) return;
-    dispatch({
-      type: 'UPDATE_TOPIC_CHECKLIST_ITEM',
-      payload: { projectId, subjectId, topicName, checklistItemId, newStatus },
-    });
-  }, [state.projects]);
+  const updateFactoryTopicChecklistItem = useCallback(
+    async (
+      projectId: string,
+      subjectId: string,
+      topicName: string,
+      checklistItemId: string,
+      newStatus: ChecklistStatus,
+    ) => {
+      if (state.backendEnabled) {
+        await patchChecklistStatus(projectId, checklistItemId, newStatus);
+        return;
+      }
+      applyChecklistUpdateLocal(projectId, subjectId, checklistItemId, newStatus, topicName);
+    },
+    [state.backendEnabled, patchChecklistStatus, applyChecklistUpdateLocal],
+  );
 
-  const markObservationCorrectionApplied = useCallback((projectId: string, observationId: string, observation: OperationalObservation) => {
+  const markObservationCorrectionApplied = useCallback(async (projectId: string, observationId: string, observation: OperationalObservation) => {
+    if (state.backendEnabled) {
+      await markObservationCorrectionAppliedFromApi(observationId, projectId);
+      return;
+    }
     const project = state.projects.find((p) => p.id === projectId);
     if (!project) return;
     dispatch({
       type: 'MARK_OBSERVATION_CORRECTION_APPLIED',
       payload: { projectId, observationId, observation },
     });
-  }, [state.projects]);
+  }, [state.backendEnabled, state.projects, markObservationCorrectionAppliedFromApi]);
 
-  const markSubjectDelivered = useCallback((projectId: string, subjectId: string, subjectName: string) => {
+  const markSubjectDelivered = useCallback(async (projectId: string, subjectId: string, subjectName: string) => {
+    if (state.backendEnabled) {
+      await submitSubjectFromApi(subjectId, projectId);
+      return;
+    }
     const project = state.projects.find((p) => p.id === projectId);
     if (!project) return;
     dispatch({ type: 'MARK_SUBJECT_DELIVERED', payload: { projectId, subjectId } });
@@ -922,7 +1403,7 @@ export function OperationsProvider({ children }: { children: ReactNode }) {
         subjectId,
       },
     });
-  }, [state.projects]);
+  }, [state.backendEnabled, state.projects, submitSubjectFromApi]);
 
   const markProjectFeedbackPending = useCallback((projectId: string) => {
     const project = state.projects.find((p) => p.id === projectId);
@@ -933,21 +1414,42 @@ export function OperationsProvider({ children }: { children: ReactNode }) {
   const markProjectDeliveredToLms = useCallback((projectId: string) => {
     const project = state.projects.find((p) => p.id === projectId);
     if (!project) return;
+    if (state.backendEnabled) {
+      void projectsApi.markProjectDelivered(projectId).then(() => refetchProjectWorkflow(projectId));
+      return;
+    }
     const allApproved = project.subjects.length > 0 && project.subjects.every((s) => s.status === 'APPROVED');
     const { blockingObs, anyRejected } = getProjectBlockingSignals(project, state.projectObservations);
     if (!allApproved || blockingObs || anyRejected) return;
     updateProjectStatus(projectId, 'DELIVERED_TO_LMS');
-  }, [state.projects, state.projectObservations, updateProjectStatus]);
+  }, [state.backendEnabled, state.projects, state.projectObservations, updateProjectStatus, refetchProjectWorkflow]);
 
   const closeProject = useCallback((projectId: string) => {
     const project = state.projects.find((p) => p.id === projectId);
     if (!project) return;
+    if (state.backendEnabled) {
+      void projectsApi.closeProject(projectId).then(() => refetchProjectWorkflow(projectId));
+      return;
+    }
     if (project.status !== 'DELIVERED_TO_LMS') return;
     updateProjectStatus(projectId, 'CLOSED');
-  }, [state.projects, updateProjectStatus]);
+  }, [state.backendEnabled, state.projects, updateProjectStatus, refetchProjectWorkflow]);
 
   const value: OperationsContextValue = {
     ...state,
+    loadProjects,
+    loadProjectDetail,
+    loadProjectObservations,
+    loadSubjectObservations,
+    loadNotifications,
+    refreshProjects,
+    createProjectFromApi,
+    createObservationFromApi,
+    markObservationCorrectionAppliedFromApi,
+    validateObservationFromApi,
+    submitSubjectFromApi,
+    approveSubjectFromApi,
+    rejectSubjectFromApi,
     createProject,
     updateProject,
     updateProjectStatus,
@@ -956,6 +1458,7 @@ export function OperationsProvider({ children }: { children: ReactNode }) {
     resolveObservation,
     updateChecklistItem,
     markNotificationRead,
+    markAllNotificationsReadFromApi,
     addComment,
     replyComment,
     resolveComment,
@@ -975,7 +1478,12 @@ export function OperationsProvider({ children }: { children: ReactNode }) {
     closeProject,
   };
 
-  return <OperationsContext.Provider value={value}>{children}</OperationsContext.Provider>;
+  return (
+    <OperationsContext.Provider value={value}>
+      <ProjectsBootstrap />
+      {children}
+    </OperationsContext.Provider>
+  );
 }
 
 export function useOperations() {
