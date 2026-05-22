@@ -1,3 +1,4 @@
+// src/components/cards/ObservationCard.tsx
 import { Check } from 'lucide-react';
 import type { OperationalObservation } from '../../types/domain';
 import { formatDate } from '../../utils/formatters';

@@ -1,3 +1,4 @@
+// src/components/cards/ActivityFeed.tsx
 import { CheckCircle2, FileText, History, Link as LinkIcon, MessageSquare, RotateCcw, Eye, User } from 'lucide-react';
 import type { ActivityEvent, Role } from '../../types/domain';
 import { relativeTime } from '../../utils/time';
