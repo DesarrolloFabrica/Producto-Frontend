@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react';
-import { Navigate, useParams, Link, useNavigate } from 'react-router-dom';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { useParams, Link } from 'react-router-dom';
 import { ArrowLeft, BookOpen, CheckCircle2, MessageSquare, Plus, X, Loader2, AlertCircle, ChevronDown, Check } from 'lucide-react';
 import { StatusBadge } from '../../components/status/StatusBadge';
 import { Card } from '../../components/ui/Card';
@@ -15,8 +15,10 @@ import { Button } from '../../components/ui/Button';
 import { cn } from '../../components/ui/tokens';
 import type { ChecklistItem, ChecklistStatus, Role } from '../../types/domain';
 import { ProjectsLoadNotice } from '../../components/feedback/ProjectsLoadNotice';
+import { DeepLinkNotFound } from '../../components/feedback/DeepLinkNotFound';
 import { useEnsureSubjectDetail } from '../operations/useEnsureSubjectDetail';
 import { FactorySubjectDetail } from './FactorySubjectDetail';
+import { useDismissNotificationsOnVisit } from '../notifications/useDismissNotificationsOnVisit';
 
 type ProductReviewStatus = 'pendiente' | 'aprobado' | 'rechazado';
 
@@ -24,6 +26,23 @@ function toProductReviewStatus(status: string): ProductReviewStatus {
   if (status === 'APROBADO') return 'aprobado';
   if (status === 'RECHAZADO') return 'rechazado';
   return 'pendiente';
+}
+
+function mapProductReviewToChecklistStatus(
+  reviewStatus: ProductReviewStatus,
+  options: { ownerRole?: ChecklistItem['ownerRole']; isTopicItem?: boolean },
+): ChecklistStatus {
+  if (reviewStatus === 'aprobado') return 'APROBADO';
+  if (reviewStatus === 'rechazado') return 'RECHAZADO';
+  if (options.ownerRole === 'FABRICA' || options.isTopicItem) return 'ENTREGADO';
+  return 'PENDIENTE';
+}
+
+function getAllowedProductReviewTransitions(value: ProductReviewStatus): ProductReviewStatus[] {
+  if (value === 'pendiente') return ['aprobado', 'rechazado'];
+  if (value === 'aprobado') return ['rechazado', 'pendiente'];
+  if (value === 'rechazado') return ['aprobado', 'pendiente'];
+  return [];
 }
 
 const reviewStatusConfig: Record<ProductReviewStatus, { bg: string; text: string; ring: string; dot: string }> = {
@@ -37,19 +56,6 @@ const reviewStatusLabels: Record<ProductReviewStatus, string> = {
   aprobado: 'Aprobado',
   rechazado: 'Rechazado',
 };
-
-const topicChecklistLabels = ['Material descargable', 'Podcast', 'Videos', 'Infografías interactivas'];
-
-function buildTopicChecklist(seed: number): ChecklistItem[] {
-  return topicChecklistLabels.map((label, index) => ({
-    id: `chk-topic-${seed}-${index}`,
-    label,
-    status: 'PENDIENTE' as ChecklistStatus,
-    ownerRole: 'PRODUCT' as Role,
-    updatedAt: new Date().toISOString(),
-    observations: '',
-  }));
-}
 
 const CHECKLIST_CATEGORIES = [
   {
@@ -111,33 +117,33 @@ function ChecklistItemCard({ item, status, onUpdate, onCreateObservation }: Chec
             <span className="text-[9px] font-medium text-slate-400">{item.ownerRole}</span>
           </div>
         </div>
-        <StatusSelector value={status} checklistStatus={item.status} onChange={(s) => void onUpdate(item.id, s, item.label)} />
+        <StatusSelector value={status} onChange={(s) => void onUpdate(item.id, s, item.label)} />
       </div>
+    </div>
+  );
+}
+
+function MetaBox({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-2xl bg-white/80 px-3 py-3 ring-1 ring-slate-100">
+      <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">{label}</p>
+      <p className="mt-1 text-[11px] font-bold leading-5 text-slate-700">{value}</p>
     </div>
   );
 }
 
 function StatusSelector({
   value,
-  checklistStatus,
   onChange,
 }: {
   value: ProductReviewStatus;
-  checklistStatus: ChecklistStatus;
   onChange: (s: ProductReviewStatus) => void;
 }) {
   const [isOpen, setIsOpen] = useState(false);
   const [dropdownStyle, setDropdownStyle] = useState<React.CSSProperties | null>(null);
   const config = reviewStatusConfig[value];
 
-  const allowed: ProductReviewStatus[] =
-    checklistStatus === 'ENTREGADO'
-      ? ['aprobado', 'rechazado']
-      : checklistStatus === 'APROBADO'
-        ? ['rechazado']
-        : checklistStatus === 'RECHAZADO'
-          ? ['aprobado']
-          : [];
+  const allowed = getAllowedProductReviewTransitions(value);
   const disabled = allowed.length === 0;
 
   const handleClick = (e: React.MouseEvent<HTMLButtonElement>) => {
@@ -324,7 +330,6 @@ function TopicCard({ topic, items, onUpdate }: TopicCardProps) {
                     <span className="text-[11px] font-bold text-slate-800">{item.label}</span>
                     <StatusSelector
                       value={status}
-                      checklistStatus={item.status}
                       onChange={(newStatus) => void onUpdate(topic.name, item.id, newStatus)}
                     />
                   </div>
@@ -340,7 +345,6 @@ function TopicCard({ topic, items, onUpdate }: TopicCardProps) {
 
 export function SubjectDetailPage() {
   const { subjectId } = useParams();
-  const navigate = useNavigate();
   const {
     projectObservations,
     updateChecklistItem,
@@ -352,13 +356,15 @@ export function SubjectDetailPage() {
     loadProjectObservations,
     createObservationFromApi,
     approveSubjectFromApi,
-    rejectSubjectFromApi,
+    requestSubjectCorrectionFromApi,
+    reopenObservation,
     backendEnabled,
     isMutating,
   } = useOperations();
   const { role } = useAuth();
   const { showToast } = useToast();
-  const { project, subject, isLoading, error } = useEnsureSubjectDetail(subjectId);
+  const { project, subject, isLoading, error, notFound } = useEnsureSubjectDetail(subjectId);
+  useDismissNotificationsOnVisit({ projectId: project?.id, subjectId: subject?.id });
 
   const [expandedTopicId, setExpandedTopicId] = useState<string | null>(null);
   const [showObservationForm, setShowObservationForm] = useState(false);
@@ -366,19 +372,56 @@ export function SubjectDetailPage() {
   // Topic checklist is persisted in OperationsContext via subject.topicChecklists.
   const [showAddTopicForm, setShowAddTopicForm] = useState(false);
   const [newTopicName, setNewTopicName] = useState('');
+  const [newTopicReason, setNewTopicReason] = useState('');
   const [savingTopic, setSavingTopic] = useState(false);
   const [savingObservation, setSavingObservation] = useState(false);
   const [subjectAction, setSubjectAction] = useState<'approve' | 'reject' | null>(null);
-  const [rejectReason, setRejectReason] = useState('');
   const [observationError, setObservationError] = useState('');
   const [checklistFilter, setChecklistFilter] = useState<FilterStatus>('todos');
-  const observationFormRef = useState<HTMLDivElement | null>(null);
+  const [requestCorrectionMode, setRequestCorrectionMode] = useState(false);
+  const [correctionTargetObservationId, setCorrectionTargetObservationId] = useState<string | null>(null);
+  const [correctionPanelHighlighted, setCorrectionPanelHighlighted] = useState(false);
+  const observationsSectionRef = useRef<HTMLDivElement | null>(null);
+  const correctionActiveRef = useRef<HTMLDivElement | null>(null);
+  const observationTextareaRef = useRef<HTMLTextAreaElement | null>(null);
 
   useEffect(() => {
     if (backendEnabled && project?.id) {
       void loadProjectObservations(project.id);
     }
   }, [backendEnabled, project?.id, loadProjectObservations]);
+
+  useEffect(() => {
+    if (!correctionPanelHighlighted) return;
+    const timeoutId = window.setTimeout(() => setCorrectionPanelHighlighted(false), 2600);
+    return () => window.clearTimeout(timeoutId);
+  }, [correctionPanelHighlighted]);
+
+  const subjectObservations = useMemo(
+    () =>
+      projectObservations.filter(
+        (o) =>
+          o.subjectId === subject?.id &&
+          (o.status === 'ABIERTA' || o.status === 'EN_CORRECCION'),
+      ),
+    [projectObservations, subject?.id],
+  );
+
+  const activeCorrectionObservations = useMemo(
+    () =>
+      subjectObservations
+        .filter(
+          (observation) =>
+            observation.role === 'PRODUCT' &&
+            (observation.status === 'ABIERTA' || observation.status === 'EN_CORRECCION'),
+        )
+        .sort(
+          (a, b) =>
+            new Date(b.updatedAt ?? b.createdAt).getTime() -
+            new Date(a.updatedAt ?? a.createdAt).getTime(),
+        ),
+    [subjectObservations],
+  );
 
   if (isLoading) {
     return (
@@ -396,24 +439,35 @@ export function SubjectDetailPage() {
     );
   }
 
-  if (!project || !subject) return <Navigate to="/projects" replace />;
+  if (notFound || !project || !subject) {
+    return (
+      <DeepLinkNotFound
+        title="Asignatura no encontrada"
+        description={error ?? 'No pudimos cargar la asignatura de esta URL.'}
+        backTo="/projects"
+        onRetry={() => void refreshProjects()}
+      />
+    );
+  }
 
   if (role === 'FABRICA') {
     return <FactorySubjectDetail />;
   }
 
-  const totalChecklist = subject.checklist.length;
-  const approvedChecklist = subject.checklist.filter((c) => c.status === 'APROBADO').length;
-  const pendingChecklist = subject.checklist.filter((c) => c.status === 'PENDIENTE').length;
-  const rejectedChecklist = subject.checklist.filter((c) => c.status === 'RECHAZADO').length;
+  const productChecklist = subject.checklist.filter((item) => item.ownerRole === 'PRODUCT');
+  const totalChecklist = productChecklist.length;
+  const approvedChecklist = productChecklist.filter((c) => c.status === 'APROBADO').length;
+  const pendingChecklist = productChecklist.filter((c) => toProductReviewStatus(c.status) === 'pendiente').length;
+  const rejectedChecklist = productChecklist.filter((c) => c.status === 'RECHAZADO').length;
   const subjectProgress = subject.progress ?? 0;
 
-  const subjectObservations = projectObservations.filter(
-    (o) => o.subjectId === subject.id && (o.status === 'ABIERTA' || o.status === 'EN_CORRECCION')
-  );
   const resolvedObservations = projectObservations.filter(
     (o) => o.subjectId === subject.id && o.status === 'RESUELTA'
   );
+
+  const targetedCorrectionObservation = correctionTargetObservationId
+    ? activeCorrectionObservations.find((observation) => observation.id === correctionTargetObservationId) ?? null
+    : null;
 
   const topics = subject.topicChecklists.map((topic, index) => ({
     id: topic.id ?? `${subject.id}-topic-${index}`,
@@ -421,17 +475,38 @@ export function SubjectDetailPage() {
     order: topic.topicOrder,
   }));
 
+  const handleCreateObservation = (itemLabel: string) => {
+    setShowObservationForm(true);
+    setObservationForm({ text: `Revisar "${itemLabel}", fue marcado como rechazado.`, level: 'subject', topicId: '' });
+    setTimeout(() => {
+      const formElement = document.getElementById('observation-form');
+      if (formElement) {
+        formElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        const textarea = formElement.querySelector('textarea');
+        if (textarea) {
+          textarea.focus();
+        }
+      }
+    }, 100);
+  };
+
   const handleChecklistUpdate = async (
     checklistItemId: string,
     newStatus: ProductReviewStatus,
-    _itemLabel: string,
+    itemLabel: string,
   ) => {
-    const mappedStatus: ChecklistStatus =
-      newStatus === 'aprobado' ? 'APROBADO' : newStatus === 'rechazado' ? 'RECHAZADO' : 'PENDIENTE';
+    const item = productChecklist.find((checklistItem) => checklistItem.id === checklistItemId);
+    const mappedStatus = mapProductReviewToChecklistStatus(newStatus, {
+      ownerRole: item?.ownerRole,
+      isTopicItem: false,
+    });
 
     try {
       await updateChecklistItem(project.id, subject.id, checklistItemId, mappedStatus);
       showToast(`Revisión actualizada: ${reviewStatusLabels[newStatus]}`);
+      if (newStatus === 'rechazado') {
+        handleCreateObservation(itemLabel);
+      }
     } catch (error) {
       showToast(getApiErrorMessage(error), 'error');
     }
@@ -442,8 +517,13 @@ export function SubjectDetailPage() {
     checklistItemId: string,
     status: ProductReviewStatus,
   ) => {
-    const mappedStatus: ChecklistStatus =
-      status === 'aprobado' ? 'APROBADO' : status === 'rechazado' ? 'RECHAZADO' : 'PENDIENTE';
+    const topicItem = subject.topicChecklists
+      .find((topic) => topic.topicName === topicName)
+      ?.items.find((checklistItem) => checklistItem.id === checklistItemId);
+    const mappedStatus = mapProductReviewToChecklistStatus(status, {
+      ownerRole: topicItem?.ownerRole ?? 'FABRICA',
+      isTopicItem: true,
+    });
 
     try {
       await updateFactoryTopicChecklistItem(project.id, subject.id, topicName, checklistItemId, mappedStatus);
@@ -525,15 +605,52 @@ export function SubjectDetailPage() {
     }
   };
 
-  const handleRejectSubject = async () => {
+  const scrollToObservations = () => {
+    observationsSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
+
+  const handleRequestCorrection = () => {
+    setRequestCorrectionMode(true);
+    setCorrectionTargetObservationId(null);
+    setShowObservationForm(true);
+    setCorrectionPanelHighlighted(true);
+    setObservationError('');
+    setObservationForm({ text: '', level: 'subject', topicId: '' });
+    requestAnimationFrame(() => {
+      scrollToObservations();
+      setTimeout(() => observationTextareaRef.current?.focus(), 180);
+    });
+  };
+
+  const handleCreateCorrectionAndReject = async () => {
+    const reason = observationForm.text.trim();
+    if (reason.length < 5) {
+      setObservationError('Para rechazar debes escribir una observación para Fábrica.');
+      showToast('Para rechazar debes escribir una observación para Fábrica.', 'error');
+      observationTextareaRef.current?.focus();
+      return;
+    }
+
+    setSavingObservation(true);
     setSubjectAction('reject');
     try {
-      await rejectSubjectFromApi(subject.id, project.id, rejectReason);
-      setRejectReason('');
-      showToast('Asignatura rechazada');
+      if (targetedCorrectionObservation) {
+        await reopenObservation(project.id, targetedCorrectionObservation.id, targetedCorrectionObservation, reason);
+      } else {
+        await requestSubjectCorrectionFromApi(subject.id, project.id, reason);
+      }
+      setObservationForm({ text: '', level: 'subject', topicId: '' });
+      setShowObservationForm(false);
+      setRequestCorrectionMode(false);
+      setCorrectionTargetObservationId(null);
+      setObservationError('');
+      showToast(targetedCorrectionObservation ? 'Corrección reabierta para Fábrica' : 'Corrección solicitada a Fábrica');
     } catch (error) {
-      showToast(getApiErrorMessage(error), 'error');
+      const message = getApiErrorMessage(error);
+      setObservationError(message);
+      showToast(message, 'error');
     } finally {
+      setSavingObservation(false);
       setSubjectAction(null);
     }
   };
@@ -541,34 +658,27 @@ export function SubjectDetailPage() {
   const handleAddTopic = async () => {
     if (!newTopicName.trim()) return;
     setSavingTopic(true);
-    await new Promise((r) => setTimeout(r, 300));
-    const checklist = buildTopicChecklist(Date.now());
-    addTopicToSubject(project.id, subject.id, newTopicName, checklist, checklist);
-    setSavingTopic(false);
-    setNewTopicName('');
-    setShowAddTopicForm(false);
+    try {
+      await addTopicToSubject(project.id, subject.id, {
+        topics: [newTopicName],
+        changeReason: newTopicReason.trim() || undefined,
+      });
+      showToast('Modificación guardada y notificada a Fábrica.');
+      setNewTopicName('');
+      setNewTopicReason('');
+      setShowAddTopicForm(false);
+    } catch (error) {
+      showToast(getApiErrorMessage(error), 'error');
+    } finally {
+      setSavingTopic(false);
+    }
   };
 
-  const filteredChecklist = subject.checklist.filter((item) => {
+  const filteredChecklist = productChecklist.filter((item) => {
     if (checklistFilter === 'todos') return true;
     const productStatus = toProductReviewStatus(item.status);
     return productStatus === checklistFilter;
   });
-
-  const handleCreateObservation = (itemLabel: string) => {
-    setShowObservationForm(true);
-    setObservationForm({ text: `Revisar "${itemLabel}", fue marcado como rechazado.`, level: 'subject', topicId: '' });
-    setTimeout(() => {
-      const formElement = document.getElementById('observation-form');
-      if (formElement) {
-        formElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        const textarea = formElement.querySelector('textarea');
-        if (textarea) {
-          textarea.focus();
-        }
-      }
-    }, 100);
-  };
 
   return (
     <div className="space-y-6">
@@ -597,7 +707,7 @@ export function SubjectDetailPage() {
             <p className="text-sm font-black text-slate-950">Estado de la asignatura</p>
           </div>
         </div>
-        <div className="mt-6 grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="mt-6 grid gap-6 sm:grid-cols-2 lg:grid-cols-5">
           <div className="min-w-0">
             <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Estado revisión</p>
             <div className="mt-2">
@@ -607,6 +717,10 @@ export function SubjectDetailPage() {
           <div className="min-w-0">
             <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Responsable</p>
             <p className="mt-2 truncate text-sm font-bold text-slate-800">{project.factoryOwner}</p>
+          </div>
+          <div className="min-w-0">
+            <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Entrega</p>
+            <p className="mt-2 text-sm font-bold text-slate-800">{subject.expectedDeliveryDate ? formatDate(subject.expectedDeliveryDate) : 'No definida'}</p>
           </div>
           <div className="min-w-0">
             <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Checklist</p>
@@ -626,23 +740,17 @@ export function SubjectDetailPage() {
           <div>
             <p className="text-[10px] font-black uppercase tracking-widest text-orange-500">Cierre Product</p>
             <h2 className="text-sm font-black tracking-tight text-slate-950">Aprobación de asignatura</h2>
-            <p className="mt-1 text-xs font-medium text-slate-500">Rechazar no crea observaciones automáticamente. Registra el feedback manualmente si aplica.</p>
+            <p className="mt-1 text-xs font-medium text-slate-500">Aprueba la asignatura si cumple con los criterios o solicita una corrección con una observación clara para Fábrica.</p>
           </div>
           <div className="flex flex-col gap-2 sm:min-w-80">
-            <input
-              value={rejectReason}
-              onChange={(event) => setRejectReason(event.target.value)}
-              placeholder="Motivo opcional para rechazar"
-              className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-800 focus:border-orange-300 focus:outline-none focus:ring-2 focus:ring-orange-100"
-            />
             <div className="flex gap-2">
               <Button size="sm" className="flex-1" onClick={handleApproveSubject} disabled={isMutating || subjectAction !== null || !subject.id}>
                 {subjectAction === 'approve' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}
                 Aprobar asignatura
               </Button>
-              <Button variant="secondary" size="sm" className="flex-1" onClick={handleRejectSubject} disabled={isMutating || subjectAction !== null || !subject.id}>
-                {subjectAction === 'reject' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <X className="h-3.5 w-3.5" />}
-                Rechazar asignatura
+              <Button variant="secondary" size="sm" className="flex-1 border-rose-200/90 bg-rose-50/90 text-rose-700 shadow-sm transition-all hover:border-rose-300 hover:bg-rose-100 hover:shadow-[0_10px_20px_-12px_rgba(244,63,94,0.6)]" onClick={handleRequestCorrection} disabled={isMutating || subjectAction !== null || !subject.id}>
+                <MessageSquare className="h-3.5 w-3.5" />
+                Solicitar corrección
               </Button>
             </div>
           </div>
@@ -747,7 +855,7 @@ export function SubjectDetailPage() {
             <div className="mx-5 mt-4 rounded-xl border border-orange-200 bg-orange-50/30 p-3">
               <div className="flex items-center justify-between gap-2">
                 <p className="text-xs font-bold text-slate-900">Nuevo tema/gránulo</p>
-                <button type="button" onClick={() => { setShowAddTopicForm(false); setNewTopicName(''); }} className="text-slate-400 hover:text-slate-600">
+                <button type="button" onClick={() => { setShowAddTopicForm(false); setNewTopicName(''); setNewTopicReason(''); }} className="text-slate-400 hover:text-slate-600">
                   <X className="h-4 w-4" />
                 </button>
               </div>
@@ -763,6 +871,14 @@ export function SubjectDetailPage() {
                   {savingTopic ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Plus className="h-3.5 w-3.5" />}
                   {savingTopic ? '...' : 'Agregar'}
                 </Button>
+              </div>
+              <div className="mt-2">
+                <textarea
+                  className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-800 focus:border-orange-300 focus:ring-2 focus:ring-orange-100 focus:outline-none"
+                  value={newTopicReason}
+                  onChange={(e) => setNewTopicReason(e.target.value)}
+                  placeholder="Motivo del cambio (opcional)"
+                />
               </div>
               <p className="mt-2 text-[10px] font-medium text-slate-500">Se creará automáticamente el checklist: Material descargable, Podcast, Videos, Infografías interactivas.</p>
             </div>
@@ -783,31 +899,54 @@ export function SubjectDetailPage() {
         </Card>
       )}
 
+      <div ref={observationsSectionRef}>
       <Card variant="subjectPanel" className="p-5 sm:p-6">
         <div className="flex items-center justify-between gap-3 border-b border-orange-100/90 pb-4">
           <div>
             <p className="text-[10px] font-black uppercase tracking-widest text-orange-500">Seguimiento</p>
             <h2 className="text-sm font-black tracking-tight text-slate-950">Observaciones</h2>
           </div>
-          <Button variant="primary" size="sm" onClick={() => { setShowObservationForm(true); setObservationError(''); }} className="shadow-lg shadow-orange-500/25">
+          <Button variant="primary" size="sm" onClick={() => { setShowObservationForm(true); setObservationError(''); setRequestCorrectionMode(false); setCorrectionTargetObservationId(null); }} className="shadow-lg shadow-orange-500/25">
             <Plus className="h-3.5 w-3.5" /> Nueva
           </Button>
         </div>
 
         {showObservationForm && (
-          <div id="observation-form" className="mt-5 rounded-[16px] border border-orange-200 bg-orange-50/30 p-4">
+              <div id="observation-form" className={cn('mt-5 rounded-[18px] border p-4 transition-all duration-500 ease-out', requestCorrectionMode ? 'translate-y-0 opacity-100' : 'translate-y-0 opacity-100', correctionPanelHighlighted ? 'border-orange-300 bg-orange-50/60 shadow-[0_0_0_6px_rgba(251,146,60,0.10),0_18px_40px_-22px_rgba(249,115,22,0.35)]' : 'border-orange-200 bg-orange-50/30 shadow-sm')}>
+            {requestCorrectionMode && (
+              <div className="mb-4 rounded-[18px] border border-orange-200/80 bg-gradient-to-br from-white to-orange-50/70 px-4 py-4 shadow-[0_10px_30px_-18px_rgba(249,115,22,0.35)]">
+                <div className="flex items-start gap-3">
+                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-orange-100 text-orange-600">
+                    <AlertCircle className="h-5 w-5" />
+                  </div>
+                  <div className="min-w-0 flex-1 space-y-1">
+                    <p className="text-sm font-black leading-tight text-slate-950">{targetedCorrectionObservation ? 'Solicitar nuevo ajuste sobre esta corrección' : 'Solicitar corrección a Fábrica'}</p>
+                    <p className="text-xs font-medium leading-relaxed text-slate-600">
+                      {targetedCorrectionObservation
+                        ? 'Esta acción reabre solo la observación seleccionada. Las demás correcciones permanecen intactas.'
+                        : 'Describe claramente qué debe corregirse antes de aprobar la asignatura. Esta observación iniciará un nuevo ciclo de revisión.'}
+                    </p>
+                    <div className="space-y-1 text-[11px] font-medium leading-relaxed text-slate-600">
+                      <p>✓ La observación será visible para Fábrica</p>
+                      <p>✓ La asignatura quedará en revisión</p>
+                      <p>✓ Solo se afectará esta observación</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
             <div className="flex items-start justify-between gap-3">
               <div>
-                <p className="text-xs font-bold text-slate-900">Enviar observación a Fábrica</p>
+                <p className="text-xs font-bold text-slate-900">{requestCorrectionMode ? (targetedCorrectionObservation ? 'Reabrir corrección individual' : 'Crear observación de corrección') : 'Enviar observación a Fábrica'}</p>
                 <p className="text-[10px] font-medium text-slate-500">Selecciona el nivel y describe qué debe corregir Fábrica.</p>
               </div>
-              <button type="button" onClick={() => { setShowObservationForm(false); setObservationError(''); }} className="shrink-0 text-slate-400 hover:text-slate-600">
+              <button type="button" onClick={() => { setShowObservationForm(false); setObservationError(''); setRequestCorrectionMode(false); setCorrectionTargetObservationId(null); }} className="shrink-0 text-slate-400 hover:text-slate-600">
                 <X className="h-4 w-4" />
               </button>
             </div>
 
             <div className="mt-4 space-y-3">
-              <div>
+              {!requestCorrectionMode && <div>
                 <p className="mb-2 text-[10px] font-black uppercase tracking-widest text-slate-400">Nivel de observación</p>
                 <div className="flex flex-wrap gap-2">
                   <button
@@ -838,16 +977,17 @@ export function SubjectDetailPage() {
                     </button>
                   ))}
                 </div>
-              </div>
+              </div>}
 
               {observationError && (
-                <div className="flex items-center gap-2 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2">
+                <div className="flex items-start gap-2 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2">
                   <AlertCircle className="h-3.5 w-3.5 text-rose-500" />
-                  <p className="text-xs font-medium text-rose-700">{observationError}</p>
+                  <p className="min-w-0 flex-1 text-xs font-medium leading-relaxed text-rose-700">{observationError}</p>
                 </div>
               )}
 
               <textarea
+                ref={observationTextareaRef}
                 className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-800 focus:border-orange-300 focus:ring-2 focus:ring-orange-100 focus:outline-none resize-none"
                 rows={3}
                 placeholder="Describe qué debe corregir o completar Fábrica..."
@@ -856,10 +996,10 @@ export function SubjectDetailPage() {
               />
 
               <div className="flex justify-end gap-2">
-                <Button variant="secondary" size="sm" onClick={() => { setShowObservationForm(false); setObservationError(''); }}>Cancelar</Button>
-                <Button size="sm" onClick={handleAddObservation} disabled={!observationForm.text.trim() || savingObservation}>
+                <Button variant="secondary" size="sm" onClick={() => { setShowObservationForm(false); setObservationError(''); setRequestCorrectionMode(false); setCorrectionTargetObservationId(null); }}>Cancelar</Button>
+                <Button size="sm" onClick={requestCorrectionMode ? handleCreateCorrectionAndReject : handleAddObservation} disabled={!observationForm.text.trim() || savingObservation || subjectAction === 'reject'}>
                   {savingObservation ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <MessageSquare className="h-3.5 w-3.5" />}
-                  Enviar observación
+                  {requestCorrectionMode ? (targetedCorrectionObservation ? 'Reabrir corrección y solicitar ajuste' : 'Crear observación y rechazar asignatura') : 'Enviar observación'}
                 </Button>
               </div>
             </div>
@@ -867,20 +1007,86 @@ export function SubjectDetailPage() {
         )}
 
         <div className="mt-5 space-y-4">
+          {activeCorrectionObservations.length > 0 && (
+            <div className="space-y-3">
+              <div className="mb-1 flex items-center gap-2">
+                <span className="flex h-5 w-5 items-center justify-center rounded-full bg-orange-100">
+                  <span className="h-2 w-2 rounded-full bg-orange-500" />
+                </span>
+                <p className="text-[10px] font-black uppercase tracking-widest text-orange-600">Correcciones activas · {activeCorrectionObservations.length}</p>
+              </div>
+              {activeCorrectionObservations.map((observation, index) => (
+                <div
+                  key={observation.id}
+                  ref={index === 0 ? correctionActiveRef : undefined}
+                  className={cn('rounded-[22px] border p-5 shadow-sm transition-all duration-500', observation.status === 'EN_CORRECCION' ? 'border-sky-200 bg-sky-50/40' : 'border-amber-200 bg-amber-50/40')}
+                >
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div className="min-w-0 flex-1">
+                      <p className="text-[10px] font-black uppercase tracking-widest text-orange-500">Corrección individual</p>
+                      <h3 className="mt-1 text-sm font-bold text-slate-950">
+                        {observation.status === 'EN_CORRECCION'
+                          ? 'Corrección enviada por Fábrica'
+                          : 'Corrección pendiente de Fábrica'}
+                      </h3>
+                      <p className="mt-3 text-base font-bold leading-relaxed text-slate-900">{observation.text}</p>
+                      <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                        <MetaBox label="Estado" value={observation.status === 'EN_CORRECCION' ? 'Corrección enviada' : 'Fábrica debe corregir'} />
+                        <MetaBox label="Fecha" value={formatDate(observation.createdAt)} />
+                        <MetaBox label="Responsable" value="Fábrica" />
+                        <MetaBox label="Última actualización" value={formatDate(observation.updatedAt ?? observation.createdAt)} />
+                      </div>
+                      <div className="mt-3 flex flex-wrap items-center gap-3 text-[10px] font-medium text-slate-500">
+                        <span>{observation.author} · {observation.role}</span>
+                        <span className="font-bold text-slate-700">
+                          {observation.status === 'EN_CORRECCION'
+                            ? 'Pendiente de validación individual por Product'
+                            : 'Fábrica debe corregir esta observación'}
+                        </span>
+                      </div>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      {observation.status === 'EN_CORRECCION' && (
+                        <>
+                          <Button size="sm" onClick={() => handleResolveObservation(observation.id, observation)} disabled={isMutating} className="shadow-[0_12px_24px_-18px_rgba(249,115,22,0.5)]">
+                            <Check className="h-3.5 w-3.5" /> Validar corrección
+                          </Button>
+                          <Button size="sm" variant="secondary" className="border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100" onClick={() => {
+                            setRequestCorrectionMode(true);
+                            setCorrectionTargetObservationId(observation.id);
+                            setShowObservationForm(true);
+                            setObservationError('');
+                            setObservationForm({ text: '', level: 'subject', topicId: '' });
+                            requestAnimationFrame(() => {
+                              scrollToObservations();
+                              setTimeout(() => observationTextareaRef.current?.focus(), 180);
+                            });
+                          }}>
+                            <AlertCircle className="h-3.5 w-3.5" /> Solicitar nuevo ajuste
+                          </Button>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
           {subjectObservations.length === 0 && resolvedObservations.length === 0 && (
             <EmptyState icon={MessageSquare} title="Sin observaciones" description="Aún no se han registrado observaciones para esta asignatura." cardVariant="subjectPanel" />
           )}
 
-          {subjectObservations.length > 0 && (
+          {subjectObservations.filter((obs) => !activeCorrectionObservations.some((active) => active.id === obs.id)).length > 0 && (
             <div>
               <div className="mb-2 flex items-center gap-2">
                 <span className="flex h-5 w-5 items-center justify-center rounded-full bg-amber-100">
                   <span className="h-2 w-2 rounded-full bg-amber-500" />
                 </span>
-                <p className="text-[10px] font-black uppercase tracking-widest text-amber-600">Abiertas · {subjectObservations.length}</p>
+                <p className="text-[10px] font-black uppercase tracking-widest text-amber-600">Observaciones abiertas · {subjectObservations.filter((obs) => !activeCorrectionObservations.some((active) => active.id === obs.id)).length}</p>
               </div>
               <div className="space-y-2">
-                {subjectObservations.map((obs) => {
+                {subjectObservations.filter((obs) => !activeCorrectionObservations.some((active) => active.id === obs.id)).map((obs) => {
                   const isTopicObs = topics.some((t) => obs.relatedEntity === t.name);
                   const canValidate = obs.status === 'EN_CORRECCION';
                   return (
@@ -970,6 +1176,7 @@ export function SubjectDetailPage() {
           )}
         </div>
       </Card>
+      </div>
     </div>
   );
 }

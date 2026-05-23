@@ -3,7 +3,7 @@ import type { ChecklistStatus, OperationalObservation, ProjectSemester, Semester
 type ObservationStatus = OperationalObservation['status'];
 
 export function isBlockingObservationStatus(status: ObservationStatus) {
-  return status === 'ABIERTA' || status === 'EN_CORRECCION';
+  return status === 'ABIERTA';
 }
 
 export function checklistCompletionValue(status: ChecklistStatus): number {
@@ -43,7 +43,29 @@ export function deriveSubjectStatus(params: {
 
   const blockingObs = observations.some((o) => isBlockingObservationStatus(o.status));
   const anyRejected = subject.checklist.some((i) => i.status === 'RECHAZADO');
-  const anyInProduction = subject.checklist.some((i) => i.status === 'EN_PRODUCCION');
+
+  // Product rejection always forces changes requested.
+  if (anyRejected) return 'CHANGES_REQUESTED';
+
+  const backendStatus = subject.status;
+  const operationalStatuses: SubjectStatus[] = [
+    'IN_PRODUCTION',
+    'IN_REVIEW',
+    'SUBMITTED',
+    'APPROVED',
+    'DELIVERED',
+    'CHANGES_REQUESTED',
+  ];
+
+  // Backend operational status is the source of truth for the subject-centric flow.
+  if (operationalStatuses.includes(backendStatus)) {
+    if (backendStatus === 'APPROVED' && blockingObs) return 'CHANGES_REQUESTED';
+    return backendStatus;
+  }
+
+  const anyInProduction =
+    subject.checklist.some((i) => i.status === 'EN_PRODUCCION') ||
+    subject.topicChecklists.some((tc) => tc.items.some((i) => i.status === 'EN_PRODUCCION'));
 
   const mainAllApproved = subject.checklist.length > 0 && subject.checklist.every((i) => i.status === 'APROBADO');
   const topicAllApproved = subject.topicChecklists.every((tc) => tc.items.length > 0 && tc.items.every((i) => i.status === 'APROBADO'));
@@ -51,14 +73,8 @@ export function deriveSubjectStatus(params: {
   const mainAllSubmitted = subject.checklist.length > 0 && subject.checklist.every((i) => i.status === 'ENTREGADO' || i.status === 'APROBADO');
   const topicAllSubmitted = subject.topicChecklists.every((tc) => tc.items.every((i) => i.status === 'ENTREGADO' || i.status === 'APROBADO'));
 
-  // Product rejection always forces changes requested.
-  if (anyRejected) return 'CHANGES_REQUESTED';
-
   // Approved only if no blocking observations remain.
   if (mainAllApproved && topicAllApproved && !blockingObs) return 'APPROVED';
-
-  // Keep in review if already there and not approved/changes requested.
-  if (subject.status === 'IN_REVIEW') return 'IN_REVIEW';
 
   // Submitted means factory completed deliverables but product hasn't reviewed yet.
   if (mainAllSubmitted && topicAllSubmitted) return 'SUBMITTED';

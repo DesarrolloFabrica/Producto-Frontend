@@ -10,6 +10,7 @@ import type {
   Notification,
   OperationalObservation,
   SubjectVirtualization,
+  SubjectSummary,
   TopicChecklist,
   VirtualizationProject,
 } from '../../types/domain';
@@ -23,6 +24,7 @@ import type {
   ApiProjectOwner,
   ApiSemesterDetail,
   ApiSubjectDetail,
+  ApiSubjectSummary,
   ApiTopicDetail,
 } from '../../services/types/projectsApi.types';
 import type {
@@ -165,6 +167,7 @@ export function mapSubjectFromApi(
   api: ApiSubjectDetail,
   projectId: string,
   semesterNumber: number,
+  fallbackDates?: { semesterFactoryExpectedDate?: string | null; projectExpectedDeliveryDate?: string | null },
 ): SubjectVirtualization {
   const mappedTopics = api.topics.map(mapTopicFromApi);
 
@@ -180,6 +183,14 @@ export function mapSubjectFromApi(
     projectId,
     semesterNumber,
     name: api.name,
+    expectedDeliveryDate:
+      (api.expectedDeliveryDate ? toDateOnly(api.expectedDeliveryDate) : '') ||
+      (fallbackDates?.semesterFactoryExpectedDate
+        ? toDateOnly(fallbackDates.semesterFactoryExpectedDate)
+        : '') ||
+      (fallbackDates?.projectExpectedDeliveryDate
+        ? toDateOnly(fallbackDates.projectExpectedDeliveryDate)
+        : ''),
     status: api.status,
     progress: api.progress,
     checklist: subjectChecklist,
@@ -228,7 +239,24 @@ function mapLinkFromApi(api: ApiProjectLink): LinkResource {
   };
 }
 
+export function mapSubjectSummaryFromApi(api: ApiSubjectSummary): SubjectSummary {
+  return {
+    id: api.id,
+    name: api.name,
+    status: api.status,
+    semesterNumber: api.semesterNumber,
+    expectedDeliveryDate: api.expectedDeliveryDate
+      ? toDateOnly(api.expectedDeliveryDate)
+      : null,
+    progress: api.progress,
+    openObservationsCount: api.openObservationsCount,
+    correctionSentCount: api.correctionSentCount,
+    updatedAt: toDateOnly(api.updatedAt),
+  };
+}
+
 export function mapProjectListItemFromApi(api: ApiProjectListItem): VirtualizationProject {
+  const subjectsSummary = api.subjectsSummary?.map(mapSubjectSummaryFromApi);
   return {
     id: api.id,
     school: api.school,
@@ -245,6 +273,7 @@ export function mapProjectListItemFromApi(api: ApiProjectListItem): Virtualizati
     observations: '',
     semesters: [],
     subjects: [],
+    subjectsSummary,
     links: [],
   };
 }
@@ -254,7 +283,12 @@ export function mapProjectDetailFromApi(api: ApiProjectDetail): VirtualizationPr
 
   api.semesters.forEach((semester) => {
     semester.subjects.forEach((subject) => {
-      subjects.push(mapSubjectFromApi(subject, api.id, semester.semesterNumber));
+      subjects.push(
+        mapSubjectFromApi(subject, api.id, semester.semesterNumber, {
+          semesterFactoryExpectedDate: semester.factoryExpectedDate,
+          projectExpectedDeliveryDate: api.expectedDeliveryDate,
+        }),
+      );
     });
   });
 
@@ -355,7 +389,10 @@ export function mapObservationFromApi(api: ApiObservation): OperationalObservati
     text: api.text,
     status: mapObservationStatusFromApi(api.status),
     relatedEntity: mapRelatedEntityLabel(api),
+    relatedEntityType: api.relatedEntityType ?? undefined,
+    relatedEntityId: api.relatedEntityId ?? undefined,
     createdAt: api.createdAt,
+    updatedAt: api.updatedAt,
   };
 }
 
@@ -384,12 +421,17 @@ export function mapNotificationFromApi(api: ApiNotification): Notification {
     id: api.id,
     title: api.title,
     message: api.message,
-    roleTarget: api.roleTarget ?? 'PRODUCT',
+    userId: api.userId ?? null,
+    roleTarget: api.roleTarget ?? null,
     type,
     createdAt: api.createdAt,
     read: api.isRead,
     projectId: api.projectId ?? (api.entityType === 'PROJECT' ? api.entityId ?? undefined : undefined),
     subjectId: api.subjectId ?? (api.entityType === 'SUBJECT' ? api.entityId ?? undefined : undefined),
+    eventType: api.eventType ?? undefined,
+    actionUrl: api.actionUrl ?? undefined,
+    readAt: api.readAt ?? undefined,
+    severity: api.severity ?? undefined,
   };
 }
 

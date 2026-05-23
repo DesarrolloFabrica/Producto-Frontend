@@ -32,6 +32,18 @@ export type ChecklistStatus = 'NO_EXISTE' | 'PENDIENTE' | 'EN_PRODUCCION' | 'ENT
 
 export type LinkResourceType = 'SYLLABUS' | 'CURRICULUM' | 'DRIVE_FOLDER' | 'BRIEF' | 'REFERENCE' | 'OTHER';
 
+export interface SubjectSummary {
+  id: string;
+  name: string;
+  status: SubjectStatus;
+  semesterNumber: number;
+  expectedDeliveryDate?: string | null;
+  progress: number;
+  openObservationsCount: number;
+  correctionSentCount: number;
+  updatedAt?: string;
+}
+
 export interface VirtualizationProject {
   id: string;
   school: string;
@@ -48,6 +60,7 @@ export interface VirtualizationProject {
   observations: string;
   semesters: ProjectSemester[];
   subjects: SubjectVirtualization[];
+  subjectsSummary?: SubjectSummary[];
   links: LinkResource[];
 }
 
@@ -67,6 +80,7 @@ export interface SubjectVirtualization {
   projectId: string;
   semesterNumber: number;
   name: string;
+  expectedDeliveryDate?: string;
   status: SubjectStatus;
   progress: number;
   checklist: ChecklistItem[];
@@ -118,12 +132,17 @@ export interface Notification {
   id: string;
   title: string;
   message: string;
-  roleTarget: Role;
+  userId?: string | null;
+  roleTarget?: Role | null;
   type?: 'INFO' | 'ACTION' | 'DEADLINE' | 'CRITICAL';
   createdAt: string;
   read: boolean;
   projectId?: string;
   subjectId?: string;
+  eventType?: string;
+  actionUrl?: string;
+  readAt?: string;
+  severity?: string;
 }
 
 export interface ActivityEvent {
@@ -155,7 +174,10 @@ export interface OperationalObservation {
   text: string;
   status: 'ABIERTA' | 'EN_CORRECCION' | 'RESUELTA';
   relatedEntity: string;
+  relatedEntityType?: string;
+  relatedEntityId?: string;
   createdAt: string;
+  updatedAt?: string;
 }
 
 export type CommentEntityType = 'project' | 'subject' | 'checklist' | 'link' | 'observation';

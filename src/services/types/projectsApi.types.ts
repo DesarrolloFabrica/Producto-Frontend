@@ -33,6 +33,18 @@ export interface ApiProjectOwner {
   role: Role;
 }
 
+export interface ApiSubjectSummary {
+  id: string;
+  name: string;
+  status: ApiSubjectStatus;
+  semesterNumber: number;
+  expectedDeliveryDate?: string | null;
+  progress: number;
+  openObservationsCount: number;
+  correctionSentCount: number;
+  updatedAt: string;
+}
+
 export interface ApiProjectListItem {
   id: string;
   school: string;
@@ -46,6 +58,7 @@ export interface ApiProjectListItem {
   productOwner: ApiProjectOwner;
   factoryOwner: ApiProjectOwner | null;
   createdAt: string;
+  subjectsSummary?: ApiSubjectSummary[];
 }
 
 export interface ApiChecklistItem {
@@ -78,6 +91,7 @@ export interface ApiTopicDetail {
 export interface ApiSubjectDetail {
   id: string;
   name: string;
+  expectedDeliveryDate?: string | null;
   status: ApiSubjectStatus;
   progress: number;
   topics: ApiTopicDetail[];
@@ -140,4 +154,28 @@ export interface ApiCreateProjectPayload {
   observations?: string;
   syllabus?: ApiCreateProjectSyllabus;
   semesters: ApiCreateProjectSemester[];
+}
+
+export interface ApiAddSemesterSubjectPayload {
+  name: string;
+  topics: string[];
+}
+
+export interface ApiAddSemesterPayload {
+  semesterNumber: number;
+  factoryExpectedDate: string;
+  subjects: ApiAddSemesterSubjectPayload[];
+  changeReason?: string;
+}
+
+export interface ApiAddSubjectPayload {
+  name: string;
+  topics: string[];
+  expectedDeliveryDate: string;
+  changeReason?: string;
+}
+
+export interface ApiAddTopicsPayload {
+  topics: string[];
+  changeReason?: string;
 }

@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useCallback, type ReactNode } from 'react';
+import { createContext, useContext, useState, useCallback, useEffect, type ReactNode } from 'react';
 import { motion } from 'motion/react';
 import { useNavigate } from 'react-router-dom';
 import { X, ExternalLink, FileText, BookOpen, MessageSquare, Bell, ListChecks, Clock3, User, CheckCircle, AlertCircle } from 'lucide-react';
@@ -11,7 +11,9 @@ import type { VirtualizationProject, SubjectVirtualization, LinkResource, Operat
 import { OperationalHealth } from '../../components/operational/OperationalHealth';
 import { getSubjectOperationalPackage } from '../operations/operationalInsights';
 import { getChecklistItemInsight, getNotificationOperationalState, getNotificationRequiredAction, getSubjectBlockers, getSubjectNextAction } from '../operations/operationalRules';
+import { getProjectModificationLabel } from '../operations/modificationBadges';
 import { drawerTransition, fadeUp } from '../../components/motion/presets';
+import { ModificationBadge } from '../../components/project/ModificationBadge';
 
 type ContextEntityType = 'project' | 'subject' | 'link' | 'observation' | 'notification' | 'checklist';
 
@@ -59,8 +61,26 @@ export function useContextPanel() {
 
 export function ContextPanelDrawer() {
   const { isOpen, payload, closeContextPanel } = useContextPanel();
-  const { projects, projectObservations, comments } = useOperations();
+  const { projects, projectObservations, comments, notifications, backendEnabled, loadProjectDetail } = useOperations();
   const navigate = useNavigate();
+
+  useEffect(() => {
+    if (!backendEnabled || !isOpen || !payload) return;
+
+    const projectId = payload.type === 'project'
+      ? payload.id
+      : payload.type === 'notification'
+        ? ((payload.data as { notification?: Notification } | undefined)?.notification?.projectId ?? null)
+        : null;
+
+    if (!projectId) return;
+
+    const project = projects.find((item) => item.id === projectId);
+    const hasSparseDetail = project && project.semesters.length === 0 && project.subjects.length === 0 && project.links.length === 0;
+    if (hasSparseDetail) {
+      void loadProjectDetail(projectId);
+    }
+  }, [backendEnabled, isOpen, payload, projects, loadProjectDetail]);
 
   if (!isOpen || !payload) return null;
 
@@ -70,8 +90,8 @@ export function ContextPanelDrawer() {
     const project = projects.find((p) => p.id === payload.id);
     if (project) {
       const projectObservationsList = projectObservations.filter((o) => o.projectId === project.id);
-      content = (
-        <ProjectContext project={project} observations={projectObservationsList} onNavigate={() => { closeContextPanel(); navigate(`/projects/${project.id}`); }} />
+        content = (
+        <ProjectContext project={project} observations={projectObservationsList} notifications={notifications} onNavigate={() => { closeContextPanel(); navigate(`/projects/${project.id}`); }} />
       );
     }
   } else if (payload.type === 'subject') {
@@ -121,9 +141,11 @@ export function ContextPanelDrawer() {
   );
 }
 
-function ProjectContext({ project, observations, onNavigate }: { project: VirtualizationProject; observations: OperationalObservation[]; onNavigate: () => void }) {
+function ProjectContext({ project, observations, notifications, onNavigate }: { project: VirtualizationProject; observations: OperationalObservation[]; notifications: Notification[]; onNavigate: () => void }) {
   const openObservations = observations.filter((o) => o.status === 'ABIERTA' || o.status === 'EN_CORRECCION');
   const pendingDeliverables = project.subjects.flatMap((s) => s.checklist).filter((item) => ['NO_EXISTE', 'PENDIENTE'].includes(item.status)).length;
+  const hasSparseDetail = project.semesters.length === 0 && project.subjects.length === 0 && project.links.length === 0;
+  const modificationLabel = getProjectModificationLabel(notifications, project.id);
 
   const getNextAction = (): string => {
     if (openObservations.length > 0) return 'Valida correcciones realizadas por Fabrica.';
@@ -141,6 +163,7 @@ function ProjectContext({ project, observations, onNavigate }: { project: Virtua
           <p className="text-xs font-medium text-slate-500">{project.school}</p>
           <h2 className="mt-0.5 text-lg font-semibold text-slate-900">{project.program}</h2>
           <p className="mt-1 text-xs font-medium text-slate-400">{project.requestType} · {project.modality}</p>
+          {modificationLabel && <div className="mt-3"><ModificationBadge label={modificationLabel} /></div>}
         </div>
         <div className="flex flex-wrap gap-2">
           <StatusBadge status={project.status} />
@@ -162,7 +185,7 @@ function ProjectContext({ project, observations, onNavigate }: { project: Virtua
           </div>
           <div className="rounded-xl bg-white p-3 shadow-sm">
             <p className="text-xs font-medium text-slate-400">Materias</p>
-            <p className="mt-1 text-sm font-semibold text-slate-700">{project.subjects.length}</p>
+            <p className="mt-1 text-sm font-semibold text-slate-700">{hasSparseDetail ? 'Cargando...' : project.subjects.length}</p>
           </div>
           <div className="rounded-xl bg-white p-3 shadow-sm">
             <p className="text-xs font-medium text-slate-400">Pendientes</p>
@@ -234,14 +257,14 @@ function ProjectContext({ project, observations, onNavigate }: { project: Virtua
             <FileText className="h-3.5 w-3.5 text-slate-400" />
             <div className="min-w-0">
               <p className="text-[10px] text-slate-400">Links</p>
-              <p className="truncate text-xs font-medium text-slate-700">{project.links.length} disponibles</p>
+              <p className="truncate text-xs font-medium text-slate-700">{hasSparseDetail ? 'Cargando...' : `${project.links.length} disponibles`}</p>
             </div>
           </div>
           <div className="flex items-center gap-2">
             <BookOpen className="h-3.5 w-3.5 text-slate-400" />
             <div className="min-w-0">
               <p className="text-[10px] text-slate-400">Semestres</p>
-              <p className="truncate text-xs font-medium text-slate-700">{project.semesters.map((s) => s.semesterNumber).join(', ')}</p>
+              <p className="truncate text-xs font-medium text-slate-700">{hasSparseDetail ? 'Cargando...' : project.semesters.map((s) => s.semesterNumber).join(', ')}</p>
             </div>
           </div>
           <div className="flex items-center gap-2">

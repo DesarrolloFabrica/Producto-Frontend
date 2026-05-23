@@ -52,12 +52,17 @@ export interface ApiNotification {
   id: string;
   title: string;
   message: string;
+  userId?: string | null;
   roleTarget?: Role;
   type?: 'INFO' | 'ACTION' | 'DEADLINE' | 'CRITICAL' | string;
   entityType?: string | null;
   entityId?: string | null;
   projectId?: string | null;
   subjectId?: string | null;
+  eventType?: string | null;
+  actionUrl?: string | null;
+  readAt?: string | null;
+  severity?: string | null;
   isRead: boolean;
   createdAt: string;
 }

@@ -1,97 +1,146 @@
-import { useEffect, useState } from 'react';
-import { Link, Navigate, useParams } from 'react-router-dom';
-import { ArrowLeft, BookOpen, CheckCircle2, MessageSquare, Package, AlertCircle, Clock3 } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import { Link, useParams, useSearchParams } from 'react-router-dom';
+import {
+  AlertCircle,
+  ArrowLeft,
+  CheckCircle2,
+  CircleDashed,
+  Clock3,
+  MessageSquare,
+  Package,
+  RefreshCcw,
+  Send,
+} from 'lucide-react';
 import { StatusBadge } from '../../components/status/StatusBadge';
 import { Card } from '../../components/ui/Card';
-import { ProgressBar } from '../../components/ui/ProgressBar';
 import { ProjectsLoadNotice } from '../../components/feedback/ProjectsLoadNotice';
+import { DeepLinkNotFound } from '../../components/feedback/DeepLinkNotFound';
 import { getApiErrorMessage } from '../operations/apiMappers';
+import { calculateSubjectProgress } from '../operations/progress';
+import {
+  getOperationalCta,
+  getOperationalStateLabel,
+  getProductObservationsForSubject,
+  normalizeSubjectOperationalState,
+  resolveSubjectExpectedDeliveryDate,
+} from '../operations/subjectOperationalState';
 import { useOperations } from '../../features/operations/OperationsContext';
 import { useToast } from '../../components/ui/ToastProvider';
 import { useEnsureSubjectDetail } from '../operations/useEnsureSubjectDetail';
 import { formatDate } from '../../utils/formatters';
 import { Button } from '../../components/ui/Button';
 import { cn } from '../../components/ui/tokens';
-import type { ChecklistStatus, TopicChecklist } from '../../types/domain';
+import type { OperationalObservation } from '../../types/domain';
 
-type FactoryStatus = 'pendiente' | 'en_produccion' | 'entregado' | 'aprobado' | 'rechazado';
+type FlowStepId = 'PENDIENTE' | 'EN_PRODUCCION' | 'EN_REVISION';
+type GeneralProductionState = FlowStepId | 'APROBADA';
 
-const factoryStatusLabels: Record<FactoryStatus, string> = {
-  pendiente: 'Pendiente',
-  en_produccion: 'En producción',
-  entregado: 'Entregado',
-  aprobado: 'Aprobado por Product',
-  rechazado: 'Rechazado',
-};
-
-const factoryStatusTone: Record<FactoryStatus, string> = {
-  pendiente: 'bg-slate-50 text-slate-500 ring-1 ring-slate-200/70',
-  en_produccion: 'bg-[#FFEDD5] text-[#FF6B00] ring-1 ring-orange-200/70',
-  entregado: 'bg-emerald-50 text-emerald-600 ring-1 ring-emerald-200/70',
-  aprobado: 'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200/80',
-  rechazado: 'bg-rose-50 text-rose-600 ring-1 ring-rose-200/80',
-};
-
-function toFactoryStatus(status: ChecklistStatus): FactoryStatus {
-  if (status === 'APROBADO') return 'aprobado';
-  if (status === 'EN_PRODUCCION') return 'en_produccion';
-  if (status === 'ENTREGADO') return 'entregado';
-  if (status === 'RECHAZADO') return 'rechazado';
-  return 'pendiente';
-}
-
-function fromFactoryStatus(status: FactoryStatus): ChecklistStatus {
-  if (status === 'en_produccion') return 'EN_PRODUCCION';
-  if (status === 'entregado') return 'ENTREGADO';
-  if (status === 'rechazado') return 'RECHAZADO';
+function mapSubjectToProductionState(status: string): GeneralProductionState {
+  if (status === 'APPROVED' || status === 'DELIVERED') return 'APROBADA';
+  if (status === 'IN_PRODUCTION' || status === 'CHANGES_REQUESTED') return 'EN_PRODUCCION';
+  if (status === 'IN_REVIEW' || status === 'SUBMITTED') return 'EN_REVISION';
   return 'PENDIENTE';
 }
 
-function dedupeChecklistItems<T extends { id: string }>(items: T[]): T[] {
-  const seen = new Set<string>();
-  return items.filter((item) => {
-    if (seen.has(item.id)) return false;
-    seen.add(item.id);
-    return true;
-  });
+function mapSubjectToProgress(status: string): number {
+  if (status === 'IN_PRODUCTION' || status === 'CHANGES_REQUESTED') return 50;
+  if (status === 'IN_REVIEW' || status === 'SUBMITTED' || status === 'APPROVED' || status === 'DELIVERED') {
+    return 100;
+  }
+  return 0;
 }
 
-function getAllChecklistItemsForSubject(subject: {
-  checklist: { id: string; status: ChecklistStatus }[];
-  topicChecklists: { items: { id: string; status: ChecklistStatus }[] }[];
-}) {
-  return dedupeChecklistItems([
-    ...subject.checklist,
-    ...subject.topicChecklists.flatMap((tc) => tc.items),
-  ]);
+function stepState(current: GeneralProductionState, step: FlowStepId) {
+  if (current === 'APROBADA') return 'done';
+  const order: FlowStepId[] = ['PENDIENTE', 'EN_PRODUCCION', 'EN_REVISION'];
+  const currentIndex = order.indexOf(current);
+  const stepIndex = order.indexOf(step);
+  if (currentIndex === stepIndex) return 'current';
+  if (currentIndex > stepIndex) return 'done';
+  return 'upcoming';
 }
+
+function flowStepLabel(stepId: FlowStepId, productionState: GeneralProductionState): string {
+  if (stepId === 'EN_REVISION') {
+    return productionState === 'APROBADA' ? 'Completada' : 'En revisión Product';
+  }
+  if (stepId === 'PENDIENTE') return 'Pendiente';
+  return 'En producción';
+}
+
+const correctionStatusUi = {
+  ABIERTA: {
+    badge: 'border-rose-200 bg-rose-50 text-rose-700',
+    dot: 'bg-rose-500',
+    label: 'ABIERTA',
+    title: 'Corrección pendiente',
+    helper: 'Aún falta aplicar esta corrección en la materia.',
+  },
+  EN_CORRECCION: {
+    badge: 'border-sky-200 bg-sky-50 text-sky-700',
+    dot: 'bg-sky-500',
+    label: 'EN_CORRECCION',
+    title: 'Corrección enviada a Product',
+    helper: 'Product debe validar esta corrección de forma individual.',
+  },
+  RESUELTA: {
+    badge: 'border-emerald-200 bg-emerald-50 text-emerald-700',
+    dot: 'bg-emerald-500',
+    label: 'RESUELTA',
+    title: 'Validada por Product',
+    helper: 'Esta observación ya quedó cerrada.',
+  },
+} as const;
 
 export function FactorySubjectDetail() {
   const { subjectId } = useParams();
+  const [searchParams] = useSearchParams();
   const {
     projectObservations,
-    updateFactoryChecklistItem,
-    updateFactoryTopicChecklistItem,
+    observationsByProject,
     markObservationCorrectionApplied,
-    markSubjectDelivered,
+    updateSubjectProductionStatusFromApi,
     refreshProjects,
-    loadProjectObservations,
+    loadSubjectObservations,
+    markNotificationsReadByResource,
     backendEnabled,
     isMutating,
   } = useOperations();
   const { showToast } = useToast();
-  const { project, subject, isLoading, error } = useEnsureSubjectDetail(subjectId);
+  const { project, subject, isLoading, error, notFound } = useEnsureSubjectDetail(subjectId);
 
-  const [expandedTopicId, setExpandedTopicId] = useState<string | null>(null);
-  const [updatingChecklistId, setUpdatingChecklistId] = useState<string | null>(null);
-  const [updatingObservationId, setUpdatingObservationId] = useState<string | null>(null);
-  const [deliveringSubject, setDeliveringSubject] = useState(false);
+  const [submittingAction, setSubmittingAction] = useState<'production' | 'complete' | 'send-corrections' | null>(null);
+  const [submittingObservationId, setSubmittingObservationId] = useState<string | null>(null);
+  const actionInFlightRef = useRef(false);
+  const correctionsSectionRef = useRef<HTMLDivElement | null>(null);
+  const [correctionsHighlighted, setCorrectionsHighlighted] = useState(false);
 
   useEffect(() => {
-    if (backendEnabled && project?.id) {
-      void loadProjectObservations(project.id);
+    if (backendEnabled && subject?.id) {
+      void markNotificationsReadByResource({ subjectId: subject.id, projectId: project?.id });
     }
-  }, [backendEnabled, project?.id, loadProjectObservations]);
+  }, [backendEnabled, subject?.id, project?.id, markNotificationsReadByResource]);
+
+  useEffect(() => {
+    if (backendEnabled && subject?.id) {
+      void loadSubjectObservations(subject.id);
+    }
+  }, [backendEnabled, subject?.id, loadSubjectObservations]);
+
+  useEffect(() => {
+    if (searchParams.get('focus') !== 'correction') return;
+    if (!correctionsSectionRef.current) return;
+    setCorrectionsHighlighted(true);
+    setTimeout(() => {
+      correctionsSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 200);
+  }, [searchParams]);
+
+  useEffect(() => {
+    if (!correctionsHighlighted) return;
+    const timeoutId = window.setTimeout(() => setCorrectionsHighlighted(false), 2800);
+    return () => window.clearTimeout(timeoutId);
+  }, [correctionsHighlighted]);
 
   if (isLoading) {
     return (
@@ -109,382 +158,443 @@ export function FactorySubjectDetail() {
     );
   }
 
-  if (!project || !subject) return <Navigate to="/projects" replace />;
+  if (notFound || !project || !subject) {
+    return (
+      <DeepLinkNotFound
+        title="Asignatura no encontrada"
+        description={error ?? 'No pudimos cargar la asignatura de esta URL.'}
+        backTo="/projects"
+        onRetry={() => void refreshProjects()}
+      />
+    );
+  }
 
-  const allChecklistItems = getAllChecklistItemsForSubject(subject);
-  const totalChecklist = allChecklistItems.length;
-  const deliveredChecklist = allChecklistItems.filter(
-    (c) => c.status === 'ENTREGADO' || c.status === 'APROBADO',
-  ).length;
-  const subjectProgress = totalChecklist > 0 ? Math.round((deliveredChecklist / totalChecklist) * 100) : 0;
+  const scopedProjectObservations =
+    observationsByProject[project.id] ??
+    projectObservations.filter((observation) => observation.projectId === project.id);
 
-  const openProductObs = projectObservations.filter(
-    (o) => o.subjectId === subject.id && o.role === 'PRODUCT' && (o.status === 'ABIERTA' || o.status === 'EN_CORRECCION')
+  const productCorrections = getProductObservationsForSubject(
+    project,
+    subject.id,
+    scopedProjectObservations,
+  ).sort(
+    (a, b) => new Date(b.updatedAt ?? b.createdAt).getTime() - new Date(a.updatedAt ?? a.createdAt).getTime(),
   );
 
-  const blockingStatuses: ChecklistStatus[] = ['PENDIENTE', 'EN_PRODUCCION', 'NO_EXISTE', 'RECHAZADO'];
-  const allChecklistDelivered =
-    totalChecklist > 0 &&
-    allChecklistItems.every((c) => c.status === 'ENTREGADO' || c.status === 'APROBADO');
-  const hasBlockingChecklist = totalChecklist === 0 || allChecklistItems.some((c) => blockingStatuses.includes(c.status));
+  const openCorrections = productCorrections.filter((observation) => observation.status === 'ABIERTA');
+  const correctionsInReview = productCorrections.filter((observation) => observation.status === 'EN_CORRECCION');
+  const resolvedCorrections = productCorrections.filter((observation) => observation.status === 'RESUELTA');
+  const productionState = mapSubjectToProductionState(subject.status);
+  const operationalState = normalizeSubjectOperationalState({
+    subject,
+    observations: productCorrections,
+    projectStatus: project.status,
+  });
+  const operationalLabel = getOperationalStateLabel(operationalState);
+  const operationalCta = getOperationalCta(operationalState);
+  const progress =
+    subject.checklist.length > 0 ? calculateSubjectProgress(subject) : mapSubjectToProgress(subject.status);
+  const semester = project.semesters.find((item) => item.semesterNumber === subject.semesterNumber);
+  const canSendCorrections = openCorrections.length === 0 && correctionsInReview.length > 0;
+  const hasCorrectionFlow = productCorrections.length > 0;
+  const isApproved = productionState === 'APROBADA';
 
-  const handleChecklistUpdate = async (checklistItemId: string, newStatus: FactoryStatus) => {
-    if (newStatus === 'aprobado' || newStatus === 'rechazado') return;
-    const item = subject.checklist.find((c) => c.id === checklistItemId);
-    if (item && toFactoryStatus(item.status) === newStatus) return;
-
-    setUpdatingChecklistId(checklistItemId);
+  const handleStartProduction = async () => {
+    if (actionInFlightRef.current || isMutating || submittingAction) return;
+    actionInFlightRef.current = true;
+    setSubmittingAction('production');
     try {
-      await updateFactoryChecklistItem(project.id, subject.id, checklistItemId, fromFactoryStatus(newStatus));
-      showToast(`Estado actualizado: ${factoryStatusLabels[newStatus]}`);
-    } catch (error) {
-      showToast(getApiErrorMessage(error), 'error');
+      await updateSubjectProductionStatusFromApi(subject.id, project.id, 'EN_PRODUCCION');
+      showToast('Producción iniciada.');
+    } catch (updateError) {
+      showToast(getApiErrorMessage(updateError), 'error');
     } finally {
-      setUpdatingChecklistId(null);
+      actionInFlightRef.current = false;
+      setSubmittingAction(null);
     }
   };
 
-  const handleTopicChecklistUpdate = async (topicName: string, checklistItemId: string, status: FactoryStatus) => {
-    if (status === 'aprobado' || status === 'rechazado') return;
-
-    setUpdatingChecklistId(checklistItemId);
+  const handleMarkCompleted = async () => {
+    if (actionInFlightRef.current || isMutating || submittingAction) return;
+    actionInFlightRef.current = true;
+    setSubmittingAction('complete');
     try {
-      await updateFactoryTopicChecklistItem(
-        project.id,
-        subject.id,
-        topicName,
-        checklistItemId,
-        fromFactoryStatus(status),
-      );
-      showToast(`Estado actualizado: ${factoryStatusLabels[status]}`);
-    } catch (error) {
-      showToast(getApiErrorMessage(error), 'error');
+      await updateSubjectProductionStatusFromApi(subject.id, project.id, 'COMPLETADA');
+      showToast('Materia enviada a Product para revisión.');
+    } catch (updateError) {
+      showToast(getApiErrorMessage(updateError), 'error');
     } finally {
-      setUpdatingChecklistId(null);
+      actionInFlightRef.current = false;
+      setSubmittingAction(null);
     }
   };
 
-  const handleMarkCorrectionApplied = async (obsId: string, obs: typeof projectObservations[number]) => {
-    setUpdatingObservationId(obsId);
+  const handleSendCorrectionsToProduct = async () => {
+    if (actionInFlightRef.current || isMutating || submittingAction) return;
+    actionInFlightRef.current = true;
+    setSubmittingAction('send-corrections');
     try {
-      await markObservationCorrectionApplied(project.id, obsId, obs);
-      showToast('Corrección marcada como aplicada');
-    } catch (error) {
-      showToast(getApiErrorMessage(error), 'error');
+      await updateSubjectProductionStatusFromApi(subject.id, project.id, 'COMPLETADA');
+      showToast('Correcciones enviadas a Product.');
+    } catch (updateError) {
+      showToast(getApiErrorMessage(updateError), 'error');
     } finally {
-      setUpdatingObservationId(null);
+      actionInFlightRef.current = false;
+      setSubmittingAction(null);
     }
   };
 
-  const handleDeliverSubject = async () => {
-    if (!allChecklistDelivered) return;
-    setDeliveringSubject(true);
+  const handleMarkCorrectionApplied = async (observation: OperationalObservation) => {
+    setSubmittingObservationId(observation.id);
     try {
-      await markSubjectDelivered(project.id, subject.id, subject.name);
-      showToast('Asignatura entregada a revisión');
-    } catch (error) {
-      showToast(getApiErrorMessage(error), 'error');
+      await markObservationCorrectionApplied(project.id, observation.id, observation);
+      showToast('Corrección enviada a Product.');
+    } catch (updateError) {
+      showToast(getApiErrorMessage(updateError), 'error');
     } finally {
-      setDeliveringSubject(false);
+      setSubmittingObservationId(null);
     }
   };
-
-  const semester = project.semesters.find((s) => s.semesterNumber === subject.semesterNumber);
 
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <Link to={`/projects/${project.id}/semesters/${subject.semesterNumber}`} className="inline-flex items-center gap-1 text-xs font-medium text-[#64748B] hover:text-[#FF6B00]">
+          <Link
+            to={`/projects/${project.id}/semesters/${subject.semesterNumber}`}
+            className="inline-flex items-center gap-1 text-xs font-medium text-[#64748B] hover:text-[#FF6B00]"
+          >
             <ArrowLeft className="h-3.5 w-3.5" /> Volver al semestre
           </Link>
           <h1 className="mt-2 text-2xl font-bold tracking-[-0.02em] text-[#1E293B]">{subject.name}</h1>
-          <p className="mt-1 text-[0.9rem] text-[#64748B]">{project.program} · {project.school} · Semestre {subject.semesterNumber}</p>
+          <p className="mt-1 text-[0.9rem] text-[#64748B]">
+            {project.program} · {project.school} · Semestre {subject.semesterNumber}
+          </p>
         </div>
         <div className="flex flex-col items-end gap-2">
           <StatusBadge status={subject.status} />
-          <span className="text-[11px] font-medium text-[#94A3B8]">Entrega: {semester ? formatDate(semester.factoryExpectedDate) : formatDate(project.expectedDeliveryDate)}</span>
+          <span className="rounded-[10px] bg-slate-100 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide text-slate-600">
+            {operationalLabel}
+          </span>
+          <span className="text-[11px] font-medium text-[#94A3B8]">
+            Entrega: {formatDate(resolveSubjectExpectedDeliveryDate(project, subject))}
+          </span>
         </div>
       </div>
 
-      <Card className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4 p-5">
-        <Info label="Checklist general">{deliveredChecklist}/{totalChecklist} entregados</Info>
-        <Info label="Temas/gránulos">{subject.topicChecklists.length}</Info>
-        <Info label="Observaciones Product">{openProductObs.length} abiertas</Info>
-        <Info label="Avance asignatura">
-          <div className="flex items-center gap-2">
-            <div className="flex-1">
-              <ProgressBar value={subjectProgress} showLabel={false} size="sm" />
-            </div>
-            <span className="text-xs font-black text-orange-600">{subjectProgress}%</span>
+      <Card className="p-6 sm:p-7">
+        <div className="flex items-center gap-3">
+          <div
+            className={cn(
+              'flex h-10 w-10 items-center justify-center rounded-2xl',
+              isApproved ? 'bg-emerald-100 text-emerald-600' : 'bg-[#FFEDD5] text-[#FF6B00]',
+            )}
+          >
+            {isApproved ? <CheckCircle2 className="h-5 w-5" /> : <Package className="h-5 w-5" />}
           </div>
-        </Info>
-      </Card>
-
-      {openProductObs.length > 0 && (
-        <Card className="p-5">
-          <div className="flex items-center gap-3 mb-4">
-            <div className="flex h-9 w-9 items-center justify-center rounded-[12px] bg-rose-500/10">
-              <MessageSquare className="h-4 w-4 text-rose-500" />
-            </div>
-            <div>
-              <h2 className="text-sm font-bold tracking-[-0.02em] text-[#1E293B]">Observaciones de Product</h2>
-              <p className="text-[11px] font-medium text-[#64748B]">{openProductObs.length} observacion{openProductObs.length !== 1 ? 'es' : ''} activa{openProductObs.length !== 1 ? 's' : ''}</p>
-            </div>
-          </div>
-
-          <div className="space-y-3">
-            {openProductObs.map((obs) => {
-              const isTopicObs = subject.topicChecklists.some((tc) => obs.relatedEntity?.includes(tc.topicName));
-              const isCorrectionApplied = obs.status === 'EN_CORRECCION';
-              return (
-                <div key={obs.id} className={cn(
-                  'rounded-[16px] bg-white p-4 shadow-[0_2px_12px_-3px_rgba(0,0,0,0.06)] border',
-                  isCorrectionApplied ? 'border-amber-200/50' : 'border-rose-100/50',
-                )}>
-                  <div className="flex flex-wrap items-start gap-2 mb-2">
-                    <span className={cn(
-                      'rounded-full px-2 py-0.5 text-[9px] font-bold ring-1',
-                      isTopicObs
-                        ? 'bg-violet-50 text-violet-700 ring-violet-200/80'
-                        : 'bg-orange-50 text-orange-700 ring-orange-200/80',
-                    )}>
-                      {isTopicObs ? 'Tema' : 'Asignatura'}
-                    </span>
-                    <span className="text-[10px] font-medium text-slate-500">Ref: {obs.relatedEntity}</span>
-                    <span className="text-[10px] font-medium text-slate-500">{formatDate(obs.createdAt)}</span>
-                    <span className={cn(
-                      'rounded-full px-2 py-0.5 text-[9px] font-bold ring-1',
-                      isCorrectionApplied
-                        ? 'bg-amber-50 text-amber-700 ring-amber-200/80'
-                        : 'bg-rose-50 text-rose-700 ring-rose-200/80',
-                    )}>
-                      {isCorrectionApplied ? 'Corrección aplicada' : 'Pendiente'}
-                    </span>
-                  </div>
-                  <p className="text-xs font-medium text-slate-800">{obs.text}</p>
-                  <div className="mt-3 flex justify-end">
-                    {isCorrectionApplied ? (
-                      <span className="inline-flex items-center gap-1.5 rounded-[12px] bg-amber-50 px-3 py-2 text-xs font-bold text-amber-700">
-                        <Clock3 className="h-3.5 w-3.5" /> Esperando validación de Product
-                      </span>
-                    ) : (
-                      <button
-                        type="button"
-                        onClick={() => void handleMarkCorrectionApplied(obs.id, obs)}
-                        disabled={updatingObservationId === obs.id || isMutating}
-                        className="inline-flex items-center gap-1.5 rounded-[12px] bg-emerald-50 px-3 py-2 text-xs font-bold text-emerald-700 hover:bg-emerald-100 transition-all disabled:cursor-wait disabled:opacity-60"
-                      >
-                        <CheckCircle2 className="h-3.5 w-3.5" /> Marcar corrección aplicada
-                      </button>
-                    )}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </Card>
-      )}
-
-      <Card className="p-5">
-        <div className="flex items-center justify-between gap-3 mb-5">
           <div>
-            <p className="text-[10px] font-black uppercase tracking-widest text-orange-500">Entregables</p>
-            <h2 className="text-sm font-bold tracking-tight text-slate-950">Checklist de asignatura</h2>
+            <p className="text-[10px] font-black uppercase tracking-widest text-orange-500">Estado general</p>
+            <h2 className="text-sm font-black tracking-tight text-slate-950">Producción de la materia</h2>
+            <p className="mt-1 text-[11px] font-medium text-slate-500">
+              Este bloque solo refleja el avance operativo general. Las correcciones de Product se gestionan abajo, una por una.
+            </p>
           </div>
-          <span className="rounded-full bg-orange-50 px-2.5 py-0.5 text-[10px] font-bold text-orange-700 ring-1 ring-orange-200/80">
-            {deliveredChecklist}/{totalChecklist} entregados
-          </span>
         </div>
 
-        <div className="grid gap-3 md:grid-cols-2">
-          {subject.checklist.map((item) => {
-            const factoryStatus = toFactoryStatus(item.status);
-            const isApproved = factoryStatus === 'aprobado';
-            const canToProduction = item.status === 'PENDIENTE' || item.status === 'ENTREGADO';
-            const canToDelivered = item.status === 'EN_PRODUCCION';
-            return (
-              <div
-                key={item.id}
-                className={cn(
-                  'rounded-[16px] border bg-white p-4 transition-all',
-                  isApproved ? 'border-emerald-200 bg-emerald-50/20' : 'border-orange-100/60',
-                )}
-              >
-                <div className="flex items-start justify-between gap-3">
+        <div className="mt-6 rounded-[18px] border border-slate-100 bg-slate-50/60 p-4">
+          <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Flujo</p>
+          <div className="mt-3 flex flex-col gap-3 md:flex-row md:items-center md:gap-0">
+            {([
+              { id: 'PENDIENTE' as const },
+              { id: 'EN_PRODUCCION' as const },
+              { id: 'EN_REVISION' as const },
+            ]).map((step, index, list) => {
+              const state = stepState(productionState, step.id);
+              return (
+                <div key={step.id} className="flex items-center gap-3 md:flex-1">
+                  <div className={cn('flex h-9 w-9 items-center justify-center rounded-full text-xs font-black transition-all', state === 'done' && 'bg-emerald-500 text-white shadow-sm', state === 'current' && 'bg-orange-500 text-white shadow-[0_12px_24px_-16px_rgba(249,115,22,0.65)]', state === 'upcoming' && 'bg-white text-slate-400 ring-1 ring-slate-200')}>
+                    {state === 'done' ? <CheckCircle2 className="h-4 w-4" /> : index + 1}
+                  </div>
                   <div className="min-w-0">
-                    <h3 className="text-sm font-bold text-slate-900">{item.label}</h3>
-                    <p className="mt-0.5 text-[10px] font-medium text-slate-500">
-                      {item.ownerRole} · {formatDate(item.updatedAt)}
+                    <p className={cn('text-xs font-bold transition-colors', state === 'upcoming' ? 'text-slate-400' : state === 'done' ? 'text-emerald-700' : 'text-slate-900')}>
+                      {flowStepLabel(step.id, productionState)}
+                    </p>
+                    <p className={cn('text-[10px] font-medium', state === 'done' ? 'text-emerald-600' : 'text-slate-400')}>
+                      {state === 'current' ? 'Estado actual' : state === 'done' ? 'Completado' : 'Pendiente'}
                     </p>
                   </div>
-                  <span className={cn('shrink-0 rounded-full px-2.5 py-0.5 text-[10px] font-bold ring-1', factoryStatusTone[factoryStatus])}>
-                    {factoryStatusLabels[factoryStatus]}
-                  </span>
-                </div>
-
-                {!isApproved && (
-                  <div className="mt-3 flex gap-1.5">
-                    {(['pendiente', 'en_produccion', 'entregado'] as FactoryStatus[]).map((status) => (
-                      (() => {
-                        const disabledByTransition =
-                          (status === 'en_produccion' && !canToProduction) ||
-                          (status === 'entregado' && !canToDelivered) ||
-                          (status === 'pendiente' && item.status !== 'EN_PRODUCCION');
-                        return (
-                      <button
-                        key={status}
-                        type="button"
-                        onClick={() => void handleChecklistUpdate(item.id, status)}
-                        disabled={updatingChecklistId === item.id || disabledByTransition}
-                        className={cn(
-                          'flex-1 rounded-lg px-2 py-1.5 text-[10px] font-bold transition-all',
-                          (updatingChecklistId === item.id || disabledByTransition) && 'cursor-not-allowed opacity-50',
-                          factoryStatus === status
-                            ? factoryStatusTone[status]
-                            : 'bg-slate-50 text-slate-500 hover:bg-slate-100',
-                        )}
-                      >
-                        {factoryStatusLabels[status]}
-                      </button>
-                        );
-                      })()
-                    ))}
-                  </div>
-                )}
-
-                {isApproved && (
-                  <div className="mt-3 flex items-center gap-1.5 text-[10px] font-medium text-emerald-600">
-                    <CheckCircle2 className="h-3.5 w-3.5" /> Aprobado por Product
-                  </div>
-                )}
-
-                {item.observations && (
-                  <p className="mt-3 rounded-xl bg-orange-50/40 px-3 py-2 text-[11px] font-medium text-slate-600">
-                    {item.observations}
-                  </p>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      </Card>
-
-      {subject.topicChecklists.length > 0 && (
-        <Card className="p-5">
-          <div className="flex items-center justify-between gap-3 mb-5">
-            <div>
-              <p className="text-[10px] font-black uppercase tracking-widest text-orange-500">Contenido</p>
-              <h2 className="text-sm font-bold tracking-tight text-slate-950">Temas / Gránulos</h2>
-            </div>
-            <span className="rounded-full bg-orange-50 px-2.5 py-0.5 text-[10px] font-bold text-orange-700 ring-1 ring-orange-200/80">
-              {subject.topicChecklists.length} temas
-            </span>
-          </div>
-
-          <div className="space-y-3">
-            {subject.topicChecklists.map((tc: TopicChecklist) => {
-              const topicId = `${subject.id}-topic-${tc.topicOrder}`;
-              const expanded = expandedTopicId === topicId;
-              const topicDelivered = tc.items.filter((i) => i.status === 'ENTREGADO' || i.status === 'APROBADO').length;
-              const topicTotal = tc.items.length;
-
-              return (
-                <div key={topicId} className="rounded-[16px] border border-orange-100/60 bg-white overflow-hidden">
-                  <button
-                    type="button"
-                    onClick={() => setExpandedTopicId(expanded ? null : topicId)}
-                    className="flex w-full items-center justify-between p-4 text-left transition-colors hover:bg-orange-50/30"
-                  >
-                    <div className="flex items-center gap-3">
-                      <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-xl bg-linear-to-br from-orange-400 to-orange-600 text-[11px] font-black text-white">
-                        {tc.topicOrder}
-                      </span>
-                      <span className="text-sm font-bold text-slate-900">{tc.topicName}</span>
-                    </div>
-                    <div className="flex items-center gap-3">
-                      <span className="text-[10px] font-medium text-slate-500">{topicDelivered}/{topicTotal}</span>
-                      <span className="text-xs font-medium text-slate-400">{expanded ? 'Cerrar' : 'Ver checklist'}</span>
-                    </div>
-                  </button>
-
-                  {expanded && (
-                    <div className="border-t border-orange-100/60 p-4">
-                      <div className="grid gap-2 sm:grid-cols-2">
-                        {tc.items.map((item) => {
-                          const currentStatus = toFactoryStatus(item.status);
-                          const canToProduction = item.status === 'PENDIENTE' || item.status === 'ENTREGADO';
-                          const canToDelivered = item.status === 'EN_PRODUCCION';
-                          return (
-                            <div key={item.id} className="rounded-xl border border-slate-100 bg-slate-50/50 p-3">
-                              <p className="text-xs font-bold text-slate-800">{item.label}</p>
-                              <div className="mt-2 flex gap-1.5">
-                                {(['pendiente', 'en_produccion', 'entregado'] as FactoryStatus[]).map((status) => (
-                                  (() => {
-                                    const disabledByTransition =
-                                      (status === 'en_produccion' && !canToProduction) ||
-                                      (status === 'entregado' && !canToDelivered) ||
-                                      (status === 'pendiente' && item.status !== 'EN_PRODUCCION');
-                                    return (
-                                  <button
-                                    key={status}
-                                    type="button"
-                                    onClick={() => void handleTopicChecklistUpdate(tc.topicName, item.id, status)}
-                                    disabled={updatingChecklistId === item.id || disabledByTransition}
-                                    className={cn(
-                                      'flex-1 rounded-md px-2 py-1 text-[9px] font-bold transition-all',
-                                      (updatingChecklistId === item.id || disabledByTransition) && 'cursor-not-allowed opacity-50',
-                                      currentStatus === status
-                                        ? factoryStatusTone[status]
-                                        : 'bg-white text-slate-400 hover:bg-slate-100',
-                                    )}
-                                  >
-                                    {factoryStatusLabels[status]}
-                                  </button>
-                                    );
-                                  })()
-                                ))}
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  )}
+                  {index < list.length - 1 && <div className={cn('hidden h-[2px] flex-1 rounded-full md:block', state === 'done' ? 'bg-emerald-400' : 'bg-slate-200')} />}
                 </div>
               );
             })}
           </div>
-        </Card>
-      )}
-
-      <Card className="p-5">
-        <div className="flex items-center gap-3 mb-4">
-          <div className="flex h-9 w-9 items-center justify-center rounded-[12px] bg-[#FFEDD5]">
-            <Package className="h-4 w-4 text-[#FF6B00]" />
-          </div>
-          <div>
-            <h2 className="text-sm font-bold tracking-[-0.02em] text-[#1E293B]">Entrega de asignatura</h2>
-            <p className="text-[11px] font-medium text-[#64748B]">Marca la asignatura como entregada a Product</p>
-          </div>
         </div>
 
-        {!hasBlockingChecklist ? (
-          <div className="space-y-3">
-            <div className="rounded-[12px] bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-700 flex items-center gap-2">
-              <CheckCircle2 className="h-4 w-4" /> Todos los entregables están listos. Puedes entregar la asignatura.
+        <div className="mt-6 grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
+          <Info label="Estado operacional">{operationalLabel}</Info>
+          <Info label="Acción sugerida">{operationalCta.label}</Info>
+          <Info label="Temas informativos">{subject.topicChecklists.length}</Info>
+          <Info label="Correcciones Product">{productCorrections.length}</Info>
+          <Info label="Avance registrado">
+            <div className="flex items-center gap-2">
+              <div className="flex-1">
+                <div className="h-2 overflow-hidden rounded-full bg-slate-100">
+                  <div
+                    className={cn(
+                      'h-full rounded-full',
+                      isApproved
+                        ? 'bg-gradient-to-r from-emerald-400 to-emerald-600'
+                        : 'bg-gradient-to-r from-orange-400 to-orange-600',
+                    )}
+                    style={{ width: `${progress}%` }}
+                  />
+                </div>
+              </div>
+              <span className={cn('text-xs font-black', isApproved ? 'text-emerald-600' : 'text-orange-600')}>
+                {progress}%
+              </span>
             </div>
-            <Button onClick={() => void handleDeliverSubject()} disabled={deliveringSubject || isMutating} className="w-full py-3 text-sm font-bold">
-              {deliveringSubject ? <Clock3 className="h-4 w-4 animate-spin" /> : <Package className="h-4 w-4" />}
-              Entregar a Product
-            </Button>
-          </div>
-        ) : (
-          <div className="rounded-[12px] bg-amber-50 px-4 py-3 text-sm font-medium text-amber-700 flex items-center gap-2">
-            <AlertCircle className="h-4 w-4" /> Completa todos los entregables antes de entregar a Product.
+          </Info>
+        </div>
+
+        <div
+          className={cn(
+            'mt-6 rounded-[16px] border p-4',
+            isApproved ? 'border-emerald-100 bg-emerald-50/70' : 'border-slate-100 bg-slate-50/60',
+          )}
+        >
+          <p className={cn('text-xs font-bold', isApproved ? 'text-emerald-900' : 'text-slate-900')}>
+            {isApproved ? 'Materia completada' : 'Siguiente acción recomendada'}
+          </p>
+          <p className={cn('mt-1 text-sm font-medium', isApproved ? 'text-emerald-800' : 'text-slate-600')}>
+            {openCorrections.length > 0
+              ? 'Primero aplica todas las correcciones abiertas. Cada observación debe marcarse individualmente.'
+              : hasCorrectionFlow && correctionsInReview.length > 0
+                ? 'Todas las correcciones ya fueron aplicadas. Ahora puedes enviar la materia nuevamente a Product.'
+                : productionState === 'PENDIENTE'
+                  ? 'Cuando el equipo inicie el trabajo, marca la materia como En producción.'
+                  : productionState === 'EN_PRODUCCION'
+                    ? 'Cuando el contenido esté listo, envía la materia a Product para revisión.'
+                    : isApproved
+                      ? 'Product aprobó esta materia. No hay acciones pendientes de Fábrica.'
+                      : 'La materia ya fue enviada a Product. Espera validación.'}
+          </p>
+        </div>
+
+        {!hasCorrectionFlow && (
+          <div className="mt-6">
+            {productionState === 'PENDIENTE' && (
+              <Button
+                onClick={() => void handleStartProduction()}
+                disabled={isMutating || submittingAction === 'production'}
+                className="w-full py-3 text-sm font-bold shadow-[0_14px_28px_-20px_rgba(249,115,22,0.55)]"
+              >
+                {submittingAction === 'production' ? <Clock3 className="h-4 w-4 animate-spin" /> : <Package className="h-4 w-4" />}
+                Iniciar producción
+              </Button>
+            )}
+
+            {productionState === 'EN_PRODUCCION' && (
+              <div className="space-y-3">
+                <div className="rounded-[12px] bg-amber-50 px-4 py-3 text-sm font-medium text-amber-700">
+                  Usa esta acción cuando el contenido ya esté listo para revisión de Product.
+                </div>
+                <Button
+                  onClick={() => void handleMarkCompleted()}
+                  disabled={isMutating || submittingAction === 'complete'}
+                  className="w-full py-3 text-sm font-bold shadow-[0_14px_28px_-20px_rgba(249,115,22,0.55)]"
+                >
+                  {submittingAction === 'complete' ? <Clock3 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
+                  Enviar materia a Product
+                </Button>
+              </div>
+            )}
           </div>
         )}
       </Card>
+
+      <div ref={correctionsSectionRef}>
+        <Card
+          className={cn(
+            'overflow-hidden p-0 transition-all duration-500',
+            correctionsHighlighted && 'ring-2 ring-orange-200 shadow-[0_0_0_6px_rgba(251,191,36,0.12),0_16px_40px_-24px_rgba(249,115,22,0.45)]',
+          )}
+        >
+          <div className="border-b border-slate-100 bg-gradient-to-r from-rose-50 via-white to-sky-50 px-6 py-5">
+            <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+              <div className="flex items-start gap-3">
+                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-rose-100 text-rose-600">
+                  <MessageSquare className="h-5 w-5" />
+                </div>
+                <div className="min-w-0">
+                  <p className="text-[10px] font-black uppercase tracking-widest text-rose-500">Correcciones Product</p>
+                  <h2 className="text-base font-black tracking-tight text-slate-950">Seguimiento individual por observación</h2>
+                  <p className="mt-1 max-w-2xl text-sm leading-6 text-slate-600">
+                    Cada observación tiene su propio ciclo. No cierres la materia hasta que todas las correcciones abiertas hayan sido aplicadas.
+                  </p>
+                </div>
+              </div>
+              <div className="grid grid-cols-3 gap-2 rounded-2xl border border-white/70 bg-white/80 p-2 shadow-sm">
+                <MetricPill label="Abiertas" value={openCorrections.length} tone="rose" />
+                <MetricPill label="En revisión" value={correctionsInReview.length} tone="sky" />
+                <MetricPill label="Validadas" value={resolvedCorrections.length} tone="emerald" />
+              </div>
+            </div>
+          </div>
+
+          <div className="p-6">
+            {productCorrections.length === 0 ? (
+              <div className="rounded-[20px] border border-slate-100 bg-slate-50/70 px-5 py-6 text-center">
+                <CircleDashed className="mx-auto h-8 w-8 text-slate-300" />
+                <p className="mt-3 text-sm font-bold text-slate-900">Sin correcciones de Product</p>
+                <p className="mt-1 text-sm text-slate-500">La materia no tiene observaciones activas ni históricas de corrección.</p>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {openCorrections.length > 0 && (
+                  <div className="rounded-[18px] border border-amber-200 bg-amber-50/70 px-4 py-3 text-sm text-amber-800">
+                    <div className="flex items-start gap-2">
+                      <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+                      <div>
+                        <p className="font-bold">Aún existen correcciones pendientes por aplicar.</p>
+                        <p className="mt-1 text-amber-700">Mientras exista al menos una observación `ABIERTA`, no podrás reenviar la materia a Product.</p>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                <div className="grid gap-4 xl:grid-cols-2">
+                  {productCorrections.map((observation) => (
+                    <CorrectionCard
+                      key={observation.id}
+                      observation={observation}
+                      isSubmitting={submittingObservationId === observation.id}
+                      disabled={isMutating}
+                      onMarkApplied={() => void handleMarkCorrectionApplied(observation)}
+                    />
+                  ))}
+                </div>
+
+                {canSendCorrections && (
+                  <div className="rounded-[22px] border border-sky-200 bg-sky-50/70 p-5 shadow-sm">
+                    <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+                      <div>
+                        <p className="text-[10px] font-black uppercase tracking-widest text-sky-600">Revisión final</p>
+                        <h3 className="mt-1 text-base font-black text-slate-950">Todas las correcciones ya fueron aplicadas</h3>
+                        <p className="mt-1 text-sm text-slate-600">
+                          Ya no quedan observaciones abiertas. Puedes enviar la materia nuevamente a Product para validación individual.
+                        </p>
+                      </div>
+                      <Button
+                        onClick={() => void handleSendCorrectionsToProduct()}
+                        disabled={isMutating || submittingAction === 'send-corrections'}
+                        className="min-w-[280px] py-3 text-sm font-bold shadow-[0_14px_28px_-20px_rgba(14,165,233,0.6)]"
+                      >
+                        {submittingAction === 'send-corrections' ? <Clock3 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+                        Enviar correcciones a Product
+                      </Button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        </Card>
+      </div>
+    </div>
+  );
+}
+
+function CorrectionCard({
+  observation,
+  isSubmitting,
+  disabled,
+  onMarkApplied,
+}: {
+  observation: OperationalObservation;
+  isSubmitting: boolean;
+  disabled: boolean;
+  onMarkApplied: () => void;
+}) {
+  const statusUi = correctionStatusUi[observation.status];
+  const lastUpdated = observation.updatedAt ?? observation.createdAt;
+
+  return (
+    <div className="rounded-[22px] border border-slate-200 bg-white p-5 shadow-[0_18px_40px_-30px_rgba(15,23,42,0.25)] transition-all hover:border-slate-300">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0 flex-1">
+          <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Corrección solicitada por Product</p>
+          <h3 className="mt-1 text-base font-black tracking-tight text-slate-950">{statusUi.title}</h3>
+        </div>
+        <span className={cn('inline-flex items-center gap-2 rounded-full border px-3 py-1 text-[10px] font-black tracking-wide', statusUi.badge)}>
+          <span className={cn('h-2 w-2 rounded-full', statusUi.dot)} />
+          {statusUi.label}
+        </span>
+      </div>
+
+      <div className="mt-4 rounded-[18px] border border-slate-100 bg-slate-50/80 p-4">
+        <p className="text-sm font-medium leading-6 text-slate-800">{observation.text}</p>
+      </div>
+
+      <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <MetaBox label="Fecha" value={formatDate(observation.createdAt)} />
+        <MetaBox label="Estado" value={statusUi.label.replace('_', ' ')} />
+        <MetaBox label="Responsable" value="Fábrica" />
+        <MetaBox label="Última actualización" value={formatDate(lastUpdated)} />
+      </div>
+
+      <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <p className="text-sm text-slate-500">{statusUi.helper}</p>
+
+        {observation.status === 'ABIERTA' && (
+          <Button
+            onClick={onMarkApplied}
+            disabled={disabled || isSubmitting}
+            className="min-w-[240px] py-2.5 text-sm font-bold"
+          >
+            {isSubmitting ? <Clock3 className="h-4 w-4 animate-spin" /> : <RefreshCcw className="h-4 w-4" />}
+            Marcar corrección aplicada
+          </Button>
+        )}
+
+        {observation.status === 'EN_CORRECCION' && (
+          <div className="inline-flex min-w-[240px] items-center justify-center gap-2 rounded-2xl border border-sky-200 bg-sky-50 px-4 py-2.5 text-sm font-bold text-sky-700">
+            <Send className="h-4 w-4" />
+            Corrección enviada a Product
+          </div>
+        )}
+
+        {observation.status === 'RESUELTA' && (
+          <div className="inline-flex min-w-[240px] items-center justify-center gap-2 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-2.5 text-sm font-bold text-emerald-700">
+            <CheckCircle2 className="h-4 w-4" />
+            Validada por Product
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function MetaBox({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-2xl border border-slate-100 bg-white px-3 py-3">
+      <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">{label}</p>
+      <p className="mt-1 text-[11px] font-bold leading-5 text-slate-700">{value}</p>
+    </div>
+  );
+}
+
+function MetricPill({ label, value, tone }: { label: string; value: number; tone: 'rose' | 'sky' | 'emerald' }) {
+  const tones = {
+    rose: 'bg-rose-50 text-rose-700',
+    sky: 'bg-sky-50 text-sky-700',
+    emerald: 'bg-emerald-50 text-emerald-700',
+  } as const;
+
+  return (
+    <div className={cn('rounded-2xl px-3 py-2 text-center', tones[tone])}>
+      <p className="text-[9px] font-black uppercase tracking-widest">{label}</p>
+      <p className="mt-1 text-lg font-black">{value}</p>
     </div>
   );
 }

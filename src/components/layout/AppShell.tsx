@@ -7,6 +7,7 @@ import { cn } from '../ui/tokens';
 import { BrandMark } from './BrandMark';
 import { GlobalSearch } from '../search/GlobalSearch';
 import { useOperations } from '../../features/operations/OperationsContext';
+import { isActionableNotification, isVisibleNotification } from '../../features/operations/notificationInbox';
 
 const productLinks = [
   { to: '/product/dashboard', label: 'Dashboard', icon: Home },
@@ -21,11 +22,17 @@ const factoryLinks = [
 ];
 
 export function AppShell() {
-  const { role, logout } = useAuth();
-  const { notifications } = useOperations();
+  const { role, logout, user } = useAuth();
+  const { notifications, notificationSummary, projects } = useOperations();
   const navigate = useNavigate();
   const links = role === 'FABRICA' ? factoryLinks : productLinks;
-  const unreadNotifications = notifications.filter((item) => !item.read && (item.roleTarget === role || role === 'ADMIN')).length;
+  const actionableBadge =
+    notificationSummary?.actionableCount ??
+    notifications.filter(
+      (item) =>
+        isVisibleNotification(item, role, user?.id) &&
+        isActionableNotification(item, { projects, role }),
+    ).length;
 
   const handleLogout = () => {
     logout();
@@ -38,7 +45,7 @@ export function AppShell() {
         <div className="mx-auto flex max-w-7xl items-center justify-between gap-3">
           <BrandMark />
           <nav className="hidden items-center gap-1 rounded-2xl border border-slate-200/60 bg-slate-50/80 p-1 lg:flex">
-            {links.map((link) => <ShellLink key={link.to} {...link} badge={link.to === '/notifications' ? unreadNotifications : 0} />)}
+            {links.map((link) => <ShellLink key={link.to} {...link} badge={link.to === '/notifications' ? actionableBadge : 0} />)}
           </nav>
           <div className="flex items-center gap-2">
             <GlobalSearch />
@@ -61,7 +68,7 @@ export function AppShell() {
           </div>
         </div>
         <nav className="mx-auto mt-2 flex max-w-7xl gap-1.5 overflow-x-auto pb-0.5 lg:hidden">
-          {links.map((link) => <ShellLink key={link.to} {...link} badge={link.to === '/notifications' ? unreadNotifications : 0} />)}
+          {links.map((link) => <ShellLink key={link.to} {...link} badge={link.to === '/notifications' ? actionableBadge : 0} />)}
         </nav>
       </header>
 

@@ -1,20 +1,27 @@
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import type { SubjectVirtualization, VirtualizationProject } from '../../types/domain';
+import { useAuth } from '../auth/AuthContext';
 import { useOperations } from './OperationsContext';
+import { subjectsApi } from '../../services/subjectsApi';
 
 export function useEnsureSubjectDetail(subjectId: string | undefined): {
   project: VirtualizationProject | undefined;
   subject: SubjectVirtualization | undefined;
   isLoading: boolean;
   error: string | null;
+  notFound: boolean;
 } {
+  const { isLoading: authLoading } = useAuth();
   const {
     projects,
     backendEnabled,
     loadProjectDetail,
     isLoadingProjectDetail,
+    isLoadingProjects,
     selectedProjectError,
   } = useOperations();
+  const [subjectDetailError, setSubjectDetailError] = useState<string | null>(null);
+  const [subjectDetailLoading, setSubjectDetailLoading] = useState(false);
 
   const match = useMemo(() => {
     for (const project of projects) {
@@ -25,22 +32,65 @@ export function useEnsureSubjectDetail(subjectId: string | undefined): {
   }, [projects, subjectId]);
 
   useEffect(() => {
-    if (!subjectId || !backendEnabled || match.subject) return;
-    projects.forEach((project) => {
-      if (project.subjects.length === 0) {
-        void loadProjectDetail(project.id);
-      }
-    });
-  }, [subjectId, backendEnabled, match.subject, projects, loadProjectDetail]);
+    if (!subjectId || !backendEnabled || authLoading || match.subject) return;
 
-  const isLoading =
-    Boolean(subjectId && backendEnabled && !match.subject) &&
-    (isLoadingProjectDetail || projects.some((p) => p.subjects.length === 0));
+    let cancelled = false;
+    setSubjectDetailLoading(true);
+    setSubjectDetailError(null);
+
+    void (async () => {
+      try {
+        const apiProject = await subjectsApi.getSubjectDetail(subjectId);
+        if (cancelled) return;
+        await loadProjectDetail(apiProject.id);
+      } catch (error) {
+        if (!cancelled) {
+          setSubjectDetailError(error instanceof Error ? error.message : 'No se pudo cargar el detalle de la asignatura.');
+        }
+      } finally {
+        if (!cancelled) setSubjectDetailLoading(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [subjectId, backendEnabled, authLoading, match.subject, loadProjectDetail]);
+
+  if (!subjectId) {
+    return { project: undefined, subject: undefined, isLoading: false, error: null, notFound: true };
+  }
+
+  if (!backendEnabled) {
+    return {
+      project: match.project,
+      subject: match.subject,
+      isLoading: false,
+      error: null,
+      notFound: !match.subject,
+    };
+  }
+
+  const error = subjectDetailError ?? selectedProjectError;
+  const isResolving = Boolean(
+    !authLoading &&
+    !match.subject &&
+    !error &&
+    (subjectDetailLoading || isLoadingProjectDetail || isLoadingProjects),
+  );
+
+  const notFound = Boolean(
+    !authLoading &&
+    !isResolving &&
+    !match.subject &&
+    Boolean(error),
+  );
 
   return {
     project: match.project,
     subject: match.subject,
-    isLoading,
-    error: selectedProjectError,
+    isLoading: authLoading || isResolving,
+    error,
+    notFound,
   };
 }

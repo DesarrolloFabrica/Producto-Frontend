@@ -1,321 +1,745 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+
 import { motion } from 'motion/react';
-import { AlertTriangle, Bell, CheckCircle2, Clock3, Eye, Check, ArrowRight, CalendarDays, User } from 'lucide-react';
+
+import { AlertTriangle, ArrowRight, Bell, Clock3, Loader2, X } from 'lucide-react';
+
 import { Link } from 'react-router-dom';
+
 import { MetricCard } from '../../components/cards/MetricCard';
+
 import { Card } from '../../components/ui/Card';
+
 import { PageHeader } from '../../components/ui/PageHeader';
+
 import { cn } from '../../components/ui/tokens';
+
 import { EmptyState } from '../../components/ui/EmptyState';
+
 import { useOperations } from '../../features/operations/OperationsContext';
-import { useContextPanel } from '../../features/context-panel/ContextPanelProvider';
-import { useToast } from '../../components/ui/ToastProvider';
-import type { Notification } from '../../types/domain';
-import { formatDate } from '../../utils/formatters';
+
 import { useAuth } from '../auth/AuthContext';
+
 import { OperationalHelp } from '../../components/operational/OperationalHelp';
-import { getNotificationOperationalState, getNotificationRequiredAction } from '../operations/operationalRules';
-import { severityStyles } from '../operations/severityStyles';
+
 import { fadeUp, softScale } from '../../components/motion/presets';
 
-type Filter = 'ALL' | 'NEW' | 'READ' | 'CRITICAL';
+import {
 
-const filterLabels: Record<Filter, string> = { ALL: 'Todas', NEW: 'Nuevas', READ: 'Leídas', CRITICAL: 'Críticas' };
+  formatRelativeTime,
 
-const leftAccent: Record<NonNullable<Notification['type']>, string> = {
-  INFO: 'border-l-[6px] border-l-[#3B82F6]',
-  ACTION: 'border-l-[6px] border-l-[#FF6B00]',
-  DEADLINE: 'border-l-[6px] border-l-[#F59E0B]',
-  CRITICAL: 'border-l-[6px] border-l-rose-500',
-};
+  groupNotificationsByResource,
 
-const typePill: Record<NonNullable<Notification['type']>, string> = {
-  INFO: 'bg-blue-50 text-blue-700 ring-blue-100',
-  ACTION: 'bg-orange-50 text-orange-700 ring-orange-100',
-  DEADLINE: 'bg-amber-50 text-amber-700 ring-amber-100',
-  CRITICAL: 'bg-rose-50 text-rose-800 ring-rose-200/80',
-};
+  isActionableNotification,
 
-const typeIconBg: Record<NonNullable<Notification['type']>, string> = {
-  INFO: 'bg-blue-500/10 text-blue-600',
-  ACTION: 'bg-[#FF6B00]/10 text-[#FF6B00]',
-  DEADLINE: 'bg-amber-500/10 text-amber-600',
-  CRITICAL: 'bg-rose-500/10 text-rose-700',
-};
+  isVisibleNotification,
+
+  type NotificationGroup,
+
+} from '../operations/notificationInbox';
+
+import type { Notification } from '../../types/domain';
+
+import { notificationsApi } from '../../services/notificationsApi';
+
+
+
+type InboxView = 'attention' | 'activity' | 'cleared';
+
+
 
 export function NotificationsPage() {
-  const { role } = useAuth();
+
+  const { role, user } = useAuth();
+
   const {
+
     notifications,
+
+    notificationSummary,
+
+    hasMoreNotifications,
+
     projects,
-    markNotificationRead,
-    markAllNotificationsReadFromApi,
+
     loadNotifications,
+
+    markNotificationsReadByResource,
+
+    dismissNotifications,
+
     isLoadingNotifications,
+
     notificationsError,
+
     backendEnabled,
+
   } = useOperations();
-  const { openContextPanel } = useContextPanel();
-  const { showToast } = useToast();
-  const [filter, setFilter] = useState<Filter>('ALL');
+
+
+
+  const [view, setView] = useState<InboxView>('attention');
+
+
 
   useEffect(() => {
-    if (backendEnabled) {
-      void loadNotifications();
-    }
+
+    if (!backendEnabled) return;
+
+    void (async () => {
+
+      await notificationsApi.dismissInformative().catch(() => undefined);
+
+      await loadNotifications();
+
+    })();
+
   }, [backendEnabled, loadNotifications]);
 
-  const visible = notifications.filter((notification) => notification.roleTarget === role || role === 'ADMIN');
-  const sorted = [...visible].sort((a, b) => {
-    const stateRank = notificationPriorityRank(getNotificationOperationalState(a, projects)) - notificationPriorityRank(getNotificationOperationalState(b, projects));
-    if (stateRank !== 0) return stateRank;
-    const typeRank = notificationTypeRank(a.type) - notificationTypeRank(b.type);
-    if (typeRank !== 0) return typeRank;
-    if (a.read !== b.read) return a.read ? 1 : -1;
-    return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
-  });
-  const filtered = sorted.filter(
-    (notification) =>
-      filter === 'ALL' || (filter === 'NEW' && !notification.read) || (filter === 'READ' && notification.read) || (filter === 'CRITICAL' && notification.type === 'CRITICAL'),
+
+
+  const actionContext = useMemo(() => ({ projects, role }), [projects, role]);
+
+  const visible = useMemo(
+
+    () => notifications.filter((n) => isVisibleNotification(n, role, user?.id)),
+
+    [notifications, role, user?.id],
+
   );
 
-  const hasUnread = visible.some((n) => !n.read);
-  const criticalCount = visible.filter((n) => n.type === 'CRITICAL' && !n.read).length;
 
-  const handleMarkRead = async (id: string) => {
-    try {
-      await markNotificationRead(id);
-      showToast('Notificación marcada como leída');
-    } catch (error) {
-      showToast('No se pudo marcar la notificación como leída', 'error');
+
+  const actionable = useMemo(
+
+    () => visible.filter((n) => isActionableNotification(n, actionContext)),
+
+    [visible, actionContext],
+
+  );
+
+
+
+  const groups = useMemo(
+
+    () => groupNotificationsByResource(visible, projects, actionContext),
+
+    [visible, projects, actionContext],
+
+  );
+
+
+
+  const clearedGroups = useMemo(
+    () => groups.filter((g) => !g.hasActionable),
+    [groups],
+  );
+
+  const activityGroups = useMemo(
+    () => groups.filter((g) => !g.hasActionable || g.items.every((n) => n.read)),
+    [groups],
+  );
+
+
+
+  const attentionGroups = useMemo(
+
+    () => groups.filter((g) => g.hasActionable),
+
+    [groups],
+
+  );
+
+
+
+  const summary = notificationSummary ?? {
+
+    actionableCount: actionable.length,
+
+    unreadCount: visible.filter((n) => !n.read).length,
+
+    inboxCount: visible.length,
+
+  };
+
+
+
+  useEffect(() => {
+
+    if (summary.actionableCount === 0 && view === 'attention') {
+
+      setView('activity');
+
     }
+
+  }, [summary.actionableCount, view]);
+
+
+
+  const handleOpenResource = (group: NotificationGroup) => {
+
+    if (!group.targetUrl) return;
+
+    void markNotificationsReadByResource({
+
+      projectId: group.projectId,
+
+      subjectId: group.subjectId,
+
+    });
+
   };
 
-  const handleMarkAllRead = async () => {
-    try {
-      await markAllNotificationsReadFromApi();
-      showToast('Todas las notificaciones marcadas como leídas');
-    } catch (error) {
-      showToast('No se pudieron marcar todas las notificaciones', 'error');
-    }
+
+
+  const handleDismissGroup = (group: NotificationGroup) => {
+    const unreadIds = group.items.filter((item) => !item.read).map((item) => item.id);
+    void dismissNotifications(
+      unreadIds.length > 0
+        ? { ids: unreadIds }
+        : { projectId: group.projectId, subjectId: group.subjectId },
+    );
   };
 
-  const handleContext = (notification: Notification) => {
-    openContextPanel('notification', notification.id, { notification });
+
+
+  const handleLoadMore = () => {
+
+    void loadNotifications({ offset: visible.length, append: true });
+
   };
+
+
 
   return (
+
     <div className="space-y-7">
+
       <PageHeader
+
         prominentEyebrow
+
         eyebrow="Centro de alertas"
-        title="Centro de acciones"
-        description="Bandeja operacional de novedades, acciones requeridas, vencimientos y eventos críticos por rol."
+
+        title="Bandeja operacional"
+
+        description="Solo ves lo que requiere acción o la actividad reciente de los últimos 7 días. Al entrar a un proyecto o asignatura, las alertas se archivan solas."
+
       />
+
       <OperationalHelp topic="notifications" />
 
-      {isLoadingNotifications && (
-        <Card variant="subjectPanel" className="p-4 text-sm font-bold text-slate-500">
-          Cargando notificaciones reales...
+
+
+      {isLoadingNotifications && visible.length === 0 && (
+
+        <Card variant="subjectPanel" className="flex items-center gap-3 p-4 text-sm font-bold text-slate-500">
+
+          <Loader2 className="h-4 w-4 animate-spin" /> Cargando bandeja...
+
         </Card>
+
       )}
+
+
 
       {notificationsError && (
+
         <Card variant="subjectPanel" className="flex items-center justify-between gap-3 border-rose-100 bg-rose-50/40 p-4">
+
           <p className="text-sm font-bold text-rose-700">{notificationsError}</p>
-          <button type="button" onClick={() => void loadNotifications()} className="rounded-xl bg-white px-3 py-2 text-xs font-bold text-rose-700 ring-1 ring-rose-200">
+
+          <button
+
+            type="button"
+
+            onClick={() => void loadNotifications()}
+
+            className="rounded-xl bg-white px-3 py-2 text-xs font-bold text-rose-700 ring-1 ring-rose-200"
+
+          >
+
             Reintentar
+
           </button>
+
         </Card>
+
       )}
 
-      <section className="grid gap-4 md:grid-cols-4">
-        <MetricCard variant="subjectPanel" label="Total" value={visible.length} icon={Bell} active={filter === 'ALL'} onClick={() => setFilter('ALL')} />
-        <MetricCard variant="subjectPanel" label="Nuevas" value={visible.filter((item) => !item.read).length} icon={Clock3} tone="text-orange-500" active={filter === 'NEW'} onClick={() => setFilter('NEW')} />
-        <MetricCard variant="subjectPanel" label="Críticas" value={criticalCount} icon={AlertTriangle} tone="text-rose-500" active={filter === 'CRITICAL'} onClick={() => setFilter('CRITICAL')} />
-        <MetricCard variant="subjectPanel" label="Leídas" value={visible.filter((item) => item.read).length} icon={CheckCircle2} tone="text-emerald-500" active={filter === 'READ'} onClick={() => setFilter('READ')} />
+
+
+      <section className="grid gap-4 md:grid-cols-3">
+
+        <MetricCard
+
+          variant="subjectPanel"
+
+          label="Requieren atención"
+
+          value={summary.actionableCount}
+
+          icon={AlertTriangle}
+
+          tone="text-orange-500"
+
+          active={view === 'attention'}
+
+          onClick={() => setView('attention')}
+
+        />
+
+        <MetricCard
+
+          variant="subjectPanel"
+
+          label="Actividad reciente"
+
+          value={summary.inboxCount}
+
+          icon={Clock3}
+
+          tone="text-sky-500"
+
+          active={view === 'activity'}
+
+          onClick={() => setView('activity')}
+
+        />
+
+        <MetricCard
+          variant="subjectPanel"
+          label="Sin pendientes"
+          value={clearedGroups.length}
+          icon={Bell}
+          tone="text-emerald-500"
+          active={view === 'cleared'}
+          onClick={() => setView('cleared')}
+        />
+
       </section>
 
-      <div className="flex items-center justify-between gap-4">
-        <div className="inline-flex items-center rounded-[100px] bg-[#F1F5F9] p-1">
-          {(Object.keys(filterLabels) as Filter[]).map((item) => (
-            <button
-              key={item}
-              type="button"
-              onClick={() => setFilter(item)}
-              className={cn(
-                'rounded-[100px] px-4 py-2 text-xs font-medium transition-all duration-200',
-                filter === item
-                  ? 'border border-[#FF6B00] bg-white text-[#FF6B00] shadow-[0_2px_4px_rgba(0,0,0,0.05)]'
-                  : 'border border-transparent text-[#64748B] hover:text-[#1E293B]',
-              )}
-            >
-              {filterLabels[item]}
-            </button>
-          ))}
-        </div>
-        {hasUnread && (
-          <button
-            type="button"
-            onClick={handleMarkAllRead}
-            className="inline-flex items-center gap-1.5 rounded-[12px] px-3 py-2 text-xs font-medium text-[#64748B] transition-all duration-200 hover:bg-[#F1F5F9] hover:text-[#1E293B]"
-          >
-            <Check className="h-3.5 w-3.5" /> Marcar todas vistas
-          </button>
-        )}
+
+
+      <div className="inline-flex items-center rounded-[100px] bg-[#F1F5F9] p-1">
+
+        <TabButton active={view === 'attention'} onClick={() => setView('attention')}>
+
+          Requiere atención ({summary.actionableCount})
+
+        </TabButton>
+
+        <TabButton active={view === 'activity'} onClick={() => setView('activity')}>
+          Actividad reciente
+        </TabButton>
+        <TabButton active={view === 'cleared'} onClick={() => setView('cleared')}>
+          Sin pendientes ({clearedGroups.length})
+        </TabButton>
       </div>
 
-      {filtered.length === 0 ? (
-        <EmptyState icon={Bell} title="Sin notificaciones" description="No hay alertas que coincidan con el filtro seleccionado." cardVariant="subjectPanel" />
-      ) : (
-        <div>
-          <p className="mb-3 text-[10px] font-black uppercase tracking-widest text-slate-400">Ordenado por prioridad operacional: requiere accion, seguimiento e informativas</p>
+      {view === 'attention' ? (
+
+        attentionGroups.length === 0 ? (
+
+          <EmptyState
+
+            icon={Bell}
+
+            title="Sin alertas pendientes"
+
+            description="No hay acciones urgentes. Revisa la actividad reciente o continúa desde el dashboard."
+
+            cardVariant="subjectPanel"
+
+          />
+
+        ) : (
+
           <div className="grid gap-4 lg:grid-cols-2">
-          {filtered.map((notification) => (
-             <NotificationCard key={notification.id} notification={notification} projects={projects} onContext={handleContext} onMarkRead={handleMarkRead} />
-          ))}
+
+            {attentionGroups.map((group) => (
+
+              <AttentionGroupCard
+                key={group.key}
+                group={group}
+                onOpen={handleOpenResource}
+                onDismiss={handleDismissGroup}
+              />
+
+            ))}
+
           </div>
+
+        )
+
+      ) : view === 'activity' ? (
+        activityGroups.length === 0 ? (
+          <EmptyState
+            icon={Clock3}
+            title="Sin actividad reciente"
+            description="Las actualizaciones informativas se archivan automáticamente. Solo conservamos los últimos 7 días."
+            cardVariant="subjectPanel"
+          />
+        ) : (
+          <div className="space-y-3">
+            {activityGroups.map((group) => (
+              <ActivityGroupRow
+                key={group.key}
+                group={group}
+                onOpen={handleOpenResource}
+                onDismiss={handleDismissGroup}
+              />
+            ))}
+          </div>
+        )
+      ) : clearedGroups.length === 0 ? (
+        <EmptyState
+          icon={Bell}
+          title="Sin novedades informativas"
+          description="Aquí aparecen las actualizaciones que ya no requieren acción: aprobaciones, cambios resueltos o actividad archivada."
+          cardVariant="subjectPanel"
+        />
+      ) : (
+        <div className="space-y-3">
+          {clearedGroups.map((group) => (
+            <ActivityGroupRow
+              key={group.key}
+              group={group}
+              onOpen={handleOpenResource}
+              onDismiss={handleDismissGroup}
+            />
+          ))}
         </div>
       )}
+
+
+
+      {hasMoreNotifications && (
+
+        <div className="flex justify-center pt-2">
+
+          <button
+
+            type="button"
+
+            onClick={handleLoadMore}
+
+            disabled={isLoadingNotifications}
+
+            className="inline-flex items-center gap-2 rounded-[12px] bg-white px-4 py-2.5 text-xs font-bold text-slate-600 ring-1 ring-slate-200 transition hover:bg-slate-50 disabled:opacity-60"
+
+          >
+
+            {isLoadingNotifications ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
+
+            Cargar actividad anterior
+
+          </button>
+
+        </div>
+
+      )}
+
     </div>
+
   );
+
 }
 
-function notificationPriorityRank(state: ReturnType<typeof getNotificationOperationalState>) {
-  if (state === 'nueva') return 0;
-  if (state === 'en_proceso') return 1;
-  if (state === 'vista') return 2;
-  return 3;
-}
 
-function notificationTypeRank(type?: Notification['type']) {
-  if (type === 'CRITICAL') return 0;
-  if (type === 'DEADLINE') return 1;
-  if (type === 'ACTION') return 2;
-  return 3;
-}
 
-function NotificationCard({
-  notification,
-  projects,
-  onContext,
-  onMarkRead,
+function TabButton({
+
+  active,
+
+  onClick,
+
+  children,
+
 }: {
-  notification: Notification;
-  projects: ReturnType<typeof useOperations>['projects'];
-  onContext: (notification: Notification) => void;
-  onMarkRead: (id: string) => Promise<void>;
+
+  active: boolean;
+
+  onClick: () => void;
+
+  children: React.ReactNode;
+
 }) {
-  const metaType = notification.type ?? 'INFO';
-  const accent = leftAccent[metaType];
-  const pillStyle = typePill[metaType];
-  const iconStyle = typeIconBg[metaType];
-  const operationalState = getNotificationOperationalState(notification, projects);
-  const requiredAction = getNotificationRequiredAction(notification, projects);
-  const visual = severityStyles[metaType === 'CRITICAL' ? 'critical' : metaType === 'DEADLINE' ? 'urgent' : metaType === 'ACTION' ? 'attention' : 'info'];
 
   return (
-    <motion.div {...fadeUp} {...softScale} className={cn('notification-card', notification.type === 'CRITICAL' && !notification.read && 'relative')}>
+
+    <button
+
+      type="button"
+
+      onClick={onClick}
+
+      className={cn(
+
+        'rounded-[100px] px-4 py-2 text-xs font-medium transition-all duration-200',
+
+        active
+
+          ? 'border border-[#FF6B00] bg-white text-[#FF6B00] shadow-[0_2px_4px_rgba(0,0,0,0.05)]'
+
+          : 'border border-transparent text-[#64748B] hover:text-[#1E293B]',
+
+      )}
+
+    >
+
+      {children}
+
+    </button>
+
+  );
+
+}
+
+
+
+function AttentionGroupCard({
+
+  group,
+
+  onOpen,
+
+  onDismiss,
+
+}: {
+
+  group: NotificationGroup;
+
+  onOpen: (group: NotificationGroup) => void;
+
+  onDismiss: (group: NotificationGroup) => void;
+
+}) {
+
+  const latest = group.items.find((item) => isActionableNotification(item)) ?? group.items[0];
+
+  const type = latest.type ?? 'ACTION';
+
+  const accent =
+
+    type === 'CRITICAL'
+
+      ? 'border-l-rose-500'
+
+      : type === 'DEADLINE'
+
+        ? 'border-l-amber-500'
+
+        : 'border-l-[#FF6B00]';
+
+
+
+  return (
+
+    <motion.div {...fadeUp} {...softScale}>
+
       <Card
+
         className={cn(
-          'group relative overflow-hidden bg-white rounded-[20px] shadow-[0_4px_18px_-10px_rgba(15,23,42,0.16)] transition-all duration-200 hover:shadow-[0_18px_38_-24px_rgba(249,115,22,0.42)]',
+
+          'overflow-hidden rounded-[20px] border-none bg-white shadow-[0_4px_18px_-10px_rgba(15,23,42,0.16)]',
+
+          'border-l-[6px]',
+
           accent,
+
         )}
+
       >
-        <div className="flex w-full flex-col">
-          <div className="flex items-start gap-3 px-5 pb-3 pt-5 sm:gap-4">
-            <div className={cn('flex h-10 w-10 shrink-0 items-center justify-center rounded-full', iconStyle)}>
-              {metaType === 'CRITICAL' ? (
-                <AlertTriangle className="h-4 w-4" />
-              ) : metaType === 'DEADLINE' ? (
-                <Clock3 className="h-4 w-4" />
-              ) : (
-                <Bell className="h-4 w-4" />
-              )}
+
+        <div className="p-5">
+
+          <div className="flex items-start justify-between gap-3">
+
+            <div className="min-w-0">
+
+              <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">
+
+                {group.subtitle ?? 'Operación'}
+
+              </p>
+
+              <h3 className="mt-1 text-base font-bold text-slate-900">{group.label}</h3>
+
+              <p className="mt-2 text-sm font-medium leading-relaxed text-slate-600">{latest.message}</p>
+
             </div>
-            <div className="min-w-0 flex-1">
-              <div className="flex flex-wrap items-start justify-between gap-2">
-                <div className="min-w-0 flex-1">
-                  <p className="text-base font-bold text-[#1E293B]">{notification.title}</p>
-                  <p className="mt-1.5 text-[0.9rem] font-medium leading-relaxed text-[#64748B]">{notification.message}</p>
-                  <p className={cn('mt-3 inline-flex rounded-full px-2.5 py-1 text-[9px] font-black uppercase tracking-widest ring-1', visual.badge)}>{notificationCue(metaType, operationalState)}</p>
-                  <div className="mt-3 grid gap-2 rounded-2xl bg-orange-50/25 p-3 md:grid-cols-3">
-                    <ActionInfo label="Accion requerida" value={requiredAction.action} />
-                    <ActionInfo label="Impacto" value={requiredAction.impact} />
-                    <ActionInfo label="Entidad" value={requiredAction.affectedEntity} />
-                  </div>
-                </div>
-                <div className="flex shrink-0 flex-wrap items-center gap-1.5">
-                  <span className={cn('rounded-[6px] px-2 py-0.5 text-[9px] font-semibold uppercase tracking-[0.05em] ring-1', pillStyle)}>
-                    {metaType === 'INFO' ? 'Info' : metaType === 'ACTION' ? 'Acción' : metaType === 'DEADLINE' ? 'Vence pronto' : 'Crítica'}
-                  </span>
-                  <span className="rounded-[6px] bg-slate-50 px-2 py-0.5 text-[9px] font-semibold uppercase tracking-[0.05em] text-slate-600 ring-1 ring-slate-200">
-                    {operationalState.replace('_', ' ')}
-                  </span>
-                  {!notification.read && (
-                    <span className="rounded-[6px] bg-[#FF6B00] px-2 py-0.5 text-[9px] font-semibold uppercase tracking-[0.05em] text-white">
-                      Nueva
-                    </span>
-                  )}
-                </div>
-              </div>
-            </div>
-          </div>
-          <div className="mx-5 h-px bg-[#F1F5F9]" />
-          <div className="flex flex-wrap items-center justify-between gap-3 px-5 py-3">
-            <div className="flex flex-wrap items-center gap-3 text-[11px] text-[#94A3B8]">
-              <span className="flex items-center gap-1">
-                <CalendarDays className="h-3 w-3" /> {formatDate(notification.createdAt)}
+
+            <div className="flex shrink-0 items-start gap-2">
+              <span className="rounded-full bg-orange-50 px-2.5 py-1 text-[9px] font-black uppercase tracking-widest text-orange-700 ring-1 ring-orange-100">
+
+              {type === 'CRITICAL' ? 'Urgente' : 'Acción'}
+
               </span>
-              <span className="flex items-center gap-1">
-                <User className="h-3 w-3" /> {notification.roleTarget}
-              </span>
-            </div>
-            <div className="flex flex-wrap items-center gap-2">
-              {!notification.read && (
-                <button
-                  type="button"
-                  onClick={() => void onMarkRead(notification.id)}
-                  className="inline-flex items-center gap-1 rounded-[8px] px-2.5 py-1.5 text-[11px] font-medium text-[#64748B] transition-all duration-200 hover:bg-[#F1F5F9]"
-                >
-                  <Check className="h-3 w-3" /> Vista
-                </button>
-              )}
+
               <button
                 type="button"
-                onClick={() => onContext(notification)}
-                className="inline-flex items-center gap-1.5 rounded-[8px] border border-[#E2E8F0] px-3 py-1.5 text-[11px] font-medium text-[#64748B] transition-all duration-200 hover:bg-[#F8FAFC]"
+                onClick={() => onDismiss(group)}
+                className="rounded-lg p-1.5 text-slate-400 transition hover:bg-slate-100 hover:text-slate-600"
+                title="Descartar notificación"
+                aria-label="Descartar notificación"
               >
-                <Eye className="h-3 w-3" /> Vista rápida
+                <X className="h-4 w-4" />
               </button>
-              {notification.projectId && (
-                <Link
-                  to={`/projects/${notification.projectId}`}
-                  className="inline-flex items-center gap-1.5 rounded-[8px] bg-[#FF6B00] px-3 py-1.5 text-[11px] font-semibold text-white shadow-lg shadow-[#FF6B00]/20 transition-all duration-200 hover:bg-[#E66000]"
-                >
-                  Ver proyecto <ArrowRight className="h-3 w-3" />
-                </Link>
-              )}
             </div>
+
           </div>
+
+
+
+          <div className="mt-4 flex items-center justify-between gap-3">
+
+            <span className="text-[11px] font-medium text-slate-400">
+
+              {formatRelativeTime(group.latestAt)}
+
+              {group.items.length > 1 ? ` · ${group.items.length} actualizaciones` : ''}
+
+            </span>
+
+            {group.hasActionable && group.targetUrl ? (
+
+              <Link
+
+                to={group.targetUrl}
+
+                onClick={() => onOpen(group)}
+
+                className="inline-flex items-center gap-1.5 rounded-[10px] bg-[#FF6B00] px-3 py-2 text-[11px] font-semibold text-white shadow-lg shadow-[#FF6B00]/20 transition hover:bg-[#E66000]"
+
+              >
+
+                Ir a resolver <ArrowRight className="h-3 w-3" />
+
+              </Link>
+
+            ) : group.targetUrl ? (
+
+              <Link
+
+                to={group.targetUrl}
+
+                className="inline-flex items-center gap-1 rounded-[8px] px-2.5 py-1.5 text-[11px] font-semibold text-slate-500 transition hover:bg-slate-100"
+
+              >
+
+                Ver historial <ArrowRight className="h-3 w-3" />
+
+              </Link>
+
+            ) : null}
+
+          </div>
+
         </div>
+
       </Card>
+
     </motion.div>
+
   );
+
 }
 
-function ActionInfo({ label, value }: { label: string; value: string }) {
+
+
+function ActivityGroupRow({
+
+  group,
+
+  onOpen,
+
+  onDismiss,
+
+}: {
+
+  group: NotificationGroup;
+
+  onOpen: (group: NotificationGroup) => void;
+
+  onDismiss: (group: NotificationGroup) => void;
+
+}) {
+
+  const latest = group.items[0] as Notification;
+
+
+
   return (
-    <div>
-      <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">{label}</p>
-      <p className="mt-1 text-[11px] font-bold leading-5 text-slate-700">{value}</p>
-    </div>
+
+    <Card className="rounded-[16px] border-none bg-white px-5 py-4 shadow-[0_2px_8px_-4px_rgba(15,23,42,0.08)]">
+
+      <div className="flex flex-wrap items-center justify-between gap-3">
+
+        <div className="min-w-0 flex-1">
+
+          <p className="text-sm font-bold text-slate-800">{group.label}</p>
+
+          <p className="mt-0.5 truncate text-xs font-medium text-slate-500">
+
+            {latest.title}
+
+            {group.items.length > 1 ? ` · ${group.items.length} eventos` : ''}
+
+          </p>
+
+          {group.subtitle && (
+
+            <p className="mt-1 text-[10px] font-semibold uppercase tracking-widest text-slate-400">
+
+              {group.subtitle}
+
+            </p>
+
+          )}
+
+        </div>
+
+        <div className="flex items-center gap-3">
+
+          <span className="text-[11px] font-medium text-slate-400">{formatRelativeTime(group.latestAt)}</span>
+
+          <button
+            type="button"
+            onClick={() => onDismiss(group)}
+            className="rounded-lg p-1.5 text-slate-400 transition hover:bg-slate-100 hover:text-slate-600"
+            title="Descartar notificación"
+            aria-label="Descartar notificación"
+          >
+            <X className="h-3.5 w-3.5" />
+          </button>
+
+          {group.targetUrl && (
+
+            <Link
+
+              to={group.targetUrl}
+
+              onClick={() => onOpen(group)}
+
+              className="inline-flex items-center gap-1 rounded-[8px] px-2.5 py-1.5 text-[11px] font-semibold text-[#FF6B00] transition hover:bg-orange-50"
+
+            >
+
+              Ver <ArrowRight className="h-3 w-3" />
+
+            </Link>
+
+          )}
+
+        </div>
+
+      </div>
+
+    </Card>
+
   );
+
 }
 
-function notificationCue(type: NonNullable<Notification['type']>, state: ReturnType<typeof getNotificationOperationalState>) {
-  if (type === 'CRITICAL' || state === 'nueva') return 'requiere revision';
-  if (type === 'ACTION') return 'habilita avance';
-  if (type === 'DEADLINE') return 'espera respuesta';
-  return 'seguimiento informativo';
-}
+

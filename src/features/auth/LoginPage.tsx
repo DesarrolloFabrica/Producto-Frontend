@@ -1,15 +1,27 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useState, useEffect } from 'react';
 import { ArrowRight, BookOpenCheck, Factory, Lock, Shield, Sparkles, AlertTriangle } from 'lucide-react';
 import { motion } from 'motion/react';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { Button } from '../../components/ui/Button';
 import { Card } from '../../components/ui/Card';
 import { cn } from '../../components/ui/tokens';
 import { useAuth } from './AuthContext';
 
 export function LoginPage() {
-  const { login, isLoading } = useAuth();
+  const { login, isLoading, isAuthenticated } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
+
+  const savedPath = useMemo(() => {
+    const from = (location.state as { from?: { pathname?: string } } | null)?.from?.pathname;
+    return from && from !== '/login' && from !== '/' ? from : null;
+  }, [location.state]);
+
+  useEffect(() => {
+    if (!isLoading && isAuthenticated) {
+      navigate(savedPath ?? '/', { replace: true });
+    }
+  }, [isAuthenticated, isLoading, navigate, savedPath]);
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -31,8 +43,7 @@ export function LoginPage() {
     setSubmitting(true);
     try {
       await login(email, password);
-      // AuthContext sets user.role; routing will handle redirects from /.
-      navigate('/', { replace: true });
+      navigate(savedPath ?? '/', { replace: true });
     } catch (e: any) {
       setError(e?.message ? String(e.message) : 'No se pudo iniciar sesión');
     } finally {

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Navigate, useParams, Link } from 'react-router-dom';
+import { useParams, Link } from 'react-router-dom';
 import { ArrowLeft, BookOpen, CalendarDays, CheckCircle2, MessageSquare, Plus, X, Loader2 } from 'lucide-react';
 import { Card } from '../../components/ui/Card';
 import { PageHeader } from '../../components/ui/PageHeader';
@@ -7,67 +7,24 @@ import { ProgressBar } from '../../components/ui/ProgressBar';
 import { StatusBadge } from '../../components/status/StatusBadge';
 import { Modal } from '../../components/ui/Modal';
 import { Button } from '../../components/ui/Button';
+import { DeepLinkNotFound } from '../../components/feedback/DeepLinkNotFound';
 import { ProjectsLoadNotice } from '../../components/feedback/ProjectsLoadNotice';
 import { useOperations } from '../../features/operations/OperationsContext';
 import { useEnsureProjectDetail } from '../operations/useEnsureProjectDetail';
 import { useAuth } from '../auth/AuthContext';
 import { formatDate } from '../../utils/formatters';
 import { cn } from '../../components/ui/tokens';
-import type { ChecklistItem, ChecklistStatus, Role, TopicChecklist, VirtualizationProject } from '../../types/domain';
 import { FactorySemesterSubjectsView } from './FactorySemesterSubjectsView';
-
-const subjectChecklistLabels = [
-  'Presentacion de la asignatura',
-  'Foro de presentacion',
-  'Resultados de aprendizaje y competencias',
-  'Evaluacion diagnostica de entrada',
-  'Syllabus',
-  'Lecturas y bibliografia',
-  'Evaluaciones',
-  'ACA Actividad de Conocimiento Aplicado',
-  'Foro Taller',
-  'Taller RAE',
-  'Evaluacion diagnostica de salida',
-  'Seminario Aleman',
-];
-
-function buildSubjectChecklist(seed: number): ChecklistItem[] {
-  return subjectChecklistLabels.map((label, index) => ({
-    id: `chk-${seed}-${index}`,
-    label,
-    status: 'PENDIENTE' as ChecklistStatus,
-    ownerRole: 'PRODUCT' as Role,
-    updatedAt: new Date().toISOString(),
-    observations: '',
-  }));
-}
-
-const topicChecklistLabels = ['Material descargable', 'Podcast', 'Videos', 'Infografias interactivas'];
-
-function buildTopicChecklist(seed: number): ChecklistItem[] {
-  return topicChecklistLabels.map((label, index) => ({
-    id: `chk-topic-${seed}-${index}`,
-    label,
-    status: 'PENDIENTE' as ChecklistStatus,
-    ownerRole: 'PRODUCT' as Role,
-    updatedAt: new Date().toISOString(),
-    observations: '',
-  }));
-}
-
-function buildSubjectTopicChecklists(seed: number, topicNames: string[]): TopicChecklist[] {
-  return topicNames.map((name, idx) => ({
-    topicName: name,
-    topicOrder: idx + 1,
-    items: buildTopicChecklist(seed + idx),
-  }));
-}
+import { useToast } from '../../components/ui/ToastProvider';
+import { useDismissNotificationsOnVisit } from '../notifications/useDismissNotificationsOnVisit';
 
 export function ProjectSemesterSubjectsPage() {
   const { projectId, semesterNumber } = useParams();
   const { projectObservations, addSubjectToSemester, refreshProjects } = useOperations();
+  const { showToast } = useToast();
   const { role } = useAuth();
-  const { project, isLoading, error } = useEnsureProjectDetail(projectId);
+  const { project, isLoading, error, notFound } = useEnsureProjectDetail(projectId);
+  useDismissNotificationsOnVisit({ projectId: project?.id });
   const semesterNum = parseInt(semesterNumber ?? '0', 10);
   const [showAddSubjectModal, setShowAddSubjectModal] = useState(false);
 
@@ -87,7 +44,27 @@ export function ProjectSemesterSubjectsPage() {
     );
   }
 
-  if (!project || isNaN(semesterNum)) return <Navigate to="/projects" replace />;
+  if (isNaN(semesterNum)) {
+    return (
+      <DeepLinkNotFound
+        title="Semestre no válido"
+        description="La URL no contiene un número de semestre válido."
+        backTo={projectId ? `/projects/${projectId}` : '/projects'}
+        backLabel="Volver al proyecto"
+      />
+    );
+  }
+
+  if (notFound || !project) {
+    return (
+      <DeepLinkNotFound
+        title="Proyecto no encontrado"
+        description={error ?? 'No pudimos cargar el proyecto de esta URL.'}
+        backTo="/projects"
+        onRetry={() => void refreshProjects()}
+      />
+    );
+  }
 
   if (role === 'FABRICA') {
     return <FactorySemesterSubjectsView />;
@@ -195,6 +172,10 @@ export function ProjectSemesterSubjectsPage() {
                       {topicCount} temas
                     </span>
                   )}
+                  <span className="inline-flex items-center gap-1.5">
+                    <CalendarDays className="h-3.5 w-3.5 text-orange-400" />
+                    Entrega: {subject.expectedDeliveryDate ? formatDate(subject.expectedDeliveryDate) : 'no definida'}
+                  </span>
                   {subjectObservations > 0 && (
                     <span className="inline-flex items-center gap-1.5">
                       <MessageSquare className="h-3.5 w-3.5 text-amber-500" />
@@ -228,9 +209,11 @@ export function ProjectSemesterSubjectsPage() {
       <AddSubjectModal
         isOpen={showAddSubjectModal}
         onClose={() => setShowAddSubjectModal(false)}
-        project={project}
         semesterNumber={semesterNum}
-        onAdd={(subject) => addSubjectToSemester(project.id, subject)}
+        defaultExpectedDate={semester?.factoryExpectedDate || project.expectedDeliveryDate}
+        onAdd={(payload) => addSubjectToSemester(project.id, payload)}
+        onSuccess={() => showToast('Modificación guardada y notificada a Fábrica.')}
+        onError={(message) => showToast(message, 'error')}
       />
     </div>
   );
@@ -248,14 +231,18 @@ function Info({ label, children }: { label: string; children: React.ReactNode })
 interface AddSubjectModalProps {
   isOpen: boolean;
   onClose: () => void;
-  project: VirtualizationProject;
   semesterNumber: number;
-  onAdd: (subject: VirtualizationProject['subjects'][0]) => void;
+  defaultExpectedDate: string;
+  onAdd: (payload: { semesterNumber: number; name: string; topics: string[]; expectedDeliveryDate: string; changeReason?: string }) => Promise<void>;
+  onSuccess: () => void;
+  onError: (message: string) => void;
 }
 
-function AddSubjectModal({ isOpen, onClose, project, semesterNumber, onAdd }: AddSubjectModalProps) {
+function AddSubjectModal({ isOpen, onClose, semesterNumber, defaultExpectedDate, onAdd, onSuccess, onError }: AddSubjectModalProps) {
   const [name, setName] = useState('');
   const [topics, setTopics] = useState<string[]>([]);
+  const [expectedDeliveryDate, setExpectedDeliveryDate] = useState(defaultExpectedDate);
+  const [changeReason, setChangeReason] = useState('');
   const [errors, setErrors] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
 
@@ -274,6 +261,7 @@ function AddSubjectModal({ isOpen, onClose, project, semesterNumber, onAdd }: Ad
   const validate = (): boolean => {
     const newErrors: string[] = [];
     if (!name.trim()) newErrors.push('Ingresa el nombre de la asignatura.');
+    if (!expectedDeliveryDate) newErrors.push('Selecciona una fecha de entrega para esta asignatura.');
     if (topics.length === 0) newErrors.push('Agrega al menos un tema.');
     topics.forEach((t, i) => {
       if (!t.trim()) newErrors.push(`El tema ${i + 1} no tiene nombre.`);
@@ -285,25 +273,33 @@ function AddSubjectModal({ isOpen, onClose, project, semesterNumber, onAdd }: Ad
   const handleSubmit = async () => {
     if (!validate()) return;
     setSaving(true);
-    await new Promise((r) => setTimeout(r, 400));
+    try {
+      await onAdd({
+        semesterNumber,
+        name,
+        topics,
+        expectedDeliveryDate,
+        changeReason: changeReason.trim() || undefined,
+      });
+      onSuccess();
+      setName('');
+      setTopics([]);
+      setExpectedDeliveryDate(defaultExpectedDate);
+      setChangeReason('');
+      setErrors([]);
+      onClose();
+    } catch (error) {
+      onError(error instanceof Error ? error.message : 'No se pudo guardar la modificación.');
+    } finally {
+      setSaving(false);
+    }
+  };
 
-    const subject: VirtualizationProject['subjects'][0] = {
-      id: `subj-${Date.now()}`,
-      projectId: project.id,
-      semesterNumber,
-      name,
-      status: 'PENDING',
-      progress: 0,
-      checklist: buildSubjectChecklist(Date.now()),
-      generalObservations: '',
-      contentTopics: topics,
-      topicChecklists: buildSubjectTopicChecklists(Date.now(), topics),
-    };
-
-    onAdd(subject);
-    setSaving(false);
+  const handleClose = () => {
     setName('');
     setTopics([]);
+    setExpectedDeliveryDate(defaultExpectedDate);
+    setChangeReason('');
     setErrors([]);
     onClose();
   };
@@ -312,7 +308,7 @@ function AddSubjectModal({ isOpen, onClose, project, semesterNumber, onAdd }: Ad
   const labelClass = 'block mb-2 text-[10px] font-black uppercase tracking-widest text-slate-400';
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title="Agregar asignatura" description="Agrega una nueva asignatura al semestre. Los entregables quedarán en Pendiente para revisión." size="md">
+    <Modal isOpen={isOpen} onClose={handleClose} title="Agregar asignatura" description="Agrega una nueva asignatura al semestre. Los entregables quedarán en Pendiente para revisión." size="md">
       <div className="space-y-5">
         {errors.length > 0 && (
           <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4">
@@ -328,6 +324,22 @@ function AddSubjectModal({ isOpen, onClose, project, semesterNumber, onAdd }: Ad
         <div>
           <label className={labelClass}>Nombre de la asignatura</label>
           <input className={inputClass} value={name} onChange={(e) => setName(e.target.value)} placeholder="Ej: Pensamiento Algoritmico" />
+        </div>
+
+        <div>
+          <label className={labelClass}>Fecha de entrega esperada de la asignatura</label>
+          <input required type="date" className={inputClass} value={expectedDeliveryDate} onChange={(e) => setExpectedDeliveryDate(e.target.value)} />
+          <p className="mt-1 text-[10px] font-medium text-slate-400">Esta fecha aplica solo para la nueva asignatura agregada.</p>
+        </div>
+
+        <div>
+          <label className={labelClass}>Motivo del cambio</label>
+          <textarea
+            className={cn(inputClass, 'min-h-24 resize-y')}
+            value={changeReason}
+            onChange={(e) => setChangeReason(e.target.value)}
+            placeholder="Opcional: explica por qué se agrega esta asignatura"
+          />
         </div>
 
         <div>
@@ -369,7 +381,7 @@ function AddSubjectModal({ isOpen, onClose, project, semesterNumber, onAdd }: Ad
         </div>
 
         <div className="flex justify-end gap-3 pt-4 border-t border-slate-100">
-          <Button type="button" variant="secondary" onClick={onClose}>Cancelar</Button>
+          <Button type="button" variant="secondary" onClick={handleClose}>Cancelar</Button>
           <Button disabled={saving} onClick={handleSubmit}>
             {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
             {saving ? 'Guardando...' : 'Agregar asignatura'}

@@ -5,6 +5,7 @@ import { notificationsApi } from '../../services/notificationsApi';
 import { observationsApi } from '../../services/observationsApi';
 import { projectsApi } from '../../services/projectsApi';
 import { subjectsApi } from '../../services/subjectsApi';
+import { topicsApi } from '../../services/topicsApi';
 import {
   getApiErrorMessage,
   mapCreateObservationToApi,
@@ -16,10 +17,12 @@ import {
   type CreateObservationInput,
   type CreateProjectFormInput,
 } from './apiMappers';
+import type { NotificationSummary } from './notificationInbox';
 import { ProjectsBootstrap } from './ProjectsBootstrap';
 import type {
   ActivityEvent,
   AuditLog,
+  ChecklistItem,
   ChecklistStatus,
   LinkResource,
   Notification,
@@ -29,17 +32,69 @@ import type {
   Priority,
   ProjectStatus,
   Role,
+  SubjectStatus,
   VirtualizationProject,
 } from '../../types/domain';
 import { projects as initialProjects, auditLogs as initialAuditLogs, activityEvents as initialActivityEvents, notifications as initialNotifications, projectObservations as initialProjectObservations } from '../../data/mockData';
 import { projectStatusLabels } from '../../utils/status';
 import { calculateProjectProgress, calculateSubjectProgress, deriveSemesterStatus, deriveSubjectStatus, getProjectBlockingSignals, isBlockingObservationStatus } from './progress';
 
+function mapProductionInputToSubjectStatus(
+  status: 'PENDIENTE' | 'EN_PRODUCCION' | 'COMPLETADA',
+): SubjectStatus {
+  if (status === 'EN_PRODUCCION') return 'IN_PRODUCTION';
+  if (status === 'COMPLETADA') return 'IN_REVIEW';
+  return 'PENDING';
+}
+
+const subjectChecklistLabels = [
+  'Presentacion de la asignatura',
+  'Foro de presentacion',
+  'Resultados de aprendizaje y competencias',
+  'Evaluacion diagnostica de entrada',
+  'Syllabus',
+  'Lecturas y bibliografia',
+  'Evaluaciones',
+  'ACA Actividad de Conocimiento Aplicado',
+  'Foro Taller',
+  'Taller RAE',
+  'Evaluacion diagnostica de salida',
+  'Seminario Aleman',
+];
+
+const topicChecklistLabels = ['Material descargable', 'Podcast', 'Videos', 'Infografias interactivas'];
+
+function buildSubjectChecklist(): ChecklistItem[] {
+  const now = new Date().toISOString();
+  return subjectChecklistLabels.map((label, index) => ({
+    id: `chk-${Date.now()}-${index}`,
+    label,
+    status: 'PENDIENTE' as ChecklistStatus,
+    ownerRole: 'PRODUCT' as Role,
+    updatedAt: now,
+    observations: '',
+  }));
+}
+
+function buildTopicChecklist(): ChecklistItem[] {
+  const now = new Date().toISOString();
+  return topicChecklistLabels.map((label, index) => ({
+    id: `chk-topic-${Date.now()}-${index}`,
+    label,
+    status: 'PENDIENTE' as ChecklistStatus,
+    ownerRole: 'FABRICA' as Role,
+    updatedAt: now,
+    observations: '',
+  }));
+}
+
 interface OperationsState {
   projects: VirtualizationProject[];
   auditLogs: AuditLog[];
   activityEvents: ActivityEvent[];
   notifications: Notification[];
+  notificationSummary: NotificationSummary | null;
+  hasMoreNotifications: boolean;
   projectObservations: OperationalObservation[];
   observationsByProject: Record<string, OperationalObservation[]>;
   comments: OperationalComment[];
@@ -76,8 +131,10 @@ type OperationsAction =
   | { type: 'ADD_TOPIC_TO_SUBJECT'; payload: { projectId: string; subjectId: string; topicName: string; checklist: VirtualizationProject['subjects'][0]['checklist']; topicChecklistItems: VirtualizationProject['subjects'][0]['checklist'] } }
   | { type: 'RESOLVE_OBSERVATION'; payload: { projectId: string; observationId: string; observation: OperationalObservation } }
   | { type: 'MARK_OBSERVATION_CORRECTION_APPLIED'; payload: { projectId: string; observationId: string; observation: OperationalObservation } }
+  | { type: 'REOPEN_OBSERVATION'; payload: { projectId: string; observationId: string; observation: OperationalObservation; reason: string } }
   | { type: 'UPDATE_TOPIC_CHECKLIST_ITEM'; payload: { projectId: string; subjectId: string; topicName: string; checklistItemId: string; newStatus: ChecklistStatus } }
   | { type: 'MARK_SUBJECT_DELIVERED'; payload: { projectId: string; subjectId: string } }
+  | { type: 'UPDATE_SUBJECT_PRODUCTION_STATUS'; payload: { projectId: string; subjectId: string; status: SubjectStatus } }
   | { type: 'SET_MUTATING'; payload: boolean }
   | { type: 'LOAD_PROJECTS_START' }
   | { type: 'LOAD_PROJECTS_SUCCESS'; payload: VirtualizationProject[] }
@@ -90,7 +147,15 @@ type OperationsAction =
   | { type: 'LOAD_SUBJECT_OBSERVATIONS_SUCCESS'; payload: { observations: OperationalObservation[] } }
   | { type: 'LOAD_OBSERVATIONS_ERROR'; payload: string }
   | { type: 'LOAD_NOTIFICATIONS_START' }
-  | { type: 'LOAD_NOTIFICATIONS_SUCCESS'; payload: Notification[] }
+  | {
+      type: 'LOAD_NOTIFICATIONS_SUCCESS';
+      payload: {
+        notifications: Notification[];
+        summary: NotificationSummary;
+        hasMore: boolean;
+        append?: boolean;
+      };
+    }
   | { type: 'LOAD_NOTIFICATIONS_ERROR'; payload: string }
   | { type: 'MARK_ALL_NOTIFICATIONS_READ' };
 
@@ -101,6 +166,8 @@ const initialState: OperationsState = {
   auditLogs: useMocks ? initialAuditLogs : [],
   activityEvents: useMocks ? initialActivityEvents : [],
   notifications: useMocks ? initialNotifications : [],
+  notificationSummary: null,
+  hasMoreNotifications: false,
   projectObservations: useMocks ? initialProjectObservations : [],
   observationsByProject: useMocks ? initialProjectObservations.reduce<Record<string, OperationalObservation[]>>((acc, observation) => {
     acc[observation.projectId] = [observation, ...(acc[observation.projectId] ?? [])];
@@ -220,7 +287,16 @@ function operationsReducer(state: OperationsState, action: OperationsAction): Op
     case 'LOAD_NOTIFICATIONS_START':
       return { ...state, isLoadingNotifications: true, notificationsError: null };
     case 'LOAD_NOTIFICATIONS_SUCCESS':
-      return { ...state, notifications: action.payload, isLoadingNotifications: false, notificationsError: null };
+      return {
+        ...state,
+        notifications: action.payload.append
+          ? [...state.notifications, ...action.payload.notifications]
+          : action.payload.notifications,
+        notificationSummary: action.payload.summary,
+        hasMoreNotifications: action.payload.hasMore,
+        isLoadingNotifications: false,
+        notificationsError: null,
+      };
     case 'LOAD_NOTIFICATIONS_ERROR':
       return { ...state, isLoadingNotifications: false, notificationsError: action.payload };
     case 'MARK_ALL_NOTIFICATIONS_READ':
@@ -676,6 +752,28 @@ function operationsReducer(state: OperationsState, action: OperationsAction): Op
         ],
         };
       }
+    case 'REOPEN_OBSERVATION':
+      {
+        const now = new Date().toISOString();
+        const nextObservations = state.projectObservations.map((o) =>
+          o.id === action.payload.observationId
+            ? { ...o, status: 'ABIERTA' as const, text: action.payload.reason, updatedAt: now }
+            : o,
+        );
+        return {
+          ...state,
+          projects: recalcProjects(state.projects, nextObservations),
+          projectObservations: nextObservations,
+          observationsByProject: {
+            ...state.observationsByProject,
+            [action.payload.projectId]: (state.observationsByProject[action.payload.projectId] ?? []).map((o) =>
+              o.id === action.payload.observationId
+                ? { ...o, status: 'ABIERTA' as const, text: action.payload.reason, updatedAt: now }
+                : o,
+            ),
+          },
+        };
+      }
     case 'MARK_SUBJECT_DELIVERED':
       return {
         ...state,
@@ -704,6 +802,22 @@ function operationsReducer(state: OperationsState, action: OperationsAction): Op
           },
           ...state.auditLogs,
         ],
+      };
+    case 'UPDATE_SUBJECT_PRODUCTION_STATUS':
+      return {
+        ...state,
+        projects: state.projects.map((project) => {
+          if (project.id !== action.payload.projectId) return project;
+          const updatedProject: VirtualizationProject = {
+            ...project,
+            subjects: project.subjects.map((subject) =>
+              subject.id === action.payload.subjectId
+                ? { ...subject, status: action.payload.status }
+                : subject,
+            ),
+          };
+          return recalcProject(updatedProject);
+        }),
       };
     case 'UPDATE_TOPIC_CHECKLIST_ITEM':
       {
@@ -768,9 +882,16 @@ interface OperationsContextValue extends OperationsState {
   createObservationFromApi: (input: CreateObservationInput) => Promise<void>;
   markObservationCorrectionAppliedFromApi: (observationId: string, projectId?: string) => Promise<void>;
   validateObservationFromApi: (observationId: string, projectId?: string) => Promise<void>;
+  reopenObservationFromApi: (observationId: string, reason: string, projectId?: string) => Promise<void>;
   submitSubjectFromApi: (subjectId: string, projectId: string) => Promise<void>;
   approveSubjectFromApi: (subjectId: string, projectId: string) => Promise<void>;
   rejectSubjectFromApi: (subjectId: string, projectId: string, reason?: string) => Promise<void>;
+  requestSubjectCorrectionFromApi: (subjectId: string, projectId: string, reason: string) => Promise<void>;
+  updateSubjectProductionStatusFromApi: (
+    subjectId: string,
+    projectId: string,
+    status: 'PENDIENTE' | 'EN_PRODUCCION' | 'COMPLETADA',
+  ) => Promise<void>;
   createProject: (project: VirtualizationProject) => void;
   updateProject: (id: string, updates: Partial<VirtualizationProject>) => void;
   updateProjectStatus: (id: string, newStatus: ProjectStatus) => void;
@@ -785,14 +906,20 @@ interface OperationsContextValue extends OperationsState {
   ) => Promise<void>;
   markNotificationRead: (notificationId: string) => Promise<void>;
   markAllNotificationsReadFromApi: () => Promise<void>;
+  markNotificationsReadByResource: (params: { projectId?: string; subjectId?: string }) => Promise<void>;
+  dismissNotifications: (params: {
+    ids?: string[];
+    projectId?: string;
+    subjectId?: string;
+  }) => Promise<void>;
   addComment: (comment: Omit<OperationalComment, 'id' | 'createdAt'>) => void;
   replyComment: (parentId: string, message: string, authorName: string, authorRole: Role) => void;
   resolveComment: (commentId: string) => void;
   markRecentlyUpdated: (entityId: string) => void;
   clearRecentlyUpdated: (entityId: string) => void;
-  addSemesterToProject: (projectId: string, semester: VirtualizationProject['semesters'][0], subjects: VirtualizationProject['subjects']) => void;
-  addSubjectToSemester: (projectId: string, subject: VirtualizationProject['subjects'][0]) => void;
-  addTopicToSubject: (projectId: string, subjectId: string, topicName: string, checklist: VirtualizationProject['subjects'][0]['checklist'], topicChecklistItems: VirtualizationProject['subjects'][0]['checklist']) => void;
+  addSemesterToProject: (projectId: string, payload: { semesterNumber: number; factoryExpectedDate: string; subjects: { name: string; topics: string[] }[]; changeReason?: string }) => Promise<void>;
+  addSubjectToSemester: (projectId: string, payload: { semesterNumber: number; name: string; topics: string[]; expectedDeliveryDate: string; changeReason?: string }) => Promise<void>;
+  addTopicToSubject: (projectId: string, subjectId: string, payload: { topics: string[]; changeReason?: string }) => Promise<void>;
   startProjectProduction: (projectId: string) => Promise<void>;
   deliverProjectToProduct: (projectId: string) => void;
   updateFactoryChecklistItem: (
@@ -809,6 +936,7 @@ interface OperationsContextValue extends OperationsState {
     newStatus: ChecklistStatus,
   ) => Promise<void>;
   markObservationCorrectionApplied: (projectId: string, observationId: string, observation: OperationalObservation) => Promise<void>;
+  reopenObservation: (projectId: string, observationId: string, observation: OperationalObservation, reason: string) => Promise<void>;
   markSubjectDelivered: (projectId: string, subjectId: string, subjectName: string) => Promise<void>;
   markProjectFeedbackPending: (projectId: string) => void;
   markProjectDeliveredToLms: (projectId: string) => void;
@@ -899,12 +1027,25 @@ export function OperationsProvider({ children }: { children: ReactNode }) {
     [state.backendEnabled],
   );
 
-  const loadNotifications = useCallback(async () => {
+  const loadNotifications = useCallback(async (options?: { offset?: number; append?: boolean }) => {
     if (!state.backendEnabled) return;
     dispatch({ type: 'LOAD_NOTIFICATIONS_START' });
     try {
-      const apiNotifications = await notificationsApi.getNotifications();
-      dispatch({ type: 'LOAD_NOTIFICATIONS_SUCCESS', payload: mapNotificationsFromApi(apiNotifications) });
+      const inbox = await notificationsApi.getInbox({
+        limit: 40,
+        offset: options?.offset ?? 0,
+        readDays: 7,
+      });
+      const mapped = mapNotificationsFromApi(inbox.items);
+      dispatch({
+        type: 'LOAD_NOTIFICATIONS_SUCCESS',
+        payload: {
+          notifications: mapped,
+          summary: inbox.summary,
+          hasMore: inbox.hasMore,
+          append: options?.append ?? false,
+        },
+      });
     } catch (error) {
       dispatch({ type: 'LOAD_NOTIFICATIONS_ERROR', payload: getApiErrorMessage(error) });
     }
@@ -915,10 +1056,11 @@ export function OperationsProvider({ children }: { children: ReactNode }) {
       await Promise.all([
         projectId ? loadProjectDetail(projectId) : Promise.resolve(),
         projectId ? loadProjectObservations(projectId) : Promise.resolve(),
+        loadProjects(),
         loadNotifications(),
       ]);
     },
-    [loadProjectDetail, loadProjectObservations, loadNotifications],
+    [loadProjectDetail, loadProjectObservations, loadProjects, loadNotifications],
   );
 
   const refreshProjects = useCallback(async () => {
@@ -957,33 +1099,60 @@ export function OperationsProvider({ children }: { children: ReactNode }) {
   );
 
   const markObservationCorrectionAppliedFromApi = useCallback(
-    async (observationId: string, projectId?: string) => {
+    async (observationId: string, projectId?: string, subjectId?: string) => {
       if (!state.backendEnabled) throw new Error('Backend deshabilitado.');
       dispatch({ type: 'SET_MUTATING', payload: true });
       try {
-        const observation = await observationsApi.markCorrectionApplied(observationId);
-        const mapped = mapObservationsFromApi([observation])[0];
-        await refetchProjectWorkflow(projectId ?? mapped.projectId);
+        const response = await observationsApi.markCorrectionApplied(observationId);
+        const resolvedProjectId = projectId ?? response.projectId ?? response.observation.projectId;
+        const resolvedSubjectId = subjectId ?? response.observation.subjectId ?? undefined;
+        await Promise.all([
+          refetchProjectWorkflow(resolvedProjectId),
+          resolvedSubjectId ? loadSubjectObservations(resolvedSubjectId) : Promise.resolve(),
+        ]);
       } finally {
         dispatch({ type: 'SET_MUTATING', payload: false });
       }
     },
-    [state.backendEnabled, refetchProjectWorkflow],
+    [state.backendEnabled, refetchProjectWorkflow, loadSubjectObservations],
   );
 
   const validateObservationFromApi = useCallback(
-    async (observationId: string, projectId?: string) => {
+    async (observationId: string, projectId?: string, subjectId?: string) => {
       if (!state.backendEnabled) throw new Error('Backend deshabilitado.');
       dispatch({ type: 'SET_MUTATING', payload: true });
       try {
-        const observation = await observationsApi.validateObservation(observationId);
-        const mapped = mapObservationsFromApi([observation])[0];
-        await refetchProjectWorkflow(projectId ?? mapped.projectId);
+        const response = await observationsApi.validateObservation(observationId);
+        const resolvedProjectId = projectId ?? response.projectId ?? response.observation.projectId;
+        const resolvedSubjectId = subjectId ?? response.observation.subjectId ?? undefined;
+        await Promise.all([
+          refetchProjectWorkflow(resolvedProjectId),
+          resolvedSubjectId ? loadSubjectObservations(resolvedSubjectId) : Promise.resolve(),
+        ]);
       } finally {
         dispatch({ type: 'SET_MUTATING', payload: false });
       }
     },
-    [state.backendEnabled, refetchProjectWorkflow],
+    [state.backendEnabled, refetchProjectWorkflow, loadSubjectObservations],
+  );
+
+  const reopenObservationFromApi = useCallback(
+    async (observationId: string, reason: string, projectId?: string, subjectId?: string) => {
+      if (!state.backendEnabled) throw new Error('Backend deshabilitado.');
+      dispatch({ type: 'SET_MUTATING', payload: true });
+      try {
+        const response = await observationsApi.reopenObservation(observationId, reason);
+        const resolvedProjectId = projectId ?? response.projectId ?? response.observation.projectId;
+        const resolvedSubjectId = subjectId ?? response.observation.subjectId ?? undefined;
+        await Promise.all([
+          refetchProjectWorkflow(resolvedProjectId),
+          resolvedSubjectId ? loadSubjectObservations(resolvedSubjectId) : Promise.resolve(),
+        ]);
+      } finally {
+        dispatch({ type: 'SET_MUTATING', payload: false });
+      }
+    },
+    [state.backendEnabled, refetchProjectWorkflow, loadSubjectObservations],
   );
 
   const submitSubjectFromApi = useCallback(
@@ -1029,6 +1198,46 @@ export function OperationsProvider({ children }: { children: ReactNode }) {
       }
     },
     [state.backendEnabled, refetchProjectWorkflow],
+  );
+
+  const requestSubjectCorrectionFromApi = useCallback(
+    async (subjectId: string, projectId: string, reason: string) => {
+      if (!state.backendEnabled) throw new Error('Backend deshabilitado.');
+      if (!subjectId || !projectId) throw new Error('No se pudo identificar la asignatura o el proyecto.');
+      dispatch({ type: 'SET_MUTATING', payload: true });
+      try {
+        await subjectsApi.requestCorrection(subjectId, reason);
+        await Promise.all([refetchProjectWorkflow(projectId), loadSubjectObservations(subjectId)]);
+      } finally {
+        dispatch({ type: 'SET_MUTATING', payload: false });
+      }
+    },
+    [state.backendEnabled, refetchProjectWorkflow, loadSubjectObservations],
+  );
+
+  const updateSubjectProductionStatusFromApi = useCallback(
+    async (
+      subjectId: string,
+      projectId: string,
+      status: 'PENDIENTE' | 'EN_PRODUCCION' | 'COMPLETADA',
+    ) => {
+      if (!state.backendEnabled) throw new Error('Backend deshabilitado.');
+      dispatch({ type: 'SET_MUTATING', payload: true });
+      dispatch({
+        type: 'UPDATE_SUBJECT_PRODUCTION_STATUS',
+        payload: { projectId, subjectId, status: mapProductionInputToSubjectStatus(status) },
+      });
+      try {
+        await subjectsApi.updateProductionStatus(subjectId, status);
+        await Promise.all([refetchProjectWorkflow(projectId), loadSubjectObservations(subjectId)]);
+      } catch (error) {
+        await refetchProjectWorkflow(projectId);
+        throw error;
+      } finally {
+        dispatch({ type: 'SET_MUTATING', payload: false });
+      }
+    },
+    [state.backendEnabled, refetchProjectWorkflow, loadSubjectObservations],
   );
 
   const createProject = useCallback((project: VirtualizationProject) => {
@@ -1230,6 +1439,24 @@ export function OperationsProvider({ children }: { children: ReactNode }) {
     dispatch({ type: 'MARK_ALL_NOTIFICATIONS_READ' });
   }, [state.backendEnabled, loadNotifications]);
 
+  const markNotificationsReadByResource = useCallback(
+    async (params: { projectId?: string; subjectId?: string }) => {
+      if (!state.backendEnabled) return;
+      await notificationsApi.markReadByResource(params);
+      await loadNotifications();
+    },
+    [state.backendEnabled, loadNotifications],
+  );
+
+  const dismissNotifications = useCallback(
+    async (params: { ids?: string[]; projectId?: string; subjectId?: string }) => {
+      if (!state.backendEnabled) return;
+      await notificationsApi.dismissNotifications(params);
+      await loadNotifications();
+    },
+    [state.backendEnabled, loadNotifications],
+  );
+
   const addComment = useCallback((comment: Omit<OperationalComment, 'id' | 'createdAt'>) => {
     dispatch({
       type: 'ADD_COMMENT',
@@ -1274,17 +1501,151 @@ export function OperationsProvider({ children }: { children: ReactNode }) {
     dispatch({ type: 'CLEAR_RECENTLY_UPDATED', payload: { entityId } });
   }, []);
 
-  const addSemesterToProject = useCallback((projectId: string, semester: VirtualizationProject['semesters'][0], subjects: VirtualizationProject['subjects']) => {
-    dispatch({ type: 'ADD_SEMESTER_TO_PROJECT', payload: { projectId, semester, subjects } });
-  }, []);
+  const addSemesterToProject = useCallback(
+    async (
+      projectId: string,
+      payload: { semesterNumber: number; factoryExpectedDate: string; subjects: { name: string; topics: string[] }[]; changeReason?: string },
+    ) => {
+      const project = state.projects.find((p) => p.id === projectId);
+      if (!project) return;
 
-  const addSubjectToSemester = useCallback((projectId: string, subject: VirtualizationProject['subjects'][0]) => {
-    dispatch({ type: 'ADD_SUBJECT_TO_SEMESTER', payload: { projectId, subject } });
-  }, []);
+      if (state.backendEnabled) {
+        dispatch({ type: 'SET_MUTATING', payload: true });
+        try {
+          const apiProject = await projectsApi.addSemester(projectId, {
+            ...payload,
+            factoryExpectedDate: payload.factoryExpectedDate.includes('T')
+              ? payload.factoryExpectedDate
+              : `${payload.factoryExpectedDate}T00:00:00.000Z`,
+          });
+          dispatch({ type: 'LOAD_PROJECT_DETAIL_SUCCESS', payload: mapProjectDetailFromApi(apiProject) });
+          await loadNotifications();
+        } finally {
+          dispatch({ type: 'SET_MUTATING', payload: false });
+        }
+        return;
+      }
 
-  const addTopicToSubject = useCallback((projectId: string, subjectId: string, topicName: string, checklist: VirtualizationProject['subjects'][0]['checklist'], topicChecklistItems: VirtualizationProject['subjects'][0]['checklist']) => {
-    dispatch({ type: 'ADD_TOPIC_TO_SUBJECT', payload: { projectId, subjectId, topicName, checklist, topicChecklistItems } });
-  }, []);
+      const semester = {
+        id: `sem-${Date.now()}`,
+        semesterNumber: payload.semesterNumber,
+        status: 'PENDING' as const,
+        curriculumStatus: 'PENDIENTE' as ChecklistStatus,
+        factoryStatus: 'PENDIENTE' as ChecklistStatus,
+        factoryExpectedDate: payload.factoryExpectedDate,
+        continuationDate: '',
+        observations: '',
+      };
+
+      const subjects = payload.subjects.map((subject, index) => ({
+        id: `subj-${Date.now()}-${index}`,
+        projectId,
+        semesterNumber: payload.semesterNumber,
+        name: subject.name.trim(),
+        status: 'PENDING' as const,
+        progress: 0,
+        checklist: buildSubjectChecklist(),
+        generalObservations: '',
+        contentTopics: subject.topics.map((topic) => topic.trim()).filter(Boolean),
+        topicChecklists: subject.topics.map((topic, topicIndex) => ({
+          topicName: topic.trim(),
+          topicOrder: topicIndex + 1,
+          items: buildTopicChecklist(),
+        })),
+      }));
+
+      dispatch({ type: 'ADD_SEMESTER_TO_PROJECT', payload: { projectId, semester, subjects } });
+    },
+    [state.projects, state.backendEnabled, loadNotifications],
+  );
+
+  const addSubjectToSemester = useCallback(
+    async (
+      projectId: string,
+      payload: { semesterNumber: number; name: string; topics: string[]; expectedDeliveryDate: string; changeReason?: string },
+    ) => {
+      const project = state.projects.find((p) => p.id === projectId);
+      const semester = project?.semesters.find((s) => s.semesterNumber === payload.semesterNumber);
+      if (!project || !semester) return;
+
+      if (state.backendEnabled) {
+        dispatch({ type: 'SET_MUTATING', payload: true });
+        try {
+          const apiProject = await subjectsApi.addSubjectToSemester(semester.id, {
+            name: payload.name,
+            topics: payload.topics,
+            expectedDeliveryDate: payload.expectedDeliveryDate,
+            changeReason: payload.changeReason,
+          });
+          dispatch({ type: 'LOAD_PROJECT_DETAIL_SUCCESS', payload: mapProjectDetailFromApi(apiProject) });
+          await loadNotifications();
+        } finally {
+          dispatch({ type: 'SET_MUTATING', payload: false });
+        }
+        return;
+      }
+
+      const subject = {
+        id: `subj-${Date.now()}`,
+        projectId,
+        semesterNumber: payload.semesterNumber,
+        name: payload.name.trim(),
+        expectedDeliveryDate: payload.expectedDeliveryDate,
+        status: 'PENDING' as const,
+        progress: 0,
+        checklist: buildSubjectChecklist(),
+        generalObservations: '',
+        contentTopics: payload.topics.map((topic) => topic.trim()).filter(Boolean),
+        topicChecklists: payload.topics.map((topic, index) => ({
+          topicName: topic.trim(),
+          topicOrder: index + 1,
+          items: buildTopicChecklist(),
+        })),
+      };
+
+      dispatch({ type: 'ADD_SUBJECT_TO_SEMESTER', payload: { projectId, subject } });
+    },
+    [state.projects, state.backendEnabled, loadNotifications],
+  );
+
+  const addTopicToSubject = useCallback(
+    async (
+      projectId: string,
+      subjectId: string,
+      payload: { topics: string[]; changeReason?: string },
+    ) => {
+      const project = state.projects.find((p) => p.id === projectId);
+      const subject = project?.subjects.find((s) => s.id === subjectId);
+      if (!project || !subject) return;
+
+      if (state.backendEnabled) {
+        dispatch({ type: 'SET_MUTATING', payload: true });
+        try {
+          const apiProject = await topicsApi.addTopicsToSubject(subjectId, payload);
+          dispatch({ type: 'LOAD_PROJECT_DETAIL_SUCCESS', payload: mapProjectDetailFromApi(apiProject) });
+          await loadNotifications();
+        } finally {
+          dispatch({ type: 'SET_MUTATING', payload: false });
+        }
+        return;
+      }
+
+      for (const topicName of payload.topics) {
+        const checklist = buildTopicChecklist();
+        dispatch({
+          type: 'ADD_TOPIC_TO_SUBJECT',
+          payload: {
+            projectId,
+            subjectId,
+            topicName: topicName.trim(),
+            checklist,
+            topicChecklistItems: checklist,
+          },
+        });
+      }
+    },
+    [state.projects, state.backendEnabled, loadNotifications],
+  );
 
   const startProjectProduction = useCallback(async (projectId: string) => {
     const project = state.projects.find((p) => p.id === projectId);
@@ -1381,6 +1742,17 @@ export function OperationsProvider({ children }: { children: ReactNode }) {
     });
   }, [state.backendEnabled, state.projects, markObservationCorrectionAppliedFromApi]);
 
+  const reopenObservation = useCallback(async (projectId: string, observationId: string, observation: OperationalObservation, reason: string) => {
+    if (state.backendEnabled) {
+      await reopenObservationFromApi(observationId, reason, projectId);
+      return;
+    }
+    dispatch({
+      type: 'REOPEN_OBSERVATION',
+      payload: { projectId, observationId, observation, reason },
+    });
+  }, [state.backendEnabled, reopenObservationFromApi]);
+
   const markSubjectDelivered = useCallback(async (projectId: string, subjectId: string, subjectName: string) => {
     if (state.backendEnabled) {
       await submitSubjectFromApi(subjectId, projectId);
@@ -1447,9 +1819,12 @@ export function OperationsProvider({ children }: { children: ReactNode }) {
     createObservationFromApi,
     markObservationCorrectionAppliedFromApi,
     validateObservationFromApi,
+    reopenObservationFromApi,
     submitSubjectFromApi,
     approveSubjectFromApi,
     rejectSubjectFromApi,
+    requestSubjectCorrectionFromApi,
+    updateSubjectProductionStatusFromApi,
     createProject,
     updateProject,
     updateProjectStatus,
@@ -1459,6 +1834,8 @@ export function OperationsProvider({ children }: { children: ReactNode }) {
     updateChecklistItem,
     markNotificationRead,
     markAllNotificationsReadFromApi,
+    markNotificationsReadByResource,
+    dismissNotifications,
     addComment,
     replyComment,
     resolveComment,
@@ -1472,6 +1849,7 @@ export function OperationsProvider({ children }: { children: ReactNode }) {
     updateFactoryChecklistItem,
     updateFactoryTopicChecklistItem,
     markObservationCorrectionApplied,
+    reopenObservation,
     markSubjectDelivered,
     markProjectFeedbackPending,
     markProjectDeliveredToLms,

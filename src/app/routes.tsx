@@ -1,4 +1,5 @@
-import { Navigate, createBrowserRouter } from 'react-router-dom';
+import { Navigate, createBrowserRouter, useLocation } from 'react-router-dom';
+import { RouteLoadingScreen } from '../components/feedback/RouteLoadingScreen';
 import { AppShell } from '../components/layout/AppShell';
 import { AuditPage } from '../features/audit/AuditPage';
 import { useAuth } from '../features/auth/AuthContext';
@@ -14,14 +15,15 @@ import { SubjectDetailPage } from '../features/subjects/SubjectDetailPage';
 
 function RequireAuth() {
   const { isAuthenticated, isLoading } = useAuth();
-  if (isLoading) return null;
-  if (!isAuthenticated) return <Navigate to="/login" replace />;
+  const location = useLocation();
+  if (isLoading) return <RouteLoadingScreen message="Validando sesión..." />;
+  if (!isAuthenticated) return <Navigate to="/login" replace state={{ from: location }} />;
   return <AppShell />;
 }
 
 function HomeRedirect() {
   const { role, isAuthenticated, isLoading } = useAuth();
-  if (isLoading) return null;
+  if (isLoading) return <RouteLoadingScreen message="Validando sesión..." />;
   if (!isAuthenticated) return <Navigate to="/login" replace />;
   if (role === 'FABRICA') return <Navigate to="/factory/dashboard" replace />;
   // ADMIN falls back to product dashboard for now.
@@ -30,10 +32,10 @@ function HomeRedirect() {
 
 function RoleRedirect({ expectedRole, children }: { expectedRole: 'PRODUCT' | 'FABRICA'; children: React.ReactNode }) {
   const { role, isAuthenticated, isLoading } = useAuth();
-  if (isLoading) return null;
+  if (isLoading) return <RouteLoadingScreen message="Validando sesión..." />;
   if (!isAuthenticated) return <Navigate to="/login" replace />;
   if (role !== expectedRole) return <Navigate to={role === 'FABRICA' ? '/factory/dashboard' : '/product/dashboard'} replace />;
-  return children;
+  return <>{children}</>;
 }
 
 export const router = createBrowserRouter([

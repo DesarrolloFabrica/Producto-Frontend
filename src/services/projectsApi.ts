@@ -1,5 +1,6 @@
 import { apiClient } from './apiClient';
 import type {
+  ApiAddSemesterPayload,
   ApiCreateProjectPayload,
   ApiProjectActionResponse,
   ApiProjectDetail,
@@ -13,6 +14,9 @@ export const projectsApi = {
 
   createProject: (payload: ApiCreateProjectPayload) =>
     apiClient.post<ApiProjectDetail>('/projects', payload),
+
+  addSemester: (projectId: string, payload: ApiAddSemesterPayload) =>
+    apiClient.post<ApiProjectDetail>(`/projects/${projectId}/semesters`, payload),
 
   markProjectDelivered: (id: string) =>
     apiClient.post<ApiProjectDetail>(`/projects/${id}/mark-delivered`, {}),
