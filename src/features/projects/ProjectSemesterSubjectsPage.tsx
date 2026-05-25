@@ -1,5 +1,7 @@
 import { useState } from 'react';
-import { useParams, Link } from 'react-router-dom';
+import { useParams } from 'react-router-dom';
+import { ContextBackLink } from '../../navigation/ContextBackLink';
+import { ContextLink } from '../../navigation/ContextLink';
 import { ArrowLeft, BookOpen, CalendarDays, CheckCircle2, MessageSquare, Plus, X, Loader2 } from 'lucide-react';
 import { Card } from '../../components/ui/Card';
 import { PageHeader } from '../../components/ui/PageHeader';
@@ -17,6 +19,9 @@ import { cn } from '../../components/ui/tokens';
 import { FactorySemesterSubjectsView } from './FactorySemesterSubjectsView';
 import { useToast } from '../../components/ui/ToastProvider';
 import { useDismissNotificationsOnVisit } from '../notifications/useDismissNotificationsOnVisit';
+import { ChangeOriginBadge, ChangeOriginCardAccent, ChangeOriginHint } from '../../components/change-tracking/ChangeOriginBadge';
+import { SubjectTopicsEditor } from '../../components/forms/SubjectTopicsEditor';
+import { SUBJECT_TOPICS_MIN, validateSubjectTopicsList } from '../../utils/subjectTopics';
 
 export function ProjectSemesterSubjectsPage() {
   const { projectId, semesterNumber } = useParams();
@@ -88,12 +93,12 @@ export function ProjectSemesterSubjectsPage() {
         title={`Semestre ${semesterNum}`}
         description={`${project.modality} · Responsable Product: ${project.productOwner}`}
         action={
-          <Link
-            to={`/projects/${project.id}`}
+          <ContextBackLink
+            fallback={`/projects/${project.id}?tab=semesters`}
             className="inline-flex items-center gap-1.5 rounded-2xl border border-orange-200 bg-white px-4 py-2.5 text-xs font-bold text-slate-700 shadow-sm transition-all hover:border-orange-300 hover:text-orange-700"
           >
             <ArrowLeft className="h-3.5 w-3.5" /> Volver al proyecto
-          </Link>
+          </ContextBackLink>
         }
       />
 
@@ -145,11 +150,16 @@ export function ProjectSemesterSubjectsPage() {
             const topicCount = subject.contentTopics?.length ?? 0;
 
             return (
-              <Card key={subject.id} variant="subjectPanel" className="p-5 transition-all hover:shadow-md">
+              <Card key={subject.id} variant="subjectPanel" className="relative overflow-hidden p-5 pl-6 transition-all hover:shadow-md">
+                <ChangeOriginCardAccent isNew={Boolean(subject.createdFromChange)} />
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
                     <p className="text-[10px] font-semibold uppercase tracking-[0.1em] text-[#94A3B8]">Semestre {subject.semesterNumber}</p>
-                    <h3 className="mt-1 text-base font-bold tracking-tight text-slate-950">{subject.name}</h3>
+                    <div className="mt-1 flex flex-wrap items-center gap-2">
+                      <h3 className="text-base font-bold tracking-tight text-slate-950">{subject.name}</h3>
+                      {subject.createdFromChange && <ChangeOriginBadge kind="subject" />}
+                    </div>
+                    {subject.createdFromChange && <ChangeOriginHint kind="subject" />}
                   </div>
                   <StatusBadge status={subject.status} size="sm" />
                 </div>
@@ -185,12 +195,12 @@ export function ProjectSemesterSubjectsPage() {
                 </div>
 
                 <div className="mt-5">
-                  <Link
+                  <ContextLink
                     to={`/subjects/${subject.id}`}
                     className="flex w-full items-center justify-center gap-1.5 rounded-2xl bg-linear-to-br from-orange-400 to-orange-600 px-4 py-2.5 text-xs font-black text-white shadow-lg shadow-orange-500/30 transition-all hover:from-orange-500 hover:to-orange-700"
                   >
                     Gestionar revisión
-                  </Link>
+                  </ContextLink>
                 </div>
               </Card>
             );
@@ -246,26 +256,19 @@ function AddSubjectModal({ isOpen, onClose, semesterNumber, defaultExpectedDate,
   const [errors, setErrors] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
 
-  const addTopic = () => setTopics((prev) => [...prev, '']);
-
-  const updateTopic = (index: number, value: string) => {
-    setTopics((prev) => prev.map((t, i) => (i === index ? value : t)));
-  };
-
-  const removeTopic = (index: number) => {
-    setTopics((prev) => prev.filter((_, i) => i !== index));
-  };
-
-  const suggestTopics = () => setTopics(['Tema 1', 'Tema 2', 'Tema 3', 'Tema 4']);
+  const filledTopicsCount = topics.map((topic) => topic.trim()).filter(Boolean).length;
+  const canSubmit =
+    Boolean(name.trim()) &&
+    Boolean(expectedDeliveryDate) &&
+    filledTopicsCount >= SUBJECT_TOPICS_MIN &&
+    filledTopicsCount <= 6 &&
+    topics.every((topic) => topic.trim().length > 0);
 
   const validate = (): boolean => {
     const newErrors: string[] = [];
     if (!name.trim()) newErrors.push('Ingresa el nombre de la asignatura.');
     if (!expectedDeliveryDate) newErrors.push('Selecciona una fecha de entrega para esta asignatura.');
-    if (topics.length === 0) newErrors.push('Agrega al menos un tema.');
-    topics.forEach((t, i) => {
-      if (!t.trim()) newErrors.push(`El tema ${i + 1} no tiene nombre.`);
-    });
+    newErrors.push(...validateSubjectTopicsList(topics, name));
     setErrors(newErrors);
     return newErrors.length === 0;
   };
@@ -277,7 +280,7 @@ function AddSubjectModal({ isOpen, onClose, semesterNumber, defaultExpectedDate,
       await onAdd({
         semesterNumber,
         name,
-        topics,
+        topics: topics.map((topic) => topic.trim()).filter(Boolean),
         expectedDeliveryDate,
         changeReason: changeReason.trim() || undefined,
       });
@@ -342,47 +345,11 @@ function AddSubjectModal({ isOpen, onClose, semesterNumber, defaultExpectedDate,
           />
         </div>
 
-        <div>
-          <div className="flex items-center justify-between mb-2">
-            <label className={labelClass}>Temas / Gránulos</label>
-            <div className="flex gap-2">
-              {topics.length === 0 && (
-                <button type="button" onClick={suggestTopics} className="text-[10px] font-bold text-orange-600 hover:text-orange-700">
-                  Sugerir 4
-                </button>
-              )}
-              <button type="button" onClick={addTopic} className="text-[10px] font-bold text-orange-600 hover:text-orange-700">
-                + Tema
-              </button>
-            </div>
-          </div>
-
-          <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
-            {topics.map((topic, index) => (
-              <div key={index} className="flex items-center gap-2">
-                <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-md bg-orange-100 text-[9px] font-bold text-orange-600">
-                  {index + 1}
-                </span>
-                <input
-                  className={cn(inputClass, 'flex-1 py-2 px-3 text-xs')}
-                  value={topic}
-                  onChange={(e) => updateTopic(index, e.target.value)}
-                  placeholder={`Tema ${index + 1}`}
-                />
-                <button type="button" onClick={() => removeTopic(index)} className="shrink-0 text-slate-300 hover:text-rose-500">
-                  <X className="h-3.5 w-3.5" />
-                </button>
-              </div>
-            ))}
-            {topics.length === 0 && (
-              <p className="text-center text-xs font-medium text-slate-400 py-4">Agrega al menos un tema.</p>
-            )}
-          </div>
-        </div>
+        <SubjectTopicsEditor topics={topics} onChange={setTopics} inputClass={inputClass} labelClass={labelClass} />
 
         <div className="flex justify-end gap-3 pt-4 border-t border-slate-100">
           <Button type="button" variant="secondary" onClick={handleClose}>Cancelar</Button>
-          <Button disabled={saving} onClick={handleSubmit}>
+          <Button disabled={saving || !canSubmit} onClick={handleSubmit}>
             {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
             {saving ? 'Guardando...' : 'Agregar asignatura'}
           </Button>

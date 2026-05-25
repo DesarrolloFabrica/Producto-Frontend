@@ -1,11 +1,14 @@
 import type {
   OperationalObservation,
   Priority,
+  SubjectOperationalState,
   SubjectSummary,
   SubjectStatus,
   SubjectVirtualization,
   VirtualizationProject,
 } from '../../types/domain';
+
+export type { SubjectOperationalState } from '../../types/domain';
 
 export function getProjectSubjects(
   project: VirtualizationProject,
@@ -13,14 +16,6 @@ export function getProjectSubjects(
   if (project.subjects.length > 0) return project.subjects;
   return project.subjectsSummary ?? [];
 }
-
-export type SubjectOperationalState =
-  | 'NOT_STARTED'
-  | 'IN_PRODUCTION'
-  | 'IN_REVIEW'
-  | 'CHANGES_REQUESTED'
-  | 'CORRECTION_SENT'
-  | 'APPROVED';
 
 export interface SubjectSummaryLike {
   id: string;
@@ -32,6 +27,8 @@ export interface SubjectSummaryLike {
   openObservationsCount?: number;
   correctionSentCount?: number;
   updatedAt?: string;
+  createdFromChange?: boolean;
+  operationalState?: SubjectOperationalState;
 }
 
 export interface SubjectWorkItem {
@@ -48,6 +45,7 @@ export interface SubjectWorkItem {
   correctionSentCount: number;
   lastActivity?: string;
   actionUrl: string;
+  createdFromChange?: boolean;
   actionLabel: string;
   operationalLabel: string;
 }
@@ -124,12 +122,16 @@ export function getProductObservationsForSubject(
   observations: OperationalObservation[],
 ): OperationalObservation[] {
   const subject = getProjectSubjects(project).find((item) => item.id === subjectId);
-  const topicIds = new Set(
-    subject && 'topics' in subject && subject.topics ? subject.topics.map((topic) => topic.id) : [],
-  );
+  // En el modelo actual, SubjectVirtualization trae checklist y topicChecklists.
+  // SubjectSummary no trae detalles de topics/checklists.
   const checklistIds = new Set(
-    subject && 'checklist' in subject && subject.checklist
+    subject && 'checklist' in subject && Array.isArray(subject.checklist)
       ? subject.checklist.map((item) => item.id)
+      : [],
+  );
+  const topicChecklistItemIds = new Set(
+    subject && 'topicChecklists' in subject && Array.isArray(subject.topicChecklists)
+      ? subject.topicChecklists.flatMap((tc) => tc.items ?? []).map((item) => item.id)
       : [],
   );
 
@@ -139,14 +141,16 @@ export function getProductObservationsForSubject(
     if (
       observation.relatedEntityType === 'TOPIC' &&
       observation.relatedEntityId &&
-      topicIds.has(observation.relatedEntityId)
+      // No tenemos id de TOPIC en el modelo de virtualization; ignoramos este match.
+      false
     ) {
       return true;
     }
     if (
       observation.relatedEntityType === 'CHECKLIST_ITEM' &&
       observation.relatedEntityId &&
-      checklistIds.has(observation.relatedEntityId)
+      (checklistIds.has(observation.relatedEntityId) ||
+        topicChecklistItemIds.has(observation.relatedEntityId))
     ) {
       return true;
     }
@@ -160,13 +164,15 @@ export function normalizeSubjectOperationalState(params: {
   projectStatus?: VirtualizationProject['status'];
 }): SubjectOperationalState {
   const { subject, observations = [], projectStatus } = params;
+  if (subject.operationalState) return subject.operationalState;
+
   const subjectObs = productObservationsForSubject(observations, subject.id);
 
   const openCount =
-    subject.openObservationsCount ??
+    ('openObservationsCount' in subject ? subject.openObservationsCount : undefined) ??
     subjectObs.filter((o) => o.status === 'ABIERTA').length;
   const correctionSentCount =
-    subject.correctionSentCount ??
+    ('correctionSentCount' in subject ? subject.correctionSentCount : undefined) ??
     subjectObs.filter((o) => o.status === 'EN_CORRECCION').length;
 
   if (subject.status === 'APPROVED') return 'APPROVED';
@@ -184,18 +190,22 @@ export function buildSubjectWorkItem(
   observations: OperationalObservation[] = [],
 ): SubjectWorkItem {
   const subjectObs = getProductObservationsForSubject(project, subject.id, observations);
+  const openObservationsCount =
+    ('openObservationsCount' in subject ? subject.openObservationsCount : undefined) ??
+    subjectObs.filter((o) => o.status === 'ABIERTA').length;
+  const correctionSentCount =
+    ('correctionSentCount' in subject ? subject.correctionSentCount : undefined) ??
+    subjectObs.filter((o) => o.status === 'EN_CORRECCION').length;
   const operationalState = normalizeSubjectOperationalState({
     subject: {
       ...subject,
-      openObservationsCount: subjectObs.filter((o) => o.status === 'ABIERTA').length,
-      correctionSentCount: subjectObs.filter((o) => o.status === 'EN_CORRECCION').length,
+      openObservationsCount,
+      correctionSentCount,
     },
     observations: subjectObs,
     projectStatus: project.status,
   });
   const cta = getOperationalCta(operationalState);
-  const openObservationsCount = subjectObs.filter((o) => o.status === 'ABIERTA').length;
-  const correctionSentCount = subjectObs.filter((o) => o.status === 'EN_CORRECCION').length;
 
   const focusCorrection =
     operationalState === 'CHANGES_REQUESTED' || openObservationsCount > 0
@@ -216,6 +226,8 @@ export function buildSubjectWorkItem(
     correctionSentCount,
     lastActivity: 'updatedAt' in subject ? subject.updatedAt : undefined,
     actionUrl: `/subjects/${subject.id}${focusCorrection}`,
+    createdFromChange:
+      'createdFromChange' in subject ? Boolean(subject.createdFromChange) : undefined,
     actionLabel: cta.label,
     operationalLabel: getOperationalStateLabel(operationalState),
   };

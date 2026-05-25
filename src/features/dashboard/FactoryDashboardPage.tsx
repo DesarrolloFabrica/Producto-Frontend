@@ -1,258 +1,188 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useMemo } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import {
   AlertTriangle,
-  CheckCircle2,
   Clock3,
-  MessageSquare,
   Package,
-  Send,
 } from 'lucide-react';
 import { MetricCard } from '../../components/cards/MetricCard';
-import { PageHeader } from '../../components/ui/PageHeader';
+import { OperationalTray } from '../../components/operational/OperationalTray';
 import { ProjectsLoadNotice } from '../../components/feedback/ProjectsLoadNotice';
+import { PageHeader } from '../../components/ui/PageHeader';
 import { useOperations } from '../../features/operations/OperationsContext';
+import { FactoryDashboardQuickNav } from './factory/FactoryDashboardQuickNav';
 import {
-  buildWorkItemsFromProjects,
-  groupSubjectsByOperationalState,
-  type SubjectOperationalState,
-  type SubjectWorkItem,
-} from '../../features/operations/subjectOperationalState';
-import {
-  FactoryDashboardFilters,
-  filterWorkItemsByTab,
-  type DashboardTab,
-} from './factory/FactoryDashboardFilters';
-import { FactoryDashboardTray } from './factory/FactoryDashboardTray';
-import { FactorySubjectWorkRow } from './factory/FactorySubjectWorkRow';
+  chunkTrays,
+  filterItemsBySearch,
+  getTraysForView,
+  parseFactoryDashboardView,
+  type FactoryDashboardView,
+} from './factory/factoryDashboardViews';
 import { useFactoryDashboard } from './useFactoryDashboard';
-import type { FactorySubjectsQuery } from '../../services/factoryApi';
 
 export function FactoryDashboardPage() {
-  const { projects, projectObservations, isLoadingProjects, projectsError, refreshProjects, backendEnabled } =
-    useOperations();
-  const factoryDashboard = useFactoryDashboard(backendEnabled);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const { isLoadingProjects, projectsError, refreshProjects, backendEnabled } = useOperations();
+  const { summary, newlyAddedPreview, correctionSentPreview, isLoading, error, loadSummary } =
+    useFactoryDashboard(backendEnabled);
 
-  const [activeTab, setActiveTab] = useState<DashboardTab>('active');
-  const [search, setSearch] = useState('');
-  const [stateFilter, setStateFilter] = useState<SubjectOperationalState | 'ALL'>('ALL');
+  const view = parseFactoryDashboardView(searchParams.get('view'));
+  const search = searchParams.get('search') ?? '';
 
-  const clientWorkItems = useMemo(
-    () => buildWorkItemsFromProjects(projects, projectObservations),
-    [projects, projectObservations],
+  const summaryCounts = summary?.countsByState;
+  const totalAssigned = summary?.totalAssigned ?? 0;
+
+  const trayContext = useMemo(
+    () => ({
+      summary: summary
+        ? {
+            countsByState: summary.countsByState,
+            pendingCorrectionsTop: summary.pendingCorrectionsTop,
+            inProductionTop: summary.inProductionTop,
+            upcomingDeliveriesTop: summary.upcomingDeliveriesTop,
+            notStartedTop: summary.notStartedTop,
+            inReviewTop: summary.inReviewTop,
+            recentlyCompletedTop: summary.recentlyCompletedTop,
+            overdueOrDueSoonCount: summary.overdueOrDueSoonCount,
+          }
+        : null,
+      newlyAddedPreview,
+      correctionSentPreview,
+    }),
+    [summary, newlyAddedPreview, correctionSentPreview],
   );
 
-  const useRemoteList = backendEnabled && (activeTab !== 'active' || search || stateFilter !== 'ALL');
+  const visibleTrays = useMemo(() => getTraysForView(view, trayContext), [view, trayContext]);
+  const trayRows = useMemo(() => chunkTrays(visibleTrays), [visibleTrays]);
 
-  useEffect(() => {
-    if (!useRemoteList) return;
-    const query: FactorySubjectsQuery = {
-      page: 1,
-      limit: 100,
-      search: search || undefined,
-      status: stateFilter !== 'ALL' ? stateFilter : undefined,
-    };
-    if (activeTab === 'corrections') query.status = undefined;
-    void factoryDashboard.loadSubjects(query);
-  }, [useRemoteList, activeTab, search, stateFilter, factoryDashboard.loadSubjects]);
-
-  const allWorkItems = factoryDashboard.remoteItems ?? clientWorkItems;
-
-  const filteredItems = useMemo(() => {
-    let items = filterWorkItemsByTab(allWorkItems, activeTab);
-    if (stateFilter !== 'ALL') {
-      items = items.filter((i) => i.operationalState === stateFilter);
-    }
-    const q = search.trim().toLowerCase();
-    if (q) {
-      items = items.filter(
-        (i) =>
-          i.subjectName.toLowerCase().includes(q) ||
-          i.program.toLowerCase().includes(q) ||
-          i.school.toLowerCase().includes(q),
-      );
-    }
-    return items;
-  }, [allWorkItems, activeTab, stateFilter, search]);
-
-  const groups = useMemo(
-    () => groupSubjectsByOperationalState(clientWorkItems),
-    [clientWorkItems],
+  const setView = useCallback(
+    (nextView: FactoryDashboardView) => {
+      const next = new URLSearchParams(searchParams);
+      if (nextView === 'active') next.delete('view');
+      else next.set('view', nextView);
+      setSearchParams(next, { replace: true });
+    },
+    [searchParams, setSearchParams],
   );
 
-  const summaryCounts = factoryDashboard.summary?.countsByState;
+  const setSearch = useCallback(
+    (value: string) => {
+      const next = new URLSearchParams(searchParams);
+      if (value) next.set('search', value);
+      else next.delete('search');
+      setSearchParams(next, { replace: true });
+    },
+    [searchParams, setSearchParams],
+  );
 
-  const activeCount =
-    groups.CHANGES_REQUESTED.length +
-    groups.IN_PRODUCTION.length +
-    groups.NOT_STARTED.length +
-    groups.IN_REVIEW.length +
-    groups.CORRECTION_SENT.length;
-
-  const completedRecent = useMemo(() => {
-    if (factoryDashboard.summary?.recentlyCompleted.length) {
-      return factoryDashboard.summary.recentlyCompleted;
-    }
-    return [...groups.APPROVED]
-      .sort((a, b) => (b.lastActivity ?? '').localeCompare(a.lastActivity ?? ''))
-      .slice(0, 5);
-  }, [factoryDashboard.summary, groups.APPROVED]);
-
-  const upcoming = useMemo(() => {
-    const now = new Date();
-    return allWorkItems
-      .filter((i) => i.operationalState === 'NOT_STARTED' || i.operationalState === 'IN_PRODUCTION')
-      .map((item) => ({
-        item,
-        daysLeft: Math.ceil(
-          (new Date(item.expectedDeliveryDate).getTime() - now.getTime()) / (1000 * 60 * 60 * 24),
-        ),
-      }))
-      .sort((a, b) => a.daysLeft - b.daysLeft)
-      .slice(0, 5);
-  }, [allWorkItems]);
-
-  const showTrayLayout = activeTab === 'active' && !search && stateFilter === 'ALL';
+  const hasSearch = search.trim().length > 0;
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-7">
       <PageHeader
-        eyebrow="Bandeja de trabajo"
-        title="Solicitudes de producción"
-        description="Gestiona cada asignatura según su estado operacional real."
+        prominentEyebrow
+        eyebrow="Centro de control"
+        title="Dashboard Factory"
+        description="Resumen operativo por materia: correcciones, producción, vencimientos y revisiones."
       />
 
       {backendEnabled && (
         <ProjectsLoadNotice
-          isLoading={isLoadingProjects && projects.length === 0}
+          isLoading={isLoadingProjects}
           error={projectsError}
           onRefresh={() => void refreshProjects()}
         />
       )}
 
-      <section className="grid gap-4 md:grid-cols-4">
+      {backendEnabled && (
+        <ProjectsLoadNotice
+          isLoading={isLoading && !summary}
+          error={error}
+          onRefresh={() => void loadSummary()}
+        />
+      )}
+
+      <section className="grid gap-3 md:grid-cols-4">
         <MetricCard
+          variant="subjectPanel"
+          label="Total asignadas"
+          value={isLoading && !summary ? '—' : totalAssigned}
+          icon={Package}
+          tone="text-[#1E293B]"
+          active={view === 'all'}
+          onClick={() => setView('all')}
+        />
+        <MetricCard
+          variant="subjectPanel"
           label="Correcciones pendientes"
-          value={summaryCounts?.CHANGES_REQUESTED ?? groups.CHANGES_REQUESTED.length}
+          value={isLoading && !summary ? '—' : (summaryCounts?.CHANGES_REQUESTED ?? 0)}
           icon={AlertTriangle}
           tone="text-rose-500"
+          active={view === 'corrections'}
+          onClick={() => setView('corrections')}
         />
         <MetricCard
+          variant="subjectPanel"
           label="En producción"
-          value={summaryCounts?.IN_PRODUCTION ?? groups.IN_PRODUCTION.length}
+          value={isLoading && !summary ? '—' : (summaryCounts?.IN_PRODUCTION ?? 0)}
           icon={Package}
-          tone="text-[#FF6B00]"
+          tone="text-orange-500"
+          active={view === 'active'}
+          onClick={() => setView('active')}
         />
         <MetricCard
-          label="En revisión Product"
-          value={summaryCounts?.IN_REVIEW ?? groups.IN_REVIEW.length}
-          icon={Send}
-          tone="text-sky-500"
-        />
-        <MetricCard
-          label="Completadas"
-          value={summaryCounts?.APPROVED ?? groups.APPROVED.length}
-          icon={CheckCircle2}
-          tone="text-emerald-500"
+          variant="subjectPanel"
+          label="Próximas / vencidas"
+          value={isLoading && !summary ? '—' : (summary?.overdueOrDueSoonCount ?? 0)}
+          icon={Clock3}
+          tone="text-amber-500"
+          active={view === 'active'}
+          onClick={() => setView('active')}
         />
       </section>
 
-      <FactoryDashboardFilters
-        activeTab={activeTab}
-        onTabChange={setActiveTab}
+      <FactoryDashboardQuickNav
+        view={view}
         search={search}
+        onViewChange={setView}
         onSearchChange={setSearch}
-        stateFilter={stateFilter}
-        onStateFilterChange={setStateFilter}
       />
 
-      {showTrayLayout ? (
-        <section className="space-y-6">
-          <FactoryDashboardTray
-            title="Correcciones pendientes"
-            description="Materias con observaciones abiertas de Product"
-            icon={AlertTriangle}
-            iconClassName="flex h-9 w-9 items-center justify-center rounded-[12px] bg-rose-500/10 text-rose-500"
-            items={groups.CHANGES_REQUESTED}
-            emptyMessage="No hay correcciones pendientes."
-          />
-          <FactoryDashboardTray
-            title="En producción"
-            description="Materias activas en producción"
-            icon={Package}
-            iconClassName="flex h-9 w-9 items-center justify-center rounded-[12px] bg-[#FFEDD5] text-[#FF6B00]"
-            items={groups.IN_PRODUCTION}
-            emptyMessage="No hay materias en producción."
-          />
-          <FactoryDashboardTray
-            title="Por iniciar"
-            description="Materias pendientes de iniciar producción"
-            icon={Clock3}
-            iconClassName="flex h-9 w-9 items-center justify-center rounded-[12px] bg-slate-500/10 text-slate-500"
-            items={groups.NOT_STARTED}
-            emptyMessage="No hay materias por iniciar."
-          />
-          <FactoryDashboardTray
-            title="En revisión Product"
-            description="Esperando validación de Product"
-            icon={Send}
-            iconClassName="flex h-9 w-9 items-center justify-center rounded-[12px] bg-sky-500/10 text-sky-500"
-            items={groups.IN_REVIEW}
-            emptyMessage="No hay materias en revisión."
-          />
-          {groups.CORRECTION_SENT.length > 0 && (
-            <FactoryDashboardTray
-              title="Correcciones enviadas"
-              description="Esperando validación de Product por observación"
-              icon={MessageSquare}
-              iconClassName="flex h-9 w-9 items-center justify-center rounded-[12px] bg-amber-500/10 text-amber-500"
-              items={groups.CORRECTION_SENT}
-              emptyMessage="No hay correcciones enviadas."
-            />
-          )}
-          {(completedRecent.length > 0 || activeCount === 0) && (
-            <FactoryDashboardTray
-              title="Completadas recientes"
-              description="Materias aprobadas por Product"
-              icon={CheckCircle2}
-              iconClassName="flex h-9 w-9 items-center justify-center rounded-[12px] bg-emerald-500/10 text-emerald-500"
-              items={completedRecent}
-              emptyMessage="No hay materias completadas recientemente."
-              limit={5}
-            />
-          )}
-          {upcoming.length > 0 && (
-            <FactoryDashboardTray
-              title="Próximos vencimientos"
-              description="Materias por iniciar o en producción, ordenadas por fecha"
-              icon={Clock3}
-              iconClassName="flex h-9 w-9 items-center justify-center rounded-[12px] bg-amber-500/10 text-amber-500"
-              items={upcoming.map((u) => u.item)}
-              emptyMessage="No hay vencimientos próximos."
-              limit={5}
-            />
-          )}
+      {trayRows.map((row, rowIndex) => (
+        <section key={row.map((t) => t.id).join('-') || rowIndex} className="grid gap-4 md:grid-cols-2">
+          {row.map((tray) => {
+            const totalCount = tray.getCount(trayContext);
+            const allItems = tray.getItems(trayContext);
+            const filteredItems = filterItemsBySearch(allItems, search);
+            const displayCount = hasSearch ? filteredItems.length : totalCount;
+            const emptyMessage =
+              hasSearch && totalCount > 0 && filteredItems.length === 0
+                ? 'Sin coincidencias para la búsqueda.'
+                : tray.emptyMessage;
+
+            return (
+              <OperationalTray
+                key={tray.id}
+                title={tray.title}
+                description={tray.description}
+                count={displayCount}
+                totalCount={totalCount}
+                items={filteredItems}
+                emptyMessage={emptyMessage}
+                viewAllTo={tray.viewAllTo}
+                icon={tray.icon}
+                role="factory"
+              />
+            );
+          })}
         </section>
-      ) : (
-        <FilteredWorkList items={filteredItems} />
-      )}
-    </div>
-  );
-}
-
-function FilteredWorkList({ items }: { items: SubjectWorkItem[] }) {
-  if (items.length === 0) {
-    return (
-      <p className="py-12 text-center text-sm text-[#94A3B8]">
-        No hay materias que coincidan con los filtros seleccionados.
-      </p>
-    );
-  }
-
-  return (
-    <div className="space-y-3">
-      {items.map((item) => (
-        <FactorySubjectWorkRow key={item.subjectId} item={item} />
       ))}
+
+      {!isLoading && visibleTrays.length === 0 && (
+        <p className="py-4 text-center text-sm text-[#94A3B8]">
+          No hay bandejas para esta vista.
+        </p>
+      )}
     </div>
   );
 }

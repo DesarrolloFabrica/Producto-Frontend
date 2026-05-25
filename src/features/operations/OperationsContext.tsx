@@ -1,19 +1,30 @@
-import { createContext, useContext, useReducer, useCallback, type ReactNode } from 'react';
+import { createContext, useContext, useReducer, useCallback, useMemo, type ReactNode } from 'react';
+import type { ApiProjectDetail } from '../../services/types/projectsApi.types';
+import { queryClient } from '../queries/queryClient';
+import { markFactoryQueriesStale } from '../queries/factoryQueryUtils';
+import { queryKeys } from '../queries/queryKeys';
+import {
+  normalizeWorkflowScopes,
+  type WorkflowRefreshScope,
+} from './workflowRefresh';
+import { shouldMarkNotificationsRead } from '../notifications/notificationReadDedup';
+import { projectsListStaleTime, projectDetailStaleTime } from '../queries/queryClient';
 import { env } from '../../config/env';
-import { checklistApi } from '../../services/checklistApi';
+import { checklistApi, type BulkApproveSectionPayload } from '../../services/checklistApi';
 import { notificationsApi } from '../../services/notificationsApi';
 import { observationsApi } from '../../services/observationsApi';
 import { projectsApi } from '../../services/projectsApi';
-import { subjectsApi } from '../../services/subjectsApi';
-import { topicsApi } from '../../services/topicsApi';
+import { subjectsApi, type ApiSubjectWorkspace } from '../../services/subjectsApi';
 import {
   getApiErrorMessage,
+  isLightSubjectWorkspace,
   mapCreateObservationToApi,
   mapCreateProjectToApi,
   mapNotificationsFromApi,
   mapObservationsFromApi,
   mapProjectDetailFromApi,
   mapProjectsFromApi,
+  mapSubjectWorkspaceProjectFromApi,
   type CreateObservationInput,
   type CreateProjectFormInput,
 } from './apiMappers';
@@ -62,6 +73,171 @@ const subjectChecklistLabels = [
   'Seminario Aleman',
 ];
 
+function patchChecklistStatusesInProject(
+  project: VirtualizationProject,
+  subjectId: string,
+  itemIds: string[],
+): VirtualizationProject {
+  const itemIdSet = new Set(itemIds);
+  return {
+    ...project,
+    subjects: project.subjects.map((subject) => {
+      if (subject.id !== subjectId) return subject;
+      return {
+        ...subject,
+        checklist: subject.checklist.map((item) =>
+          itemIdSet.has(item.id) ? { ...item, status: 'APROBADO' } : item,
+        ),
+        topicChecklists: subject.topicChecklists.map((topic) => ({
+          ...topic,
+          items: topic.items.map((item) =>
+            itemIdSet.has(item.id) ? { ...item, status: 'APROBADO' } : item,
+          ),
+        })),
+      };
+    }),
+  };
+}
+
+function patchChecklistStatusesInWorkspace(
+  workspace: ApiSubjectWorkspace | undefined,
+  itemIds: string[],
+): ApiSubjectWorkspace | undefined {
+  if (!workspace) return workspace;
+  const itemIdSet = new Set(itemIds);
+
+  if (isLightSubjectWorkspace(workspace)) {
+    return {
+      ...workspace,
+      subject: {
+        ...workspace.subject,
+        checklist: workspace.subject.checklist.map((item) =>
+          itemIdSet.has(item.id) ? { ...item, status: 'APROBADO' } : item,
+        ),
+        topics: workspace.subject.topics.map((topic) => ({
+          ...topic,
+          checklist: topic.checklist.map((item) =>
+            itemIdSet.has(item.id) ? { ...item, status: 'APROBADO' } : item,
+          ),
+        })),
+      },
+    };
+  }
+
+  return {
+    ...workspace,
+    project: {
+      ...workspace.project,
+      semesters: workspace.project.semesters.map((semester) => ({
+        ...semester,
+        subjects: semester.subjects.map((subject) => ({
+          ...subject,
+          checklist: subject.checklist.map((item) =>
+            itemIdSet.has(item.id) ? { ...item, status: 'APROBADO' } : item,
+          ),
+          topics: subject.topics.map((topic) => ({
+            ...topic,
+            checklist: topic.checklist.map((item) =>
+              itemIdSet.has(item.id) ? { ...item, status: 'APROBADO' } : item,
+            ),
+          })),
+        })),
+      })),
+    },
+  };
+}
+
+type WorkspaceSubjectShape = ApiSubjectWorkspace extends infer T
+  ? T extends { subject: infer S }
+    ? S
+    : never
+  : never;
+type ProjectSubjectShape = ApiProjectDetail['semesters'][number]['subjects'][number];
+
+function scoreChecklistStatus(status: ChecklistStatus): number {
+  if (status === 'APROBADO' || status === 'ENTREGADO') return 1;
+  if (status === 'EN_PRODUCCION') return 0.5;
+  return 0;
+}
+
+function calculateApiSubjectProgress(subject: WorkspaceSubjectShape | ProjectSubjectShape): number {
+  const checklist = subject.checklist ?? [];
+  const topicItems = subject.topics.flatMap((topic) => topic.checklist);
+  const average = (items: typeof checklist) => {
+    if (items.length === 0) return 0;
+    return items.reduce((sum, item) => sum + scoreChecklistStatus(item.status), 0) / items.length;
+  };
+  return Math.round((average(checklist) * 0.7 + average(topicItems) * 0.3) * 100);
+}
+
+function patchApiSubjectChecklistStatus<T extends WorkspaceSubjectShape | ProjectSubjectShape>(
+  subject: T,
+  itemId: string,
+  status: ChecklistStatus,
+): T {
+  const nextSubject = {
+    ...subject,
+    checklist: subject.checklist.map((item) =>
+      item.id === itemId ? { ...item, status } : item,
+    ),
+    topics: subject.topics.map((topic) => ({
+      ...topic,
+      checklist: topic.checklist.map((item) =>
+        item.id === itemId ? { ...item, status } : item,
+      ),
+    })),
+  };
+  return {
+    ...nextSubject,
+    progress: calculateApiSubjectProgress(nextSubject),
+  } as T;
+}
+
+function patchChecklistStatusInWorkspace(
+  workspace: ApiSubjectWorkspace | undefined,
+  itemId: string,
+  status: ChecklistStatus,
+): ApiSubjectWorkspace | undefined {
+  if (!workspace) return workspace;
+
+  if (isLightSubjectWorkspace(workspace)) {
+    return {
+      ...workspace,
+      subject: patchApiSubjectChecklistStatus(workspace.subject, itemId, status),
+    };
+  }
+
+  return {
+    ...workspace,
+    project: {
+      ...workspace.project,
+      semesters: workspace.project.semesters.map((semester) => ({
+        ...semester,
+        subjects: semester.subjects.map((subject) =>
+          patchApiSubjectChecklistStatus(subject, itemId, status),
+        ),
+      })),
+    },
+  };
+}
+
+function patchChecklistStatusInProjectDetail(
+  project: ApiProjectDetail | undefined,
+  itemId: string,
+  status: ChecklistStatus,
+): ApiProjectDetail | undefined {
+  if (!project) return project;
+  return {
+    ...project,
+    semesters: project.semesters.map((semester) => ({
+      ...semester,
+      subjects: semester.subjects.map((subject) =>
+        patchApiSubjectChecklistStatus(subject, itemId, status),
+      ),
+    })),
+  };
+}
+
 const topicChecklistLabels = ['Material descargable', 'Podcast', 'Videos', 'Infografias interactivas'];
 
 function buildSubjectChecklist(): ChecklistItem[] {
@@ -101,7 +277,8 @@ interface OperationsState {
   recentlyUpdated: string[];
   isLoadingProjects: boolean;
   isLoadingProjectDetail: boolean;
-  isLoadingObservations: boolean;
+  isLoadingProjectObservations: boolean;
+  isLoadingSubjectObservations: boolean;
   isLoadingNotifications: boolean;
   isMutating: boolean;
   projectsError: string | null;
@@ -128,7 +305,6 @@ type OperationsAction =
   | { type: 'CLEAR_RECENTLY_UPDATED'; payload: { entityId: string } }
   | { type: 'ADD_SEMESTER_TO_PROJECT'; payload: { projectId: string; semester: VirtualizationProject['semesters'][0]; subjects: VirtualizationProject['subjects'] } }
   | { type: 'ADD_SUBJECT_TO_SEMESTER'; payload: { projectId: string; subject: VirtualizationProject['subjects'][0] } }
-  | { type: 'ADD_TOPIC_TO_SUBJECT'; payload: { projectId: string; subjectId: string; topicName: string; checklist: VirtualizationProject['subjects'][0]['checklist']; topicChecklistItems: VirtualizationProject['subjects'][0]['checklist'] } }
   | { type: 'RESOLVE_OBSERVATION'; payload: { projectId: string; observationId: string; observation: OperationalObservation } }
   | { type: 'MARK_OBSERVATION_CORRECTION_APPLIED'; payload: { projectId: string; observationId: string; observation: OperationalObservation } }
   | { type: 'REOPEN_OBSERVATION'; payload: { projectId: string; observationId: string; observation: OperationalObservation; reason: string } }
@@ -142,10 +318,13 @@ type OperationsAction =
   | { type: 'LOAD_PROJECT_DETAIL_START' }
   | { type: 'LOAD_PROJECT_DETAIL_SUCCESS'; payload: VirtualizationProject }
   | { type: 'LOAD_PROJECT_DETAIL_ERROR'; payload: string }
-  | { type: 'LOAD_OBSERVATIONS_START' }
+  | { type: 'LOAD_PROJECT_OBSERVATIONS_START' }
+  | { type: 'LOAD_SUBJECT_OBSERVATIONS_START' }
   | { type: 'LOAD_PROJECT_OBSERVATIONS_SUCCESS'; payload: { projectId: string; observations: OperationalObservation[] } }
   | { type: 'LOAD_SUBJECT_OBSERVATIONS_SUCCESS'; payload: { observations: OperationalObservation[] } }
-  | { type: 'LOAD_OBSERVATIONS_ERROR'; payload: string }
+  | { type: 'LOAD_OBSERVATIONS_ERROR'; payload: string; scope: 'project' | 'subject' }
+  | { type: 'MARK_NOTIFICATIONS_READ_BY_RESOURCE_LOCAL'; payload: { projectId?: string; subjectId?: string } }
+  | { type: 'LOAD_NOTIFICATION_SUMMARY_SUCCESS'; payload: NotificationSummary }
   | { type: 'LOAD_NOTIFICATIONS_START' }
   | {
       type: 'LOAD_NOTIFICATIONS_SUCCESS';
@@ -177,7 +356,8 @@ const initialState: OperationsState = {
   recentlyUpdated: [],
   isLoadingProjects: false,
   isLoadingProjectDetail: false,
-  isLoadingObservations: false,
+  isLoadingProjectObservations: false,
+  isLoadingSubjectObservations: false,
   isLoadingNotifications: false,
   isMutating: false,
   projectsError: null,
@@ -245,8 +425,10 @@ function operationsReducer(state: OperationsState, action: OperationsAction): Op
     }
     case 'LOAD_PROJECT_DETAIL_ERROR':
       return { ...state, isLoadingProjectDetail: false, selectedProjectError: action.payload };
-    case 'LOAD_OBSERVATIONS_START':
-      return { ...state, isLoadingObservations: true, observationsError: null };
+    case 'LOAD_PROJECT_OBSERVATIONS_START':
+      return { ...state, isLoadingProjectObservations: true, observationsError: null };
+    case 'LOAD_SUBJECT_OBSERVATIONS_START':
+      return { ...state, isLoadingSubjectObservations: true, observationsError: null };
     case 'LOAD_PROJECT_OBSERVATIONS_SUCCESS': {
       const otherObservations = state.projectObservations.filter((item) => item.projectId !== action.payload.projectId);
       const nextObservations = [...action.payload.observations, ...otherObservations];
@@ -255,7 +437,7 @@ function operationsReducer(state: OperationsState, action: OperationsAction): Op
         projectObservations: nextObservations,
         observationsByProject: { ...state.observationsByProject, [action.payload.projectId]: action.payload.observations },
         projects: recalcProjects(state.projects, nextObservations),
-        isLoadingObservations: false,
+        isLoadingProjectObservations: false,
         observationsError: null,
       };
     }
@@ -278,12 +460,35 @@ function operationsReducer(state: OperationsState, action: OperationsAction): Op
         projectObservations: nextObservations,
         observationsByProject,
         projects: recalcProjects(state.projects, nextObservations),
-        isLoadingObservations: false,
+        isLoadingSubjectObservations: false,
         observationsError: null,
       };
     }
     case 'LOAD_OBSERVATIONS_ERROR':
-      return { ...state, isLoadingObservations: false, observationsError: action.payload };
+      return {
+        ...state,
+        isLoadingProjectObservations: action.scope === 'project' ? false : state.isLoadingProjectObservations,
+        isLoadingSubjectObservations: action.scope === 'subject' ? false : state.isLoadingSubjectObservations,
+        observationsError: action.payload,
+      };
+    case 'MARK_NOTIFICATIONS_READ_BY_RESOURCE_LOCAL':
+      return {
+        ...state,
+        notifications: state.notifications.map((notification) => {
+          if (action.payload.subjectId && notification.subjectId === action.payload.subjectId) {
+            return { ...notification, read: true };
+          }
+          if (action.payload.projectId && notification.projectId === action.payload.projectId && !action.payload.subjectId) {
+            return { ...notification, read: true };
+          }
+          return notification;
+        }),
+      };
+    case 'LOAD_NOTIFICATION_SUMMARY_SUCCESS':
+      return {
+        ...state,
+        notificationSummary: action.payload,
+      };
     case 'LOAD_NOTIFICATIONS_START':
       return { ...state, isLoadingNotifications: true, notificationsError: null };
     case 'LOAD_NOTIFICATIONS_SUCCESS':
@@ -621,49 +826,6 @@ function operationsReducer(state: OperationsState, action: OperationsAction): Op
           ...state.auditLogs,
         ],
       };
-    case 'ADD_TOPIC_TO_SUBJECT':
-      return {
-        ...state,
-        projects: state.projects.map((p) => {
-          if (p.id !== action.payload.projectId) return p;
-          const updatedProject: VirtualizationProject = {
-            ...p,
-            subjects: p.subjects.map((s) => {
-              if (s.id !== action.payload.subjectId) return s;
-              const topicOrder = s.topicChecklists.length + 1;
-              return {
-                ...s,
-                contentTopics: [...s.contentTopics, action.payload.topicName],
-                checklist: [...s.checklist, ...action.payload.checklist],
-                topicChecklists: [
-                  ...s.topicChecklists,
-                  {
-                    topicName: action.payload.topicName,
-                    topicOrder,
-                    items: action.payload.topicChecklistItems,
-                  },
-                ],
-              };
-            }),
-          };
-
-          return recalcProject(updatedProject);
-        }),
-        auditLogs: [
-          {
-            id: `aud-${Date.now()}`,
-            entityType: 'Tema',
-            entityName: action.payload.topicName,
-            action: 'Tema agregado',
-            userName: 'Usuario activo',
-            role: 'PRODUCT',
-            previousValue: 'No existia',
-            newValue: 'Agregado',
-            createdAt: new Date().toISOString(),
-          },
-          ...state.auditLogs,
-        ],
-      };
     case 'RESOLVE_OBSERVATION':
       {
         const nextObservations = state.projectObservations.map((o) =>
@@ -874,9 +1036,20 @@ function operationsReducer(state: OperationsState, action: OperationsAction): Op
 interface OperationsContextValue extends OperationsState {
   loadProjects: () => Promise<void>;
   loadProjectDetail: (projectId: string) => Promise<void>;
+  applyProjectDetailFromApi: (apiProject: ApiProjectDetail) => void;
   loadProjectObservations: (projectId: string) => Promise<void>;
   loadSubjectObservations: (subjectId: string) => Promise<void>;
+  loadSubjectWorkspace: (subjectId: string) => Promise<void>;
   loadNotifications: () => Promise<void>;
+  loadNotificationSummary: () => Promise<void>;
+  refreshWorkflowContext: (
+    options: {
+      projectId?: string;
+      subjectId?: string;
+      scopes: WorkflowRefreshScope | WorkflowRefreshScope[];
+      projectDetailFromApi?: ApiProjectDetail;
+    },
+  ) => Promise<void>;
   refreshProjects: () => Promise<void>;
   createProjectFromApi: (input: CreateProjectFormInput) => Promise<void>;
   createObservationFromApi: (input: CreateObservationInput) => Promise<void>;
@@ -904,6 +1077,10 @@ interface OperationsContextValue extends OperationsState {
     checklistItemId: string,
     newStatus: ChecklistStatus,
   ) => Promise<void>;
+  bulkApproveChecklistSection: (
+    projectId: string,
+    payload: BulkApproveSectionPayload,
+  ) => Promise<number>;
   markNotificationRead: (notificationId: string) => Promise<void>;
   markAllNotificationsReadFromApi: () => Promise<void>;
   markNotificationsReadByResource: (params: { projectId?: string; subjectId?: string }) => Promise<void>;
@@ -919,7 +1096,6 @@ interface OperationsContextValue extends OperationsState {
   clearRecentlyUpdated: (entityId: string) => void;
   addSemesterToProject: (projectId: string, payload: { semesterNumber: number; factoryExpectedDate: string; subjects: { name: string; topics: string[] }[]; changeReason?: string }) => Promise<void>;
   addSubjectToSemester: (projectId: string, payload: { semesterNumber: number; name: string; topics: string[]; expectedDeliveryDate: string; changeReason?: string }) => Promise<void>;
-  addTopicToSubject: (projectId: string, subjectId: string, payload: { topics: string[]; changeReason?: string }) => Promise<void>;
   startProjectProduction: (projectId: string) => Promise<void>;
   deliverProjectToProduct: (projectId: string) => void;
   updateFactoryChecklistItem: (
@@ -944,6 +1120,10 @@ interface OperationsContextValue extends OperationsState {
 }
 
 const OperationsContext = createContext<OperationsContextValue | null>(null);
+const OperationsActionsContext = createContext<Omit<
+  OperationsContextValue,
+  keyof OperationsState
+> | null>(null);
 
 export function OperationsProvider({ children }: { children: ReactNode }) {
   const [state, dispatch] = useReducer(
@@ -972,39 +1152,57 @@ export function OperationsProvider({ children }: { children: ReactNode }) {
     if (!state.backendEnabled) return;
     dispatch({ type: 'LOAD_PROJECTS_START' });
     try {
-      const apiProjects = await projectsApi.getProjects();
+      const apiProjects = await queryClient.fetchQuery({
+        queryKey: queryKeys.projects(),
+        queryFn: () => projectsApi.getProjects(),
+        staleTime: projectsListStaleTime,
+      });
       dispatch({ type: 'LOAD_PROJECTS_SUCCESS', payload: mapProjectsFromApi(apiProjects) });
     } catch (error) {
       dispatch({ type: 'LOAD_PROJECTS_ERROR', payload: getApiErrorMessage(error) });
     }
   }, [state.backendEnabled]);
 
+  const applyProjectDetailFromApi = useCallback((apiProject: ApiProjectDetail) => {
+    const mapped = mapProjectDetailFromApi(apiProject);
+    dispatch({ type: 'LOAD_PROJECT_DETAIL_SUCCESS', payload: mapped });
+    queryClient.setQueryData(queryKeys.project(mapped.id), apiProject);
+  }, []);
+
   const loadProjectDetail = useCallback(
     async (projectId: string) => {
       if (!state.backendEnabled) return;
       dispatch({ type: 'LOAD_PROJECT_DETAIL_START' });
       try {
-        const apiProject = await projectsApi.getProjectById(projectId);
-        dispatch({ type: 'LOAD_PROJECT_DETAIL_SUCCESS', payload: mapProjectDetailFromApi(apiProject) });
+        const apiProject = await queryClient.fetchQuery({
+          queryKey: queryKeys.project(projectId),
+          queryFn: () => projectsApi.getProjectById(projectId),
+          staleTime: projectDetailStaleTime,
+        });
+        applyProjectDetailFromApi(apiProject);
       } catch (error) {
         dispatch({ type: 'LOAD_PROJECT_DETAIL_ERROR', payload: getApiErrorMessage(error) });
       }
     },
-    [state.backendEnabled],
+    [state.backendEnabled, applyProjectDetailFromApi],
   );
 
   const loadProjectObservations = useCallback(
     async (projectId: string) => {
       if (!state.backendEnabled) return;
-      dispatch({ type: 'LOAD_OBSERVATIONS_START' });
+      dispatch({ type: 'LOAD_PROJECT_OBSERVATIONS_START' });
       try {
-        const apiObservations = await observationsApi.getProjectObservations(projectId);
+        const apiObservations = await queryClient.fetchQuery({
+          queryKey: queryKeys.projectObservations(projectId),
+          queryFn: () => observationsApi.getProjectObservations(projectId),
+          staleTime: projectDetailStaleTime,
+        });
         dispatch({
           type: 'LOAD_PROJECT_OBSERVATIONS_SUCCESS',
           payload: { projectId, observations: mapObservationsFromApi(apiObservations) },
         });
       } catch (error) {
-        dispatch({ type: 'LOAD_OBSERVATIONS_ERROR', payload: getApiErrorMessage(error) });
+        dispatch({ type: 'LOAD_OBSERVATIONS_ERROR', payload: getApiErrorMessage(error), scope: 'project' });
       }
     },
     [state.backendEnabled],
@@ -1013,19 +1211,72 @@ export function OperationsProvider({ children }: { children: ReactNode }) {
   const loadSubjectObservations = useCallback(
     async (subjectId: string) => {
       if (!state.backendEnabled) return;
-      dispatch({ type: 'LOAD_OBSERVATIONS_START' });
+      dispatch({ type: 'LOAD_SUBJECT_OBSERVATIONS_START' });
       try {
-        const apiObservations = await observationsApi.getSubjectObservations(subjectId);
+        const apiObservations = await queryClient.fetchQuery({
+          queryKey: queryKeys.subjectObservations(subjectId),
+          queryFn: () => observationsApi.getSubjectObservations(subjectId),
+          staleTime: projectDetailStaleTime,
+        });
         dispatch({
           type: 'LOAD_SUBJECT_OBSERVATIONS_SUCCESS',
           payload: { observations: mapObservationsFromApi(apiObservations) },
         });
       } catch (error) {
-        dispatch({ type: 'LOAD_OBSERVATIONS_ERROR', payload: getApiErrorMessage(error) });
+        dispatch({ type: 'LOAD_OBSERVATIONS_ERROR', payload: getApiErrorMessage(error), scope: 'subject' });
       }
     },
     [state.backendEnabled],
   );
+
+  const loadSubjectWorkspace = useCallback(
+    async (subjectId: string) => {
+      if (!state.backendEnabled) return;
+      const cachedWorkspace = queryClient.getQueryData<ApiSubjectWorkspace>(queryKeys.subjectWorkspace(subjectId));
+      if (cachedWorkspace) {
+        dispatch({ type: 'LOAD_PROJECT_DETAIL_SUCCESS', payload: mapSubjectWorkspaceProjectFromApi(cachedWorkspace) });
+        dispatch({
+          type: 'LOAD_SUBJECT_OBSERVATIONS_SUCCESS',
+          payload: { observations: mapObservationsFromApi(cachedWorkspace.observations) },
+        });
+        return;
+      }
+      dispatch({ type: 'LOAD_PROJECT_DETAIL_START' });
+      dispatch({ type: 'LOAD_SUBJECT_OBSERVATIONS_START' });
+      try {
+        const workspace = await queryClient.fetchQuery({
+          queryKey: queryKeys.subjectWorkspace(subjectId),
+          queryFn: () => subjectsApi.getSubjectWorkspace(subjectId),
+          staleTime: projectDetailStaleTime,
+        });
+        dispatch({ type: 'LOAD_PROJECT_DETAIL_SUCCESS', payload: mapSubjectWorkspaceProjectFromApi(workspace) });
+        dispatch({
+          type: 'LOAD_SUBJECT_OBSERVATIONS_SUCCESS',
+          payload: { observations: mapObservationsFromApi(workspace.observations) },
+        });
+      } catch (error) {
+        const message = getApiErrorMessage(error);
+        dispatch({ type: 'LOAD_PROJECT_DETAIL_ERROR', payload: message });
+        dispatch({ type: 'LOAD_OBSERVATIONS_ERROR', payload: message, scope: 'subject' });
+      }
+    },
+    [state.backendEnabled],
+  );
+
+  const loadNotificationSummary = useCallback(async () => {
+    if (!state.backendEnabled) return;
+    try {
+      const summary = await queryClient.fetchQuery({
+        queryKey: queryKeys.notificationsSummary(),
+        queryFn: () => notificationsApi.getSummary(),
+        staleTime: 15_000,
+      });
+      dispatch({ type: 'LOAD_NOTIFICATION_SUMMARY_SUCCESS', payload: summary });
+      queryClient.setQueryData(queryKeys.notificationsSummary(), summary);
+    } catch {
+      // Badge can fall back to inbox-derived counts.
+    }
+  }, [state.backendEnabled]);
 
   const loadNotifications = useCallback(async (options?: { offset?: number; append?: boolean }) => {
     if (!state.backendEnabled) return;
@@ -1051,16 +1302,45 @@ export function OperationsProvider({ children }: { children: ReactNode }) {
     }
   }, [state.backendEnabled]);
 
-  const refetchProjectWorkflow = useCallback(
-    async (projectId?: string) => {
-      await Promise.all([
-        projectId ? loadProjectDetail(projectId) : Promise.resolve(),
-        projectId ? loadProjectObservations(projectId) : Promise.resolve(),
-        loadProjects(),
-        loadNotifications(),
-      ]);
+  const refreshWorkflowContext = useCallback(
+    async (options: {
+      projectId?: string;
+      subjectId?: string;
+      scopes: WorkflowRefreshScope | WorkflowRefreshScope[];
+      projectDetailFromApi?: ApiProjectDetail;
+    }) => {
+      const scopes = normalizeWorkflowScopes(options.scopes);
+      const tasks: Promise<void>[] = [];
+
+      if (options.projectDetailFromApi) {
+        applyProjectDetailFromApi(options.projectDetailFromApi);
+      } else if (scopes.includes('detail') && options.projectId) {
+        tasks.push(loadProjectDetail(options.projectId));
+      }
+
+      if (scopes.includes('projectObservations') && options.projectId) {
+        tasks.push(loadProjectObservations(options.projectId));
+      }
+      if (scopes.includes('subjectObservations') && options.subjectId) {
+        tasks.push(loadSubjectObservations(options.subjectId));
+      }
+      if (scopes.includes('list')) {
+        tasks.push(loadProjects());
+      }
+      if (scopes.includes('notifications')) {
+        tasks.push(loadNotificationSummary());
+      }
+
+      await Promise.all(tasks);
     },
-    [loadProjectDetail, loadProjectObservations, loadProjects, loadNotifications],
+    [
+      applyProjectDetailFromApi,
+      loadProjectDetail,
+      loadProjectObservations,
+      loadSubjectObservations,
+      loadProjects,
+      loadNotificationSummary,
+    ],
   );
 
   const refreshProjects = useCallback(async () => {
@@ -1087,15 +1367,18 @@ export function OperationsProvider({ children }: { children: ReactNode }) {
       dispatch({ type: 'SET_MUTATING', payload: true });
       try {
         await observationsApi.createObservation(mapCreateObservationToApi(input));
-        await Promise.all([
-          refetchProjectWorkflow(input.projectId),
-          input.subjectId ? loadSubjectObservations(input.subjectId) : Promise.resolve(),
-        ]);
+        await refreshWorkflowContext({
+          projectId: input.projectId,
+          subjectId: input.subjectId,
+          scopes: input.subjectId
+            ? ['detail', 'projectObservations', 'subjectObservations', 'notifications']
+            : ['detail', 'projectObservations', 'notifications'],
+        });
       } finally {
         dispatch({ type: 'SET_MUTATING', payload: false });
       }
     },
-    [state.backendEnabled, refetchProjectWorkflow, loadSubjectObservations],
+    [state.backendEnabled, refreshWorkflowContext],
   );
 
   const markObservationCorrectionAppliedFromApi = useCallback(
@@ -1106,15 +1389,19 @@ export function OperationsProvider({ children }: { children: ReactNode }) {
         const response = await observationsApi.markCorrectionApplied(observationId);
         const resolvedProjectId = projectId ?? response.projectId ?? response.observation.projectId;
         const resolvedSubjectId = subjectId ?? response.observation.subjectId ?? undefined;
-        await Promise.all([
-          refetchProjectWorkflow(resolvedProjectId),
-          resolvedSubjectId ? loadSubjectObservations(resolvedSubjectId) : Promise.resolve(),
-        ]);
+        await refreshWorkflowContext({
+          projectId: resolvedProjectId,
+          subjectId: resolvedSubjectId,
+          scopes: resolvedSubjectId
+            ? ['detail', 'projectObservations', 'subjectObservations', 'notifications']
+            : ['detail', 'projectObservations', 'notifications'],
+        });
+        markFactoryQueriesStale(queryClient);
       } finally {
         dispatch({ type: 'SET_MUTATING', payload: false });
       }
     },
-    [state.backendEnabled, refetchProjectWorkflow, loadSubjectObservations],
+    [state.backendEnabled, refreshWorkflowContext],
   );
 
   const validateObservationFromApi = useCallback(
@@ -1125,15 +1412,18 @@ export function OperationsProvider({ children }: { children: ReactNode }) {
         const response = await observationsApi.validateObservation(observationId);
         const resolvedProjectId = projectId ?? response.projectId ?? response.observation.projectId;
         const resolvedSubjectId = subjectId ?? response.observation.subjectId ?? undefined;
-        await Promise.all([
-          refetchProjectWorkflow(resolvedProjectId),
-          resolvedSubjectId ? loadSubjectObservations(resolvedSubjectId) : Promise.resolve(),
-        ]);
+        await refreshWorkflowContext({
+          projectId: resolvedProjectId,
+          subjectId: resolvedSubjectId,
+          scopes: resolvedSubjectId
+            ? ['detail', 'projectObservations', 'subjectObservations', 'notifications']
+            : ['detail', 'projectObservations', 'notifications'],
+        });
       } finally {
         dispatch({ type: 'SET_MUTATING', payload: false });
       }
     },
-    [state.backendEnabled, refetchProjectWorkflow, loadSubjectObservations],
+    [state.backendEnabled, refreshWorkflowContext],
   );
 
   const reopenObservationFromApi = useCallback(
@@ -1144,15 +1434,18 @@ export function OperationsProvider({ children }: { children: ReactNode }) {
         const response = await observationsApi.reopenObservation(observationId, reason);
         const resolvedProjectId = projectId ?? response.projectId ?? response.observation.projectId;
         const resolvedSubjectId = subjectId ?? response.observation.subjectId ?? undefined;
-        await Promise.all([
-          refetchProjectWorkflow(resolvedProjectId),
-          resolvedSubjectId ? loadSubjectObservations(resolvedSubjectId) : Promise.resolve(),
-        ]);
+        await refreshWorkflowContext({
+          projectId: resolvedProjectId,
+          subjectId: resolvedSubjectId,
+          scopes: resolvedSubjectId
+            ? ['detail', 'projectObservations', 'subjectObservations', 'notifications']
+            : ['detail', 'projectObservations', 'notifications'],
+        });
       } finally {
         dispatch({ type: 'SET_MUTATING', payload: false });
       }
     },
-    [state.backendEnabled, refetchProjectWorkflow, loadSubjectObservations],
+    [state.backendEnabled, refreshWorkflowContext],
   );
 
   const submitSubjectFromApi = useCallback(
@@ -1162,12 +1455,16 @@ export function OperationsProvider({ children }: { children: ReactNode }) {
       dispatch({ type: 'SET_MUTATING', payload: true });
       try {
         await subjectsApi.submitSubject(subjectId);
-        await refetchProjectWorkflow(projectId);
+        await refreshWorkflowContext({
+          projectId,
+          subjectId,
+          scopes: ['detail', 'projectObservations', 'notifications'],
+        });
       } finally {
         dispatch({ type: 'SET_MUTATING', payload: false });
       }
     },
-    [state.backendEnabled, refetchProjectWorkflow],
+    [state.backendEnabled, refreshWorkflowContext],
   );
 
   const approveSubjectFromApi = useCallback(
@@ -1177,12 +1474,16 @@ export function OperationsProvider({ children }: { children: ReactNode }) {
       dispatch({ type: 'SET_MUTATING', payload: true });
       try {
         await subjectsApi.approveSubject(subjectId);
-        await refetchProjectWorkflow(projectId);
+        await refreshWorkflowContext({
+          projectId,
+          subjectId,
+          scopes: ['detail', 'projectObservations', 'notifications'],
+        });
       } finally {
         dispatch({ type: 'SET_MUTATING', payload: false });
       }
     },
-    [state.backendEnabled, refetchProjectWorkflow],
+    [state.backendEnabled, refreshWorkflowContext],
   );
 
   const rejectSubjectFromApi = useCallback(
@@ -1192,12 +1493,16 @@ export function OperationsProvider({ children }: { children: ReactNode }) {
       dispatch({ type: 'SET_MUTATING', payload: true });
       try {
         await subjectsApi.rejectSubject(subjectId, reason);
-        await refetchProjectWorkflow(projectId);
+        await refreshWorkflowContext({
+          projectId,
+          subjectId,
+          scopes: ['detail', 'projectObservations', 'notifications'],
+        });
       } finally {
         dispatch({ type: 'SET_MUTATING', payload: false });
       }
     },
-    [state.backendEnabled, refetchProjectWorkflow],
+    [state.backendEnabled, refreshWorkflowContext],
   );
 
   const requestSubjectCorrectionFromApi = useCallback(
@@ -1206,13 +1511,18 @@ export function OperationsProvider({ children }: { children: ReactNode }) {
       if (!subjectId || !projectId) throw new Error('No se pudo identificar la asignatura o el proyecto.');
       dispatch({ type: 'SET_MUTATING', payload: true });
       try {
-        await subjectsApi.requestCorrection(subjectId, reason);
-        await Promise.all([refetchProjectWorkflow(projectId), loadSubjectObservations(subjectId)]);
+        const apiProject = await subjectsApi.requestCorrection(subjectId, reason);
+        await refreshWorkflowContext({
+          projectId,
+          subjectId,
+          projectDetailFromApi: apiProject,
+          scopes: ['subjectObservations', 'notifications'],
+        });
       } finally {
         dispatch({ type: 'SET_MUTATING', payload: false });
       }
     },
-    [state.backendEnabled, refetchProjectWorkflow, loadSubjectObservations],
+    [state.backendEnabled, refreshWorkflowContext],
   );
 
   const updateSubjectProductionStatusFromApi = useCallback(
@@ -1228,16 +1538,21 @@ export function OperationsProvider({ children }: { children: ReactNode }) {
         payload: { projectId, subjectId, status: mapProductionInputToSubjectStatus(status) },
       });
       try {
-        await subjectsApi.updateProductionStatus(subjectId, status);
-        await Promise.all([refetchProjectWorkflow(projectId), loadSubjectObservations(subjectId)]);
+        const apiProject = await subjectsApi.updateProductionStatus(subjectId, status);
+        await refreshWorkflowContext({
+          projectId,
+          subjectId,
+          projectDetailFromApi: apiProject,
+          scopes: ['subjectObservations', 'notifications'],
+        });
       } catch (error) {
-        await refetchProjectWorkflow(projectId);
+        await refreshWorkflowContext({ projectId, scopes: ['detail'] });
         throw error;
       } finally {
         dispatch({ type: 'SET_MUTATING', payload: false });
       }
     },
-    [state.backendEnabled, refetchProjectWorkflow, loadSubjectObservations],
+    [state.backendEnabled, refreshWorkflowContext],
   );
 
   const createProject = useCallback((project: VirtualizationProject) => {
@@ -1402,25 +1717,160 @@ export function OperationsProvider({ children }: { children: ReactNode }) {
   );
 
   const patchChecklistStatus = useCallback(
-    async (projectId: string, checklistItemId: string, newStatus: ChecklistStatus) => {
+    async (
+      projectId: string,
+      subjectId: string,
+      checklistItemId: string,
+      newStatus: ChecklistStatus,
+      topicName?: string,
+    ) => {
       if (state.backendEnabled) {
-        await checklistApi.updateStatus(checklistItemId, { status: newStatus });
-        await loadProjectDetail(projectId);
+        const previousWorkspace = queryClient.getQueryData<ApiSubjectWorkspace>(
+          queryKeys.subjectWorkspace(subjectId),
+        );
+        const previousProject = queryClient.getQueryData<ApiProjectDetail>(
+          queryKeys.project(projectId),
+        );
+        const localSubject = state.projects
+          .find((project) => project.id === projectId)
+          ?.subjects.find((subject) => subject.id === subjectId);
+        const previousChecklistStatus = topicName
+          ? localSubject?.topicChecklists
+              .find((topic) => topic.topicName === topicName)
+              ?.items.find((item) => item.id === checklistItemId)?.status
+          : localSubject?.checklist.find((item) => item.id === checklistItemId)?.status;
+
+        applyChecklistUpdateLocal(projectId, subjectId, checklistItemId, newStatus, topicName);
+        queryClient.setQueryData<ApiSubjectWorkspace>(
+          queryKeys.subjectWorkspace(subjectId),
+          (current) => patchChecklistStatusInWorkspace(current, checklistItemId, newStatus),
+        );
+        queryClient.setQueryData<ApiProjectDetail>(
+          queryKeys.project(projectId),
+          (current) => patchChecklistStatusInProjectDetail(current, checklistItemId, newStatus),
+        );
+
+        try {
+          await checklistApi.updateStatus(checklistItemId, { status: newStatus });
+          void queryClient.invalidateQueries({
+            queryKey: queryKeys.subjectWorkspace(subjectId),
+            refetchType: 'none',
+          });
+          void queryClient.invalidateQueries({
+            queryKey: queryKeys.project(projectId),
+            refetchType: 'none',
+          });
+        } catch (error) {
+          queryClient.setQueryData(queryKeys.subjectWorkspace(subjectId), previousWorkspace);
+          queryClient.setQueryData(queryKeys.project(projectId), previousProject);
+          if (previousChecklistStatus) {
+            applyChecklistUpdateLocal(
+              projectId,
+              subjectId,
+              checklistItemId,
+              previousChecklistStatus,
+              topicName,
+            );
+          }
+          throw error;
+        }
         return;
       }
     },
-    [state.backendEnabled, loadProjectDetail],
+    [state.backendEnabled, state.projects, applyChecklistUpdateLocal],
   );
 
   const updateChecklistItem = useCallback(
     async (projectId: string, subjectId: string, checklistItemId: string, newStatus: ChecklistStatus) => {
       if (state.backendEnabled) {
-        await patchChecklistStatus(projectId, checklistItemId, newStatus);
+        await patchChecklistStatus(projectId, subjectId, checklistItemId, newStatus);
         return;
       }
       applyChecklistUpdateLocal(projectId, subjectId, checklistItemId, newStatus);
     },
     [state.backendEnabled, patchChecklistStatus, applyChecklistUpdateLocal],
+  );
+
+  const bulkApproveChecklistSection = useCallback(
+    async (projectId: string, payload: BulkApproveSectionPayload): Promise<number> => {
+      if (state.backendEnabled) {
+        const response = await checklistApi.bulkApproveSection(payload);
+        if (response.updatedItemIds.length > 0) {
+          for (const checklistItemId of response.updatedItemIds) {
+            applyChecklistUpdateLocal(projectId, payload.subjectId, checklistItemId, 'APROBADO');
+          }
+
+          queryClient.setQueryData<ApiSubjectWorkspace>(
+            queryKeys.subjectWorkspace(payload.subjectId),
+            (current) => patchChecklistStatusesInWorkspace(current, response.updatedItemIds),
+          );
+          queryClient.setQueryData<ApiProjectDetail>(
+            queryKeys.project(projectId),
+            (current) => {
+              if (!current) return current;
+              const itemIdSet = new Set(response.updatedItemIds);
+              return {
+                ...current,
+                semesters: current.semesters.map((semester) => ({
+                  ...semester,
+                  subjects: semester.subjects.map((subject) => ({
+                    ...subject,
+                    checklist: subject.checklist.map((item) =>
+                      itemIdSet.has(item.id) ? { ...item, status: 'APROBADO' } : item,
+                    ),
+                    topics: subject.topics.map((topic) => ({
+                      ...topic,
+                      checklist: topic.checklist.map((item) =>
+                        itemIdSet.has(item.id) ? { ...item, status: 'APROBADO' } : item,
+                      ),
+                    })),
+                  })),
+                })),
+              };
+            },
+          );
+          queryClient.setQueryData(
+            queryKeys.projects(),
+            (current: unknown) => current,
+          );
+          markFactoryQueriesStale(queryClient);
+        }
+        return response.countUpdated;
+      }
+
+      const project = state.projects.find((p) => p.id === projectId);
+      const subject = project?.subjects.find((s) => s.id === payload.subjectId);
+      if (!project || !subject) return 0;
+
+      const eligible = (item: ChecklistItem) => {
+        if (item.status === 'APROBADO') return false;
+        if (item.ownerRole === 'PRODUCT') {
+          return item.status === 'PENDIENTE' || item.status === 'RECHAZADO';
+        }
+        return item.status === 'ENTREGADO' || item.status === 'RECHAZADO';
+      };
+
+      let updated = 0;
+      if (payload.scope === 'TOPIC') {
+        for (const tc of subject.topicChecklists) {
+          if (payload.topicId && tc.id !== payload.topicId) continue;
+          for (const item of tc.items) {
+            if (!eligible(item)) continue;
+            applyChecklistUpdateLocal(projectId, subject.id, item.id, 'APROBADO', tc.topicName);
+            updated += 1;
+          }
+        }
+      } else {
+        for (const item of subject.checklist) {
+          if (item.ownerRole !== 'PRODUCT' || item.topicId) continue;
+          if (!eligible(item)) continue;
+          applyChecklistUpdateLocal(projectId, subject.id, item.id, 'APROBADO');
+          updated += 1;
+        }
+      }
+      return updated;
+    },
+    [state.backendEnabled, state.projects, applyChecklistUpdateLocal],
   );
 
   const markNotificationRead = useCallback(async (notificationId: string) => {
@@ -1442,10 +1892,21 @@ export function OperationsProvider({ children }: { children: ReactNode }) {
   const markNotificationsReadByResource = useCallback(
     async (params: { projectId?: string; subjectId?: string }) => {
       if (!state.backendEnabled) return;
-      await notificationsApi.markReadByResource(params);
-      await loadNotifications();
+      if (!shouldMarkNotificationsRead(params)) return;
+      const result = await notificationsApi.markReadByResource(params);
+      dispatch({ type: 'MARK_NOTIFICATIONS_READ_BY_RESOURCE_LOCAL', payload: params });
+      queryClient.setQueryData<NotificationSummary>(queryKeys.notificationsSummary(), (current) => {
+        if (!current) return current;
+        const updatedCount = result.updatedCount ?? 0;
+        return {
+          ...current,
+          unreadCount: Math.max(0, current.unreadCount - updatedCount),
+          actionableCount: Math.max(0, current.actionableCount - updatedCount),
+        };
+      });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.notificationsSummary(), refetchType: 'none' });
     },
-    [state.backendEnabled, loadNotifications],
+    [state.backendEnabled],
   );
 
   const dismissNotifications = useCallback(
@@ -1519,7 +1980,7 @@ export function OperationsProvider({ children }: { children: ReactNode }) {
               : `${payload.factoryExpectedDate}T00:00:00.000Z`,
           });
           dispatch({ type: 'LOAD_PROJECT_DETAIL_SUCCESS', payload: mapProjectDetailFromApi(apiProject) });
-          await loadNotifications();
+          await loadNotificationSummary();
         } finally {
           dispatch({ type: 'SET_MUTATING', payload: false });
         }
@@ -1578,7 +2039,7 @@ export function OperationsProvider({ children }: { children: ReactNode }) {
             changeReason: payload.changeReason,
           });
           dispatch({ type: 'LOAD_PROJECT_DETAIL_SUCCESS', payload: mapProjectDetailFromApi(apiProject) });
-          await loadNotifications();
+          await loadNotificationSummary();
         } finally {
           dispatch({ type: 'SET_MUTATING', payload: false });
         }
@@ -1604,45 +2065,6 @@ export function OperationsProvider({ children }: { children: ReactNode }) {
       };
 
       dispatch({ type: 'ADD_SUBJECT_TO_SEMESTER', payload: { projectId, subject } });
-    },
-    [state.projects, state.backendEnabled, loadNotifications],
-  );
-
-  const addTopicToSubject = useCallback(
-    async (
-      projectId: string,
-      subjectId: string,
-      payload: { topics: string[]; changeReason?: string },
-    ) => {
-      const project = state.projects.find((p) => p.id === projectId);
-      const subject = project?.subjects.find((s) => s.id === subjectId);
-      if (!project || !subject) return;
-
-      if (state.backendEnabled) {
-        dispatch({ type: 'SET_MUTATING', payload: true });
-        try {
-          const apiProject = await topicsApi.addTopicsToSubject(subjectId, payload);
-          dispatch({ type: 'LOAD_PROJECT_DETAIL_SUCCESS', payload: mapProjectDetailFromApi(apiProject) });
-          await loadNotifications();
-        } finally {
-          dispatch({ type: 'SET_MUTATING', payload: false });
-        }
-        return;
-      }
-
-      for (const topicName of payload.topics) {
-        const checklist = buildTopicChecklist();
-        dispatch({
-          type: 'ADD_TOPIC_TO_SUBJECT',
-          payload: {
-            projectId,
-            subjectId,
-            topicName: topicName.trim(),
-            checklist,
-            topicChecklistItems: checklist,
-          },
-        });
-      }
     },
     [state.projects, state.backendEnabled, loadNotifications],
   );
@@ -1704,7 +2126,7 @@ export function OperationsProvider({ children }: { children: ReactNode }) {
   const updateFactoryChecklistItem = useCallback(
     async (projectId: string, subjectId: string, checklistItemId: string, newStatus: ChecklistStatus) => {
       if (state.backendEnabled) {
-        await patchChecklistStatus(projectId, checklistItemId, newStatus);
+        await patchChecklistStatus(projectId, subjectId, checklistItemId, newStatus);
         return;
       }
       applyChecklistUpdateLocal(projectId, subjectId, checklistItemId, newStatus);
@@ -1721,7 +2143,7 @@ export function OperationsProvider({ children }: { children: ReactNode }) {
       newStatus: ChecklistStatus,
     ) => {
       if (state.backendEnabled) {
-        await patchChecklistStatus(projectId, checklistItemId, newStatus);
+        await patchChecklistStatus(projectId, subjectId, checklistItemId, newStatus, topicName);
         return;
       }
       applyChecklistUpdateLocal(projectId, subjectId, checklistItemId, newStatus, topicName);
@@ -1787,79 +2209,149 @@ export function OperationsProvider({ children }: { children: ReactNode }) {
     const project = state.projects.find((p) => p.id === projectId);
     if (!project) return;
     if (state.backendEnabled) {
-      void projectsApi.markProjectDelivered(projectId).then(() => refetchProjectWorkflow(projectId));
+      void projectsApi.markProjectDelivered(projectId).then(() =>
+        refreshWorkflowContext({ projectId, scopes: ['detail', 'list', 'notifications'] }),
+      );
       return;
     }
     const allApproved = project.subjects.length > 0 && project.subjects.every((s) => s.status === 'APPROVED');
     const { blockingObs, anyRejected } = getProjectBlockingSignals(project, state.projectObservations);
     if (!allApproved || blockingObs || anyRejected) return;
     updateProjectStatus(projectId, 'DELIVERED_TO_LMS');
-  }, [state.backendEnabled, state.projects, state.projectObservations, updateProjectStatus, refetchProjectWorkflow]);
+  }, [state.backendEnabled, state.projects, state.projectObservations, updateProjectStatus, refreshWorkflowContext]);
 
   const closeProject = useCallback((projectId: string) => {
     const project = state.projects.find((p) => p.id === projectId);
     if (!project) return;
     if (state.backendEnabled) {
-      void projectsApi.closeProject(projectId).then(() => refetchProjectWorkflow(projectId));
+      void projectsApi.closeProject(projectId).then(() =>
+        refreshWorkflowContext({ projectId, scopes: ['detail', 'list', 'notifications'] }),
+      );
       return;
     }
     if (project.status !== 'DELIVERED_TO_LMS') return;
     updateProjectStatus(projectId, 'CLOSED');
-  }, [state.backendEnabled, state.projects, updateProjectStatus, refetchProjectWorkflow]);
+  }, [state.backendEnabled, state.projects, updateProjectStatus, refreshWorkflowContext]);
 
-  const value: OperationsContextValue = {
-    ...state,
-    loadProjects,
-    loadProjectDetail,
-    loadProjectObservations,
-    loadSubjectObservations,
-    loadNotifications,
-    refreshProjects,
-    createProjectFromApi,
-    createObservationFromApi,
-    markObservationCorrectionAppliedFromApi,
-    validateObservationFromApi,
-    reopenObservationFromApi,
-    submitSubjectFromApi,
-    approveSubjectFromApi,
-    rejectSubjectFromApi,
-    requestSubjectCorrectionFromApi,
-    updateSubjectProductionStatusFromApi,
-    createProject,
-    updateProject,
-    updateProjectStatus,
-    addProjectLink,
-    addObservation,
-    resolveObservation,
-    updateChecklistItem,
-    markNotificationRead,
-    markAllNotificationsReadFromApi,
-    markNotificationsReadByResource,
-    dismissNotifications,
-    addComment,
-    replyComment,
-    resolveComment,
-    markRecentlyUpdated,
-    clearRecentlyUpdated,
-    addSemesterToProject,
-    addSubjectToSemester,
-    addTopicToSubject,
-    startProjectProduction,
-    deliverProjectToProduct,
-    updateFactoryChecklistItem,
-    updateFactoryTopicChecklistItem,
-    markObservationCorrectionApplied,
-    reopenObservation,
-    markSubjectDelivered,
-    markProjectFeedbackPending,
-    markProjectDeliveredToLms,
-    closeProject,
-  };
+  const actions = useMemo(
+    () => ({
+      loadProjects,
+      loadProjectDetail,
+      applyProjectDetailFromApi,
+      loadProjectObservations,
+      loadSubjectObservations,
+      loadSubjectWorkspace,
+      loadNotifications,
+      loadNotificationSummary,
+      refreshWorkflowContext,
+      refreshProjects,
+      createProjectFromApi,
+      createObservationFromApi,
+      markObservationCorrectionAppliedFromApi,
+      validateObservationFromApi,
+      reopenObservationFromApi,
+      submitSubjectFromApi,
+      approveSubjectFromApi,
+      rejectSubjectFromApi,
+      requestSubjectCorrectionFromApi,
+      updateSubjectProductionStatusFromApi,
+      createProject,
+      updateProject,
+      updateProjectStatus,
+      addProjectLink,
+      addObservation,
+      resolveObservation,
+      updateChecklistItem,
+      bulkApproveChecklistSection,
+      markNotificationRead,
+      markAllNotificationsReadFromApi,
+      markNotificationsReadByResource,
+      dismissNotifications,
+      addComment,
+      replyComment,
+      resolveComment,
+      markRecentlyUpdated,
+      clearRecentlyUpdated,
+      addSemesterToProject,
+      addSubjectToSemester,
+      startProjectProduction,
+      deliverProjectToProduct,
+      updateFactoryChecklistItem,
+      updateFactoryTopicChecklistItem,
+      markObservationCorrectionApplied,
+      reopenObservation,
+      markSubjectDelivered,
+      markProjectFeedbackPending,
+      markProjectDeliveredToLms,
+      closeProject,
+    }),
+    [
+      loadProjects,
+      loadProjectDetail,
+      applyProjectDetailFromApi,
+      loadProjectObservations,
+      loadSubjectObservations,
+      loadSubjectWorkspace,
+      loadNotifications,
+      loadNotificationSummary,
+      refreshWorkflowContext,
+      refreshProjects,
+      createProjectFromApi,
+      createObservationFromApi,
+      markObservationCorrectionAppliedFromApi,
+      validateObservationFromApi,
+      reopenObservationFromApi,
+      submitSubjectFromApi,
+      approveSubjectFromApi,
+      rejectSubjectFromApi,
+      requestSubjectCorrectionFromApi,
+      updateSubjectProductionStatusFromApi,
+      createProject,
+      updateProject,
+      updateProjectStatus,
+      addProjectLink,
+      addObservation,
+      resolveObservation,
+      updateChecklistItem,
+      bulkApproveChecklistSection,
+      markNotificationRead,
+      markAllNotificationsReadFromApi,
+      markNotificationsReadByResource,
+      dismissNotifications,
+      addComment,
+      replyComment,
+      resolveComment,
+      markRecentlyUpdated,
+      clearRecentlyUpdated,
+      addSemesterToProject,
+      addSubjectToSemester,
+      startProjectProduction,
+      deliverProjectToProduct,
+      updateFactoryChecklistItem,
+      updateFactoryTopicChecklistItem,
+      markObservationCorrectionApplied,
+      reopenObservation,
+      markSubjectDelivered,
+      markProjectFeedbackPending,
+      markProjectDeliveredToLms,
+      closeProject,
+    ],
+  );
+
+  const value = useMemo<OperationsContextValue>(
+    () => ({
+      ...state,
+      ...actions,
+    }),
+    [state, actions],
+  );
 
   return (
     <OperationsContext.Provider value={value}>
-      <ProjectsBootstrap />
-      {children}
+      <OperationsActionsContext.Provider value={actions}>
+        <ProjectsBootstrap />
+        {children}
+      </OperationsActionsContext.Provider>
     </OperationsContext.Provider>
   );
 }
@@ -1867,5 +2359,11 @@ export function OperationsProvider({ children }: { children: ReactNode }) {
 export function useOperations() {
   const context = useContext(OperationsContext);
   if (!context) throw new Error('useOperations must be used within OperationsProvider');
+  return context;
+}
+
+export function useOperationsActions() {
+  const context = useContext(OperationsActionsContext);
+  if (!context) throw new Error('useOperationsActions must be used within OperationsProvider');
   return context;
 }

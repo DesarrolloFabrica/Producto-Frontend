@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
-import { Link, useParams, useSearchParams } from 'react-router-dom';
+import { useSearchParams } from 'react-router-dom';
+import { ContextBackLink } from '../../navigation/ContextBackLink';
 import {
   AlertCircle,
   ArrowLeft,
@@ -13,8 +14,6 @@ import {
 } from 'lucide-react';
 import { StatusBadge } from '../../components/status/StatusBadge';
 import { Card } from '../../components/ui/Card';
-import { ProjectsLoadNotice } from '../../components/feedback/ProjectsLoadNotice';
-import { DeepLinkNotFound } from '../../components/feedback/DeepLinkNotFound';
 import { getApiErrorMessage } from '../operations/apiMappers';
 import { calculateSubjectProgress } from '../operations/progress';
 import {
@@ -26,11 +25,12 @@ import {
 } from '../operations/subjectOperationalState';
 import { useOperations } from '../../features/operations/OperationsContext';
 import { useToast } from '../../components/ui/ToastProvider';
-import { useEnsureSubjectDetail } from '../operations/useEnsureSubjectDetail';
+import { useUpdateSubjectProductionStatusMutation } from '../queries/useWorkflowMutations';
 import { formatDate } from '../../utils/formatters';
 import { Button } from '../../components/ui/Button';
 import { cn } from '../../components/ui/tokens';
-import type { OperationalObservation } from '../../types/domain';
+import type { OperationalObservation, SubjectVirtualization, VirtualizationProject } from '../../types/domain';
+import { ChangeOriginBadge, ChangeOriginHint } from '../../components/change-tracking/ChangeOriginBadge';
 
 type FlowStepId = 'PENDIENTE' | 'EN_PRODUCCION' | 'EN_REVISION';
 type GeneralProductionState = FlowStepId | 'APROBADA';
@@ -92,40 +92,28 @@ const correctionStatusUi = {
   },
 } as const;
 
-export function FactorySubjectDetail() {
-  const { subjectId } = useParams();
+interface FactorySubjectDetailProps {
+  project: VirtualizationProject;
+  subject: SubjectVirtualization;
+  observations?: OperationalObservation[];
+}
+
+export function FactorySubjectDetail({ project, subject, observations }: FactorySubjectDetailProps) {
   const [searchParams] = useSearchParams();
   const {
     projectObservations,
     observationsByProject,
     markObservationCorrectionApplied,
-    updateSubjectProductionStatusFromApi,
-    refreshProjects,
-    loadSubjectObservations,
-    markNotificationsReadByResource,
-    backendEnabled,
     isMutating,
   } = useOperations();
   const { showToast } = useToast();
-  const { project, subject, isLoading, error, notFound } = useEnsureSubjectDetail(subjectId);
+  const updateProductionStatusMutation = useUpdateSubjectProductionStatusMutation();
 
   const [submittingAction, setSubmittingAction] = useState<'production' | 'complete' | 'send-corrections' | null>(null);
   const [submittingObservationId, setSubmittingObservationId] = useState<string | null>(null);
   const actionInFlightRef = useRef(false);
   const correctionsSectionRef = useRef<HTMLDivElement | null>(null);
   const [correctionsHighlighted, setCorrectionsHighlighted] = useState(false);
-
-  useEffect(() => {
-    if (backendEnabled && subject?.id) {
-      void markNotificationsReadByResource({ subjectId: subject.id, projectId: project?.id });
-    }
-  }, [backendEnabled, subject?.id, project?.id, markNotificationsReadByResource]);
-
-  useEffect(() => {
-    if (backendEnabled && subject?.id) {
-      void loadSubjectObservations(subject.id);
-    }
-  }, [backendEnabled, subject?.id, loadSubjectObservations]);
 
   useEffect(() => {
     if (searchParams.get('focus') !== 'correction') return;
@@ -142,36 +130,11 @@ export function FactorySubjectDetail() {
     return () => window.clearTimeout(timeoutId);
   }, [correctionsHighlighted]);
 
-  if (isLoading) {
-    return (
-      <div className="space-y-6">
-        <ProjectsLoadNotice isLoading />
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <div className="space-y-6">
-        <ProjectsLoadNotice error={error} onRefresh={() => void refreshProjects()} />
-      </div>
-    );
-  }
-
-  if (notFound || !project || !subject) {
-    return (
-      <DeepLinkNotFound
-        title="Asignatura no encontrada"
-        description={error ?? 'No pudimos cargar la asignatura de esta URL.'}
-        backTo="/projects"
-        onRetry={() => void refreshProjects()}
-      />
-    );
-  }
-
   const scopedProjectObservations =
+    observations ??
     observationsByProject[project.id] ??
     projectObservations.filter((observation) => observation.projectId === project.id);
+  const isActionBusy = isMutating || updateProductionStatusMutation.isPending;
 
   const productCorrections = getProductObservationsForSubject(
     project,
@@ -200,11 +163,11 @@ export function FactorySubjectDetail() {
   const isApproved = productionState === 'APROBADA';
 
   const handleStartProduction = async () => {
-    if (actionInFlightRef.current || isMutating || submittingAction) return;
+    if (actionInFlightRef.current || isActionBusy || submittingAction) return;
     actionInFlightRef.current = true;
     setSubmittingAction('production');
     try {
-      await updateSubjectProductionStatusFromApi(subject.id, project.id, 'EN_PRODUCCION');
+      await updateProductionStatusMutation.mutateAsync({ subjectId: subject.id, projectId: project.id, status: 'EN_PRODUCCION' });
       showToast('Producción iniciada.');
     } catch (updateError) {
       showToast(getApiErrorMessage(updateError), 'error');
@@ -215,11 +178,11 @@ export function FactorySubjectDetail() {
   };
 
   const handleMarkCompleted = async () => {
-    if (actionInFlightRef.current || isMutating || submittingAction) return;
+    if (actionInFlightRef.current || isActionBusy || submittingAction) return;
     actionInFlightRef.current = true;
     setSubmittingAction('complete');
     try {
-      await updateSubjectProductionStatusFromApi(subject.id, project.id, 'COMPLETADA');
+      await updateProductionStatusMutation.mutateAsync({ subjectId: subject.id, projectId: project.id, status: 'COMPLETADA' });
       showToast('Materia enviada a Product para revisión.');
     } catch (updateError) {
       showToast(getApiErrorMessage(updateError), 'error');
@@ -230,11 +193,11 @@ export function FactorySubjectDetail() {
   };
 
   const handleSendCorrectionsToProduct = async () => {
-    if (actionInFlightRef.current || isMutating || submittingAction) return;
+    if (actionInFlightRef.current || isActionBusy || submittingAction) return;
     actionInFlightRef.current = true;
     setSubmittingAction('send-corrections');
     try {
-      await updateSubjectProductionStatusFromApi(subject.id, project.id, 'COMPLETADA');
+      await updateProductionStatusMutation.mutateAsync({ subjectId: subject.id, projectId: project.id, status: 'COMPLETADA' });
       showToast('Correcciones enviadas a Product.');
     } catch (updateError) {
       showToast(getApiErrorMessage(updateError), 'error');
@@ -260,13 +223,17 @@ export function FactorySubjectDetail() {
     <div className="space-y-6">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <Link
-            to={`/projects/${project.id}/semesters/${subject.semesterNumber}`}
+          <ContextBackLink
+            fallback={`/projects/${project.id}/semesters/${subject.semesterNumber}`}
             className="inline-flex items-center gap-1 text-xs font-medium text-[#64748B] hover:text-[#FF6B00]"
           >
             <ArrowLeft className="h-3.5 w-3.5" /> Volver al semestre
-          </Link>
-          <h1 className="mt-2 text-2xl font-bold tracking-[-0.02em] text-[#1E293B]">{subject.name}</h1>
+          </ContextBackLink>
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            <h1 className="text-2xl font-bold tracking-[-0.02em] text-[#1E293B]">{subject.name}</h1>
+            {subject.createdFromChange && <ChangeOriginBadge kind="subject" />}
+          </div>
+          {subject.createdFromChange && <ChangeOriginHint kind="subject" />}
           <p className="mt-1 text-[0.9rem] text-[#64748B]">
             {project.program} · {project.school} · Semestre {subject.semesterNumber}
           </p>
@@ -386,7 +353,7 @@ export function FactorySubjectDetail() {
             {productionState === 'PENDIENTE' && (
               <Button
                 onClick={() => void handleStartProduction()}
-                disabled={isMutating || submittingAction === 'production'}
+                disabled={isActionBusy || submittingAction === 'production'}
                 className="w-full py-3 text-sm font-bold shadow-[0_14px_28px_-20px_rgba(249,115,22,0.55)]"
               >
                 {submittingAction === 'production' ? <Clock3 className="h-4 w-4 animate-spin" /> : <Package className="h-4 w-4" />}
@@ -401,7 +368,7 @@ export function FactorySubjectDetail() {
                 </div>
                 <Button
                   onClick={() => void handleMarkCompleted()}
-                  disabled={isMutating || submittingAction === 'complete'}
+                  disabled={isActionBusy || submittingAction === 'complete'}
                   className="w-full py-3 text-sm font-bold shadow-[0_14px_28px_-20px_rgba(249,115,22,0.55)]"
                 >
                   {submittingAction === 'complete' ? <Clock3 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
@@ -469,7 +436,7 @@ export function FactorySubjectDetail() {
                       key={observation.id}
                       observation={observation}
                       isSubmitting={submittingObservationId === observation.id}
-                      disabled={isMutating}
+                      disabled={isActionBusy}
                       onMarkApplied={() => void handleMarkCorrectionApplied(observation)}
                     />
                   ))}
@@ -487,7 +454,7 @@ export function FactorySubjectDetail() {
                       </div>
                       <Button
                         onClick={() => void handleSendCorrectionsToProduct()}
-                        disabled={isMutating || submittingAction === 'send-corrections'}
+                        disabled={isActionBusy || submittingAction === 'send-corrections'}
                         className="min-w-[280px] py-3 text-sm font-bold shadow-[0_14px_28px_-20px_rgba(14,165,233,0.6)]"
                       >
                         {submittingAction === 'send-corrections' ? <Clock3 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}

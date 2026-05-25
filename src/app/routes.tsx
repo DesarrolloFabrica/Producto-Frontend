@@ -5,7 +5,9 @@ import { AuditPage } from '../features/audit/AuditPage';
 import { useAuth } from '../features/auth/AuthContext';
 import { LoginPage } from '../features/auth/LoginPage';
 import { FactoryDashboardPage } from '../features/dashboard/FactoryDashboardPage';
+import { FactoryWorkPage } from '../features/factory-work/FactoryWorkPage';
 import { ProductDashboardPage } from '../features/dashboard/ProductDashboardPage';
+import { ProductWorkPage } from '../features/product-work/ProductWorkPage';
 import { NotificationsPage } from '../features/notifications/NotificationsPage';
 import { NotificationSettings } from '../components/settings/NotificationSettings';
 import { ProjectDetailPage } from '../features/projects/ProjectDetailPage';
@@ -46,7 +48,9 @@ export const router = createBrowserRouter([
     children: [
       { index: true, element: <HomeRedirect /> },
       { path: 'product/dashboard', element: <RoleRedirect expectedRole="PRODUCT"><ProductDashboardPage /></RoleRedirect> },
+      { path: 'product/work', element: <RoleRedirect expectedRole="PRODUCT"><ProductWorkPage /></RoleRedirect> },
       { path: 'factory/dashboard', element: <RoleRedirect expectedRole="FABRICA"><FactoryDashboardPage /></RoleRedirect> },
+      { path: 'factory/work', element: <RoleRedirect expectedRole="FABRICA"><FactoryWorkPage /></RoleRedirect> },
       { path: 'projects', element: <ProjectsPage /> },
       { path: 'projects/:projectId', element: <ProjectDetailPage /> },
       { path: 'projects/:projectId/semesters/:semesterNumber', element: <ProjectSemesterSubjectsPage /> },

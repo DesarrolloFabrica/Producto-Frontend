@@ -82,17 +82,9 @@ export function analyzeProductProject(
     project.status === 'IN_PRODUCTION'
   ) {
     bucket = 'IN_FACTORY_PRODUCTION';
-  } else if (
-    !totalSubjects &&
-    (project.status === 'IN_REVIEW' || project.status === 'FEEDBACK_PENDING')
-  ) {
+  } else if (!totalSubjects && project.status === 'IN_REVIEW') {
+    // Cuando aun no hay materias pero el proyecto esta en revision.
     bucket = 'NEEDS_REVIEW';
-  } else if (
-    !totalSubjects &&
-    project.status === 'READY_FOR_PRODUCTION' ||
-    project.status === 'IN_PRODUCTION'
-  ) {
-    bucket = 'IN_FACTORY_PRODUCTION';
   }
 
   const reviewLabel =

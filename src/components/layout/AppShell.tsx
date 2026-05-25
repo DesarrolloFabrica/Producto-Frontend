@@ -1,5 +1,6 @@
-import { Bell, Factory, FolderKanban, Home, LogOut, Settings } from 'lucide-react';
+import { Bell, ClipboardList, Factory, FolderKanban, Home, LogOut, Settings } from 'lucide-react';
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
+import { ScrollRestoration } from '../../navigation/ScrollRestoration';
 import { useAuth } from '../../features/auth/AuthContext';
 import { ContextPanelDrawer } from '../../features/context-panel/ContextPanelProvider';
 import { initials } from '../../utils/formatters';
@@ -8,6 +9,7 @@ import { BrandMark } from './BrandMark';
 import { GlobalSearch } from '../search/GlobalSearch';
 import { useOperations } from '../../features/operations/OperationsContext';
 import { isActionableNotification, isVisibleNotification } from '../../features/operations/notificationInbox';
+import { useNotificationSummaryQuery } from '../../features/queries/useNotificationSummaryQuery';
 
 const productLinks = [
   { to: '/product/dashboard', label: 'Dashboard', icon: Home },
@@ -17,6 +19,7 @@ const productLinks = [
 
 const factoryLinks = [
   { to: '/factory/dashboard', label: 'Dashboard', icon: Factory },
+  { to: '/factory/work', label: 'Bandeja', icon: ClipboardList },
   { to: '/projects', label: 'Proyectos', icon: FolderKanban },
   { to: '/notifications', label: 'Notificaciones', icon: Bell },
 ];
@@ -24,9 +27,11 @@ const factoryLinks = [
 export function AppShell() {
   const { role, logout, user } = useAuth();
   const { notifications, notificationSummary, projects } = useOperations();
+  const summaryQuery = useNotificationSummaryQuery(Boolean(user));
   const navigate = useNavigate();
   const links = role === 'FABRICA' ? factoryLinks : productLinks;
   const actionableBadge =
+    summaryQuery.data?.actionableCount ??
     notificationSummary?.actionableCount ??
     notifications.filter(
       (item) =>
@@ -72,6 +77,7 @@ export function AppShell() {
         </nav>
       </header>
 
+      <ScrollRestoration />
       <main className="mx-auto max-w-7xl px-4 py-5 lg:px-6">
         <Outlet />
       </main>

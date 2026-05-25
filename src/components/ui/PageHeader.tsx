@@ -9,7 +9,7 @@ export function PageHeader({
   prominentEyebrow,
 }: {
   eyebrow: string;
-  title: string;
+  title: ReactNode;
   description?: string;
   action?: ReactNode;
   /** Estilo pill del login (MVP Operativo / Acceso temporal) */

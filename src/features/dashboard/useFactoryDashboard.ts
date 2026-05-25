@@ -1,61 +1,67 @@
-import { useCallback, useEffect, useState } from 'react';
-import { factoryApi, type FactorySubjectsQuery } from '../../services/factoryApi';
-import {
-  mapFactorySummaryFromApi,
-  mapFactoryWorkItemFromApi,
-} from '../operations/factoryMappers';
-import type { SubjectWorkItem } from '../operations/subjectOperationalState';
+import { useCallback, useMemo } from 'react';
 import { getApiErrorMessage } from '../operations/apiMappers';
+import type { SubjectWorkItem } from '../operations/subjectOperationalState';
+import { useFactoryDashboardSummaryQuery } from '../queries/useFactoryDashboardSummaryQuery';
+import { useFactorySubjectsQuery } from '../queries/useFactorySubjectsQuery';
+
+export interface NewlyAddedPreview {
+  items: SubjectWorkItem[];
+  total: number;
+}
+
+export interface CorrectionSentPreview {
+  items: SubjectWorkItem[];
+  total: number;
+}
 
 export function useFactoryDashboard(backendEnabled: boolean) {
-  const [summary, setSummary] = useState<ReturnType<typeof mapFactorySummaryFromApi> | null>(null);
-  const [remoteItems, setRemoteItems] = useState<SubjectWorkItem[] | null>(null);
-  const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  const loadSummary = useCallback(async () => {
-    if (!backendEnabled) return;
-    setIsLoading(true);
-    setError(null);
-    try {
-      const apiSummary = await factoryApi.getDashboardSummary();
-      setSummary(mapFactorySummaryFromApi(apiSummary));
-    } catch (err) {
-      setError(getApiErrorMessage(err));
-    } finally {
-      setIsLoading(false);
-    }
-  }, [backendEnabled]);
-
-  const loadSubjects = useCallback(
-    async (query?: FactorySubjectsQuery) => {
-      if (!backendEnabled) return;
-      setIsLoading(true);
-      setError(null);
-      try {
-        const page = await factoryApi.getSubjects(query);
-        setRemoteItems(page.items.map(mapFactoryWorkItemFromApi));
-      } catch (err) {
-        setError(getApiErrorMessage(err));
-      } finally {
-        setIsLoading(false);
-      }
-    },
-    [backendEnabled],
+  const summaryQuery = useFactoryDashboardSummaryQuery(backendEnabled);
+  const newlyAddedQuery = useFactorySubjectsQuery({ origin: 'new', page: 1, limit: 5 }, backendEnabled);
+  const correctionSentQuery = useFactorySubjectsQuery(
+    { status: 'CORRECTION_SENT', page: 1, limit: 5 },
+    backendEnabled,
   );
 
-  useEffect(() => {
-    if (backendEnabled) {
-      void loadSummary();
-    }
-  }, [backendEnabled, loadSummary]);
+  const summary = summaryQuery.data ?? null;
+
+  const newlyAddedPreview = useMemo<NewlyAddedPreview>(
+    () => ({
+      items: newlyAddedQuery.data?.items ?? [],
+      total: newlyAddedQuery.data?.total ?? 0,
+    }),
+    [newlyAddedQuery.data],
+  );
+
+  const correctionSentPreview = useMemo<CorrectionSentPreview>(
+    () => ({
+      items: correctionSentQuery.data?.items ?? [],
+      total: correctionSentQuery.data?.total ?? 0,
+    }),
+    [correctionSentQuery.data],
+  );
+
+  const isLoading = summaryQuery.isLoading && !summaryQuery.data;
+  const isBackgroundRefreshing =
+    (summaryQuery.isFetching && Boolean(summaryQuery.data)) ||
+    newlyAddedQuery.isBackgroundFetching ||
+    correctionSentQuery.isBackgroundFetching;
+
+  const error = useMemo(() => {
+    const err = summaryQuery.error ?? newlyAddedQuery.error ?? correctionSentQuery.error;
+    return err ? getApiErrorMessage(err) : null;
+  }, [summaryQuery.error, newlyAddedQuery.error, correctionSentQuery.error]);
+
+  const loadSummary = useCallback(async () => {
+    await Promise.all([summaryQuery.refetch(), newlyAddedQuery.refetch(), correctionSentQuery.refetch()]);
+  }, [summaryQuery, newlyAddedQuery, correctionSentQuery]);
 
   return {
     summary,
-    remoteItems,
+    newlyAddedPreview,
+    correctionSentPreview,
     isLoading,
+    isBackgroundRefreshing,
     error,
     loadSummary,
-    loadSubjects,
   };
 }

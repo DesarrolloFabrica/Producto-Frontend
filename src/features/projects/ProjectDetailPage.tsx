@@ -1,4 +1,6 @@
 import { useState } from 'react';
+import { useUrlTab } from '../../navigation/useUrlTab';
+import { ContextLink } from '../../navigation/ContextLink';
 import { DeepLinkNotFound } from '../../components/feedback/DeepLinkNotFound';
 import { ProjectsLoadNotice } from '../../components/feedback/ProjectsLoadNotice';
 import { useEnsureProjectDetail } from '../operations/useEnsureProjectDetail';
@@ -7,6 +9,8 @@ import { SemesterWorkflowCard } from '../../components/cards/SemesterWorkflowCar
 import { StatusBadge } from '../../components/status/StatusBadge';
 import { Card } from '../../components/ui/Card';
 import { PageHeader } from '../../components/ui/PageHeader';
+import { ProjectChangeTrackingPanel } from '../../components/change-tracking/ProjectChangeTrackingPanel';
+import { ChangeOriginBadge, ChangeOriginHint } from '../../components/change-tracking/ChangeOriginBadge';
 import { Tabs } from '../../components/ui/Tabs';
 import { EditProjectDrawer } from '../../components/forms/EditProjectDrawer';
 import { ProjectInfoDrawer } from '../../components/forms/ProjectInfoDrawer';
@@ -23,6 +27,8 @@ import type { VirtualizationProject } from '../../types/domain';
 import { analyzeProductProject } from '../../features/operations/productDashboardState';
 import { FactoryProjectDetail } from './FactoryProjectDetail';
 import { useDismissNotificationsOnVisit } from '../notifications/useDismissNotificationsOnVisit';
+import { SubjectTopicsEditor } from '../../components/forms/SubjectTopicsEditor';
+import { SUBJECT_TOPICS_MAX, SUBJECT_TOPICS_MIN, validateSubjectTopicsList } from '../../utils/subjectTopics';
 
 const tabs = [
   { id: 'summary', label: 'Resumen' },
@@ -36,7 +42,7 @@ export function ProjectDetailPage() {
   const { role } = useAuth();
   const { project, isLoading, error, notFound } = useEnsureProjectDetail(projectId);
   useDismissNotificationsOnVisit({ projectId: project?.id });
-  const [activeTab, setActiveTab] = useState('summary');
+  const [activeTab, setActiveTab] = useUrlTab(['summary', 'semesters'] as const, 'summary');
   const [showInfoDrawer, setShowInfoDrawer] = useState(false);
   const [showAddSemesterModal, setShowAddSemesterModal] = useState(false);
 
@@ -110,6 +116,8 @@ export function ProjectDetailPage() {
           </div>
         </div>
       </Card>
+
+      <ProjectChangeTrackingPanel project={project} />
 
       <Tabs tabs={tabs} activeTab={activeTab} onChange={setActiveTab} />
 
@@ -349,7 +357,13 @@ function Semesters({ project, onAddSemester }: { project: ReturnType<typeof useO
                   <div className="flex items-start justify-between gap-4">
                     <div>
                       <p className="text-[10px] font-black uppercase tracking-widest text-orange-500">Semestre</p>
-                      <h3 className="mt-0.5 text-xl font-black tracking-tight text-slate-900">Semestre {semester.semesterNumber}</h3>
+                      <div className="mt-0.5 flex flex-wrap items-center gap-2">
+                        <h3 className="text-xl font-black tracking-tight text-slate-900">
+                          Semestre {semester.semesterNumber}
+                        </h3>
+                        {semester.createdFromChange && <ChangeOriginBadge kind="semester" />}
+                      </div>
+                      {semester.createdFromChange && <ChangeOriginHint kind="semester" />}
                     </div>
                     <div className="flex flex-col items-end gap-2">
                       <StatusBadge status={semester.status} />
@@ -383,13 +397,13 @@ function Semesters({ project, onAddSemester }: { project: ReturnType<typeof useO
 
                   {subjects.length > 0 && (
                     <div className="mt-5">
-                      <Link
+                      <ContextLink
                         to={`/projects/${project.id}/semesters/${semester.semesterNumber}`}
                         className="inline-flex items-center gap-1.5 rounded-2xl bg-linear-to-br from-orange-400 to-orange-500 px-4 py-2.5 text-xs font-black text-white shadow-lg shadow-orange-500/30 transition-all hover:from-orange-500 hover:to-orange-600"
                       >
                         <Eye className="h-3.5 w-3.5" /> Ver asignaturas
                         <ArrowRight className="h-3.5 w-3.5" />
-                      </Link>
+                      </ContextLink>
                     </div>
                   )}
                 </div>
@@ -447,39 +461,15 @@ function AddSemesterModal({ isOpen, onClose, project, onAdd, onSuccess, onError 
     setSubjects((prev) => prev.filter((s) => s.id !== id));
   };
 
-  const addTopic = (subjectId: string) => {
-    setSubjects((prev) =>
-      prev.map((s) => (s.id === subjectId ? { ...s, topics: [...s.topics, ''] } : s)),
+  const canSubmitSemester = subjects.every((subj) => {
+    const filled = subj.topics.map((topic) => topic.trim()).filter(Boolean).length;
+    return (
+      subj.name.trim().length > 0 &&
+      filled >= SUBJECT_TOPICS_MIN &&
+      filled <= SUBJECT_TOPICS_MAX &&
+      subj.topics.every((topic) => topic.trim().length > 0)
     );
-  };
-
-  const updateTopic = (subjectId: string, index: number, name: string) => {
-    setSubjects((prev) =>
-      prev.map((s) =>
-        s.id === subjectId
-          ? { ...s, topics: s.topics.map((t, i) => (i === index ? name : t)) }
-          : s,
-      ),
-    );
-  };
-
-  const removeTopic = (subjectId: string, index: number) => {
-    setSubjects((prev) =>
-      prev.map((s) =>
-        s.id === subjectId ? { ...s, topics: s.topics.filter((_, i) => i !== index) } : s,
-      ),
-    );
-  };
-
-  const suggestTopics = (subjectId: string) => {
-    setSubjects((prev) =>
-      prev.map((s) =>
-        s.id === subjectId
-          ? { ...s, topics: ['Tema 1', 'Tema 2', 'Tema 3', 'Tema 4'] }
-          : s,
-      ),
-    );
-  };
+  });
 
   const validate = (): boolean => {
     const newErrors: string[] = [];
@@ -488,10 +478,7 @@ function AddSemesterModal({ isOpen, onClose, project, onAdd, onSuccess, onError 
     if (subjects.length === 0) newErrors.push('Agrega al menos una asignatura.');
     subjects.forEach((subj) => {
       if (!subj.name.trim()) newErrors.push('Una asignatura no tiene nombre.');
-      if (subj.topics.length === 0) newErrors.push(`La asignatura "${subj.name || '(sin nombre)'}" debe tener al menos un tema.`);
-      subj.topics.forEach((t, i) => {
-        if (!t.trim()) newErrors.push(`El tema ${i + 1} de "${subj.name}" no tiene nombre.`);
-      });
+      newErrors.push(...validateSubjectTopicsList(subj.topics, subj.name));
     });
     setErrors(newErrors);
     return newErrors.length === 0;
@@ -505,8 +492,8 @@ function AddSemesterModal({ isOpen, onClose, project, onAdd, onSuccess, onError 
         semesterNumber: selectedSemester,
         factoryExpectedDate: expectedDate,
         subjects: subjects.map((subj) => ({
-          name: subj.name,
-          topics: subj.topics,
+          name: subj.name.trim(),
+          topics: subj.topics.map((topic) => topic.trim()).filter(Boolean),
         })),
         changeReason: changeReason.trim() || undefined,
       });
@@ -618,37 +605,15 @@ function AddSemesterModal({ isOpen, onClose, project, onAdd, onSuccess, onError 
                 onChange={(e) => updateSubjectName(subj.id, e.target.value)}
                 placeholder="Nombre de la asignatura"
               />
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Temas</p>
-                  <div className="flex gap-2">
-                    {subj.topics.length === 0 && (
-                      <button type="button" onClick={() => suggestTopics(subj.id)} className="text-[10px] font-bold text-orange-600 hover:text-orange-700">
-                        Sugerir 4
-                      </button>
-                    )}
-                    <button type="button" onClick={() => addTopic(subj.id)} className="text-[10px] font-bold text-orange-600 hover:text-orange-700">
-                      + Tema
-                    </button>
-                  </div>
-                </div>
-                {subj.topics.map((topic, tIdx) => (
-                  <div key={tIdx} className="flex items-center gap-2">
-                    <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-md bg-orange-100 text-[9px] font-bold text-orange-600">
-                      {tIdx + 1}
-                    </span>
-                    <input
-                      className={cn(inputClass, 'flex-1 py-2 px-3 text-xs')}
-                      value={topic}
-                      onChange={(e) => updateTopic(subj.id, tIdx, e.target.value)}
-                      placeholder={`Tema ${tIdx + 1}`}
-                    />
-                    <button type="button" onClick={() => removeTopic(subj.id, tIdx)} className="shrink-0 text-slate-300 hover:text-rose-500">
-                      <X className="h-3.5 w-3.5" />
-                    </button>
-                  </div>
-                ))}
-              </div>
+              <SubjectTopicsEditor
+                topics={subj.topics}
+                onChange={(nextTopics) =>
+                  setSubjects((prev) =>
+                    prev.map((s) => (s.id === subj.id ? { ...s, topics: nextTopics } : s)),
+                  )
+                }
+                inputClass={inputClass}
+              />
             </div>
           ))}
           {subjects.length === 0 && (
@@ -658,7 +623,10 @@ function AddSemesterModal({ isOpen, onClose, project, onAdd, onSuccess, onError 
 
         <div className="flex justify-end gap-3 pt-4 border-t border-slate-100">
           <Button type="button" variant="secondary" onClick={handleClose}>Cancelar</Button>
-          <Button disabled={saving} onClick={handleSubmit}>
+          <Button
+            disabled={saving || !selectedSemester || subjects.length === 0 || !canSubmitSemester}
+            onClick={handleSubmit}
+          >
             {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
             {saving ? 'Guardando...' : 'Agregar semestre'}
           </Button>

@@ -18,6 +18,14 @@ export type SubjectStatus =
   | 'APPROVED'
   | 'DELIVERED';
 
+export type SubjectOperationalState =
+  | 'NOT_STARTED'
+  | 'IN_PRODUCTION'
+  | 'IN_REVIEW'
+  | 'CHANGES_REQUESTED'
+  | 'CORRECTION_SENT'
+  | 'APPROVED';
+
 export type SemesterStatus =
   | 'PENDING'
   | 'IN_PRODUCTION'
@@ -36,12 +44,29 @@ export interface SubjectSummary {
   id: string;
   name: string;
   status: SubjectStatus;
+  operationalState?: SubjectOperationalState;
   semesterNumber: number;
   expectedDeliveryDate?: string | null;
   progress: number;
   openObservationsCount: number;
   correctionSentCount: number;
   updatedAt?: string;
+  createdFromChange?: boolean;
+}
+
+export interface ProjectRecentChanges {
+  semestersAdded: number;
+  subjectsAdded: number;
+}
+
+export interface ProjectChangeTimelineEntry {
+  occurredAt: string;
+  label: string;
+  kind: 'PROJECT_CREATED' | 'SEMESTER_ADDED' | 'SUBJECT_ADDED';
+  semesterNumber?: number | null;
+  subjectName?: string | null;
+  subjectId?: string | null;
+  actionUrl?: string;
 }
 
 export interface VirtualizationProject {
@@ -62,6 +87,8 @@ export interface VirtualizationProject {
   subjects: SubjectVirtualization[];
   subjectsSummary?: SubjectSummary[];
   links: LinkResource[];
+  recentChanges?: ProjectRecentChanges;
+  changeTimeline?: ProjectChangeTimelineEntry[];
 }
 
 export interface ProjectSemester {
@@ -73,6 +100,7 @@ export interface ProjectSemester {
   factoryExpectedDate: string;
   continuationDate: string;
   observations: string;
+  createdFromChange?: boolean;
 }
 
 export interface SubjectVirtualization {
@@ -82,7 +110,11 @@ export interface SubjectVirtualization {
   name: string;
   expectedDeliveryDate?: string;
   status: SubjectStatus;
+  operationalState?: SubjectOperationalState;
   progress: number;
+  createdFromChange?: boolean;
+  openObservationsCount?: number;
+  correctionSentCount?: number;
   checklist: ChecklistItem[];
   generalObservations: string;
   contentTopics: string[];

@@ -1,4 +1,4 @@
-import { Link } from 'react-router-dom';
+import { ContextLink } from '../../navigation/ContextLink';
 import { ArrowRight, Zap } from 'lucide-react';
 import { motion } from 'motion/react';
 import type { OperationalNextStep } from '../../features/operations/operationalTypes';
@@ -24,9 +24,9 @@ export function NextActionCard({ action, variant = 'subjectPanel', onContext }: 
       {action.dependency ? <p className="mt-2 line-clamp-1 text-[11px] font-bold text-slate-500">Depende de: {action.dependency}</p> : null}
       <div className="mt-3 flex justify-end">
         {action.targetRoute ? (
-          <Link to={action.targetRoute} className="inline-flex items-center gap-1.5 rounded-2xl bg-orange-500 px-3 py-2 text-xs font-black text-white shadow-lg shadow-orange-500/20 transition-all hover:-translate-y-0.5 hover:bg-orange-600 hover:shadow-orange-500/30">
+          <ContextLink to={action.targetRoute} className="inline-flex items-center gap-1.5 rounded-2xl bg-orange-500 px-3 py-2 text-xs font-black text-white shadow-lg shadow-orange-500/20 transition-all hover:-translate-y-0.5 hover:bg-orange-600 hover:shadow-orange-500/30">
             {action.actionLabel} <ArrowRight className="h-3.5 w-3.5" />
-          </Link>
+          </ContextLink>
         ) : onContext ? (
           <button type="button" onClick={onContext} className="inline-flex items-center gap-1.5 rounded-2xl bg-orange-500 px-3 py-2 text-xs font-black text-white shadow-lg shadow-orange-500/20 transition-all hover:-translate-y-0.5 hover:bg-orange-600 hover:shadow-orange-500/30">
             {action.actionLabel} <ArrowRight className="h-3.5 w-3.5" />

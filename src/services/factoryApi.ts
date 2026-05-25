@@ -23,13 +23,19 @@ export interface ApiFactorySubjectWorkItem {
   correctionSentCount: number;
   lastActivity: string | null;
   actionUrl: string;
+  createdFromChange: boolean;
 }
 
 export interface ApiFactoryDashboardSummary {
   countsByState: Record<ApiSubjectOperationalState, number>;
-  pendingCorrections: ApiFactorySubjectWorkItem[];
-  upcomingDeliveries: ApiFactorySubjectWorkItem[];
-  recentlyCompleted: ApiFactorySubjectWorkItem[];
+  totalAssigned: number;
+  notStartedTop: ApiFactorySubjectWorkItem[];
+  inProductionTop: ApiFactorySubjectWorkItem[];
+  inReviewTop: ApiFactorySubjectWorkItem[];
+  pendingCorrectionsTop: ApiFactorySubjectWorkItem[];
+  upcomingDeliveriesTop: ApiFactorySubjectWorkItem[];
+  recentlyCompletedTop: ApiFactorySubjectWorkItem[];
+  overdueOrDueSoonCount: number;
 }
 
 export interface ApiFactorySubjectsPage {
@@ -39,7 +45,10 @@ export interface ApiFactorySubjectsPage {
   limit: number;
 }
 
+export type FactorySubjectsOrigin = 'all' | 'new' | 'original';
+
 export interface FactorySubjectsQuery {
+  origin?: FactorySubjectsOrigin;
   status?: ApiSubjectOperationalState;
   projectId?: string;
   program?: string;

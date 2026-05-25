@@ -1,6 +1,6 @@
-import { Link } from 'react-router-dom';
 import { AlertTriangle } from 'lucide-react';
 import { Button } from '../ui/Button';
+import { ContextBackLink } from '../../navigation/ContextBackLink';
 
 interface DeepLinkNotFoundProps {
   title?: string;
@@ -29,9 +29,9 @@ export function DeepLinkNotFound({
               Reintentar
             </Button>
           )}
-          <Link to={backTo}>
+          <ContextBackLink fallback={backTo} className="inline-block">
             <Button type="button" size="sm">{backLabel}</Button>
-          </Link>
+          </ContextBackLink>
         </div>
       </div>
     </div>

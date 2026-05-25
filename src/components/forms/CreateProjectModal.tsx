@@ -10,6 +10,16 @@ import { Modal } from '../ui/Modal';
 import { Button } from '../ui/Button';
 import type { Priority, VirtualizationProject, ChecklistItem, ChecklistStatus, Role, LinkResource, TopicChecklist } from '../../types/domain';
 import { cn } from '../ui/tokens';
+import {
+  SUBJECT_TOPICS_MAX,
+  SUBJECT_TOPICS_HELPER,
+  buildSuggestedTopicNames,
+  buildSuggestedTopicsToReachFive,
+  canAddMoreTopics,
+  getSubjectTopicsCounterLabel,
+  isSubjectTopicsFormValid,
+  validateSubjectTopicsList,
+} from '../../utils/subjectTopics';
 
 interface CreateProjectModalProps {
   isOpen: boolean;
@@ -180,20 +190,42 @@ export function CreateProjectModal({ isOpen, onClose }: CreateProjectModalProps)
         sem.number === semesterNum
           ? {
               ...sem,
-              subjects: sem.subjects.map((s) =>
-                s.id === subjectId
-                  ? {
-                      ...s,
-                      topics: [
-                        ...s.topics,
-                        { id: `topic-${Date.now()}-${Math.random()}`, name: '' },
-                      ],
-                    }
-                  : s,
-              ),
+              subjects: sem.subjects.map((s) => {
+                if (s.id !== subjectId || !canAddMoreTopics(s.topics.length)) return s;
+                return {
+                  ...s,
+                  topics: [...s.topics, { id: `topic-${Date.now()}-${Math.random()}`, name: '' }],
+                };
+              }),
             }
           : sem,
       ),
+    );
+  };
+
+  const suggestTopicsForSubject = (semesterNum: number, subjectId: string) => {
+    setSemesters((prev) =>
+      prev.map((sem) => {
+        if (sem.number !== semesterNum) return sem;
+        return {
+          ...sem,
+          subjects: sem.subjects.map((subj) => {
+            if (subj.id !== subjectId) return subj;
+            const names =
+              subj.topics.length === 0
+                ? buildSuggestedTopicNames()
+                : buildSuggestedTopicsToReachFive(subj.topics.map((topic) => topic.name));
+            const limited = names.slice(0, SUBJECT_TOPICS_MAX);
+            return {
+              ...subj,
+              topics: limited.map((name, index) => ({
+                id: subj.topics[index]?.id ?? `topic-${Date.now()}-${index}`,
+                name,
+              })),
+            };
+          }),
+        };
+      }),
     );
   };
 
@@ -234,6 +266,10 @@ export function CreateProjectModal({ isOpen, onClose }: CreateProjectModalProps)
     );
   };
 
+  const allSubjectsTopicsValid = semesters.every((sem) =>
+    sem.subjects.every((subj) => isSubjectTopicsFormValid(subj.topics.map((topic) => topic.name))),
+  );
+
   const toggleExpandSemester = (num: number) => {
     setExpandedSemesters((prev) =>
       prev.includes(num) ? prev.filter((n) => n !== num) : [...prev, num],
@@ -258,14 +294,12 @@ export function CreateProjectModal({ isOpen, onClose }: CreateProjectModalProps)
         if (!subj.name.trim()) {
           newErrors.push(`Una asignatura del semestre ${sem.number} no tiene nombre.`);
         }
-        if (subj.topics.length === 0) {
-          newErrors.push(`La asignatura "${subj.name || '(sin nombre)'}" del semestre ${sem.number} debe tener al menos un tema.`);
-        }
-        subj.topics.forEach((topic) => {
-          if (!topic.name.trim()) {
-            newErrors.push(`Un tema de la asignatura "${subj.name}" del semestre ${sem.number} no tiene nombre.`);
-          }
-        });
+        newErrors.push(
+          ...validateSubjectTopicsList(
+            subj.topics.map((topic) => topic.name),
+            `${subj.name || '(sin nombre)'} (semestre ${sem.number})`,
+          ),
+        );
       });
     });
 
@@ -618,51 +652,37 @@ export function CreateProjectModal({ isOpen, onClose }: CreateProjectModalProps)
                               />
 
                               <div className="space-y-2">
-                                <div className="flex items-center justify-between">
-                                  <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Temas / Gránulos</p>
-                                  <button
-                                    type="button"
-                                    onClick={() => addTopic(sem.number, subj.id)}
-                                    className="inline-flex items-center gap-1 text-[10px] font-bold text-orange-600 hover:text-orange-700"
-                                  >
-                                    <Plus className="h-3 w-3" /> Agregar tema
-                                  </button>
+                                <div className="flex flex-wrap items-center justify-between gap-2">
+                                  <div>
+                                    <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Temas / Gránulos</p>
+                                    <p className="mt-0.5 text-[10px] font-medium text-slate-500">{SUBJECT_TOPICS_HELPER}</p>
+                                  </div>
+                                  <div className="flex items-center gap-2">
+                                    <span className="rounded-full bg-orange-50 px-2.5 py-1 text-[10px] font-bold text-orange-700 ring-1 ring-orange-100">
+                                      {getSubjectTopicsCounterLabel(subj.topics.length)}
+                                    </span>
+                                    <button
+                                      type="button"
+                                      onClick={() => suggestTopicsForSubject(sem.number, subj.id)}
+                                      className="text-[10px] font-bold text-orange-600 hover:text-orange-700"
+                                    >
+                                      Sugerir 5
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => addTopic(sem.number, subj.id)}
+                                      disabled={!canAddMoreTopics(subj.topics.length)}
+                                      className={cn(
+                                        'inline-flex items-center gap-1 text-[10px] font-bold',
+                                        canAddMoreTopics(subj.topics.length)
+                                          ? 'text-orange-600 hover:text-orange-700'
+                                          : 'cursor-not-allowed text-slate-300',
+                                      )}
+                                    >
+                                      <Plus className="h-3 w-3" /> Agregar tema
+                                    </button>
+                                  </div>
                                 </div>
-
-                                {subj.topics.length === 0 && (
-                                  <button
-                                    type="button"
-                                    onClick={() => {
-                                      const defaultTopics = ['Tema 1', 'Tema 2', 'Tema 3', 'Tema 4'];
-                                      defaultTopics.forEach((name, idx) => {
-                                        const topicId = `topic-${Date.now()}-${idx}`;
-                                        setSemesters((prev) =>
-                                          prev.map((s) =>
-                                            s.number === sem.number
-                                              ? {
-                                                  ...s,
-                                                  subjects: s.subjects.map((sub) =>
-                                                    sub.id === subj.id
-                                                      ? {
-                                                          ...sub,
-                                                          topics: [
-                                                            ...sub.topics,
-                                                            { id: topicId, name },
-                                                          ],
-                                                        }
-                                                      : sub,
-                                                  ),
-                                                }
-                                              : s,
-                                          ),
-                                        );
-                                      });
-                                    }}
-                                    className="w-full rounded-xl border border-dashed border-slate-200 bg-slate-50 py-2 text-[10px] font-bold text-slate-400 hover:border-orange-200 hover:text-orange-500 transition-all"
-                                  >
-                                    Sugerir 4 temas base
-                                  </button>
-                                )}
 
                                 <div className="space-y-2">
                                   {subj.topics.map((topic, topicIdx) => (
@@ -717,7 +737,18 @@ export function CreateProjectModal({ isOpen, onClose }: CreateProjectModalProps)
 
         <div className="flex justify-end gap-3 pt-4 border-t border-slate-100">
           <Button type="button" variant="secondary" onClick={onClose}>Cancelar</Button>
-          <motion.button type="submit" disabled={saving} whileHover={!saving ? { scale: 1.02 } : {}} whileTap={!saving ? { scale: 0.98 } : {}} className={cn('flex items-center gap-2 py-3 px-6 rounded-2xl text-sm font-black uppercase tracking-widest text-white transition-all', saving ? 'bg-slate-300 cursor-not-allowed' : 'liquid-button')}>
+          <motion.button
+            type="submit"
+            disabled={saving || !allSubjectsTopicsValid || selectedSemesters.length === 0}
+            whileHover={!saving && allSubjectsTopicsValid ? { scale: 1.02 } : {}}
+            whileTap={!saving && allSubjectsTopicsValid ? { scale: 0.98 } : {}}
+            className={cn(
+              'flex items-center gap-2 py-3 px-6 rounded-2xl text-sm font-black uppercase tracking-widest text-white transition-all',
+              saving || !allSubjectsTopicsValid || selectedSemesters.length === 0
+                ? 'bg-slate-300 cursor-not-allowed'
+                : 'liquid-button',
+            )}
+          >
             {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
             {saving ? 'Creando...' : 'Crear Solicitud'}
           </motion.button>

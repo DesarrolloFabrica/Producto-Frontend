@@ -1,4 +1,4 @@
-import { Link } from 'react-router-dom';
+import { ContextLink } from '../../navigation/ContextLink';
 import { ArrowRight, CalendarDays, Eye, GraduationCap, UserRound } from 'lucide-react';
 import type { VirtualizationProject } from '../../types/domain';
 import { formatDate } from '../../utils/formatters';
@@ -121,12 +121,12 @@ export function ProjectsTable({ projects }: { projects: VirtualizationProject[] 
                   >
                     <Eye className="h-3.5 w-3.5" /> Vista rápida
                   </button>
-                  <Link
+                  <ContextLink
                     to={`/projects/${project.id}`}
                     className="group/btn inline-flex items-center justify-center gap-1.5 rounded-[10px] bg-[#FF6B00] px-3 py-2.5 text-xs font-semibold text-white shadow-lg shadow-[#FF6B00]/20 transition-all duration-200 hover:scale-105 hover:bg-[#E66000]"
                   >
                     Gestionar proyecto <ArrowRight className="h-3.5 w-3.5 transition-transform duration-200 group-hover/btn:translate-x-0.5" />
-                  </Link>
+                  </ContextLink>
                 </div>
               </div>
             </div>

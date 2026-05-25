@@ -4,7 +4,7 @@ import { motion } from 'motion/react';
 
 import { AlertTriangle, ArrowRight, Bell, Clock3, Loader2, X } from 'lucide-react';
 
-import { Link } from 'react-router-dom';
+import { ContextLink } from '../../navigation/ContextLink';
 
 import { MetricCard } from '../../components/cards/MetricCard';
 
@@ -205,7 +205,8 @@ export function NotificationsPage() {
 
   const handleLoadMore = () => {
 
-    void loadNotifications({ offset: visible.length, append: true });
+    // Context mantiene su propio cursor/offset
+    void loadNotifications();
 
   };
 
@@ -604,7 +605,7 @@ function AttentionGroupCard({
 
             {group.hasActionable && group.targetUrl ? (
 
-              <Link
+              <ContextLink
 
                 to={group.targetUrl}
 
@@ -616,11 +617,11 @@ function AttentionGroupCard({
 
                 Ir a resolver <ArrowRight className="h-3 w-3" />
 
-              </Link>
+              </ContextLink>
 
             ) : group.targetUrl ? (
 
-              <Link
+              <ContextLink
 
                 to={group.targetUrl}
 
@@ -630,7 +631,7 @@ function AttentionGroupCard({
 
                 Ver historial <ArrowRight className="h-3 w-3" />
 
-              </Link>
+              </ContextLink>
 
             ) : null}
 
@@ -716,7 +717,7 @@ function ActivityGroupRow({
 
           {group.targetUrl && (
 
-            <Link
+            <ContextLink
 
               to={group.targetUrl}
 
@@ -728,7 +729,7 @@ function ActivityGroupRow({
 
               Ver <ArrowRight className="h-3 w-3" />
 
-            </Link>
+            </ContextLink>
 
           )}
 

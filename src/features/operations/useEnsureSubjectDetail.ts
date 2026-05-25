@@ -2,7 +2,6 @@ import { useEffect, useMemo, useState } from 'react';
 import type { SubjectVirtualization, VirtualizationProject } from '../../types/domain';
 import { useAuth } from '../auth/AuthContext';
 import { useOperations } from './OperationsContext';
-import { subjectsApi } from '../../services/subjectsApi';
 
 export function useEnsureSubjectDetail(subjectId: string | undefined): {
   project: VirtualizationProject | undefined;
@@ -15,9 +14,9 @@ export function useEnsureSubjectDetail(subjectId: string | undefined): {
   const {
     projects,
     backendEnabled,
-    loadProjectDetail,
+    loadSubjectWorkspace,
     isLoadingProjectDetail,
-    isLoadingProjects,
+    isLoadingSubjectObservations,
     selectedProjectError,
   } = useOperations();
   const [subjectDetailError, setSubjectDetailError] = useState<string | null>(null);
@@ -40,9 +39,7 @@ export function useEnsureSubjectDetail(subjectId: string | undefined): {
 
     void (async () => {
       try {
-        const apiProject = await subjectsApi.getSubjectDetail(subjectId);
-        if (cancelled) return;
-        await loadProjectDetail(apiProject.id);
+        await loadSubjectWorkspace(subjectId);
       } catch (error) {
         if (!cancelled) {
           setSubjectDetailError(error instanceof Error ? error.message : 'No se pudo cargar el detalle de la asignatura.');
@@ -55,7 +52,7 @@ export function useEnsureSubjectDetail(subjectId: string | undefined): {
     return () => {
       cancelled = true;
     };
-  }, [subjectId, backendEnabled, authLoading, match.subject, loadProjectDetail]);
+  }, [subjectId, backendEnabled, authLoading, match.subject, loadSubjectWorkspace]);
 
   if (!subjectId) {
     return { project: undefined, subject: undefined, isLoading: false, error: null, notFound: true };
@@ -76,7 +73,7 @@ export function useEnsureSubjectDetail(subjectId: string | undefined): {
     !authLoading &&
     !match.subject &&
     !error &&
-    (subjectDetailLoading || isLoadingProjectDetail || isLoadingProjects),
+    (subjectDetailLoading || isLoadingProjectDetail || isLoadingSubjectObservations),
   );
 
   const notFound = Boolean(

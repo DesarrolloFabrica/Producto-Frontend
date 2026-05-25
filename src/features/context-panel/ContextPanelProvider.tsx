@@ -1,6 +1,6 @@
 import { createContext, useContext, useState, useCallback, useEffect, type ReactNode } from 'react';
 import { motion } from 'motion/react';
-import { useNavigate } from 'react-router-dom';
+import { useContextNavigate } from '../../navigation/useContextNavigate';
 import { X, ExternalLink, FileText, BookOpen, MessageSquare, Bell, ListChecks, Clock3, User, CheckCircle, AlertCircle } from 'lucide-react';
 import { useOperations } from '../operations/OperationsContext';
 import { StatusBadge } from '../../components/status/StatusBadge';
@@ -62,7 +62,7 @@ export function useContextPanel() {
 export function ContextPanelDrawer() {
   const { isOpen, payload, closeContextPanel } = useContextPanel();
   const { projects, projectObservations, comments, notifications, backendEnabled, loadProjectDetail } = useOperations();
-  const navigate = useNavigate();
+  const contextNavigate = useContextNavigate();
 
   useEffect(() => {
     if (!backendEnabled || !isOpen || !payload) return;
@@ -91,7 +91,7 @@ export function ContextPanelDrawer() {
     if (project) {
       const projectObservationsList = projectObservations.filter((o) => o.projectId === project.id);
         content = (
-        <ProjectContext project={project} observations={projectObservationsList} notifications={notifications} onNavigate={() => { closeContextPanel(); navigate(`/projects/${project.id}`); }} />
+        <ProjectContext project={project} observations={projectObservationsList} notifications={notifications} onNavigate={() => { closeContextPanel(); contextNavigate(`/projects/${project.id}`); }} />
       );
     }
   } else if (payload.type === 'subject') {
@@ -99,7 +99,7 @@ export function ContextPanelDrawer() {
     if (subjectData?.subject && subjectData?.project) {
       const subjectComments = comments.filter((c) => c.entityType === 'subject' && c.entityId === subjectData.subject!.id);
       content = (
-        <SubjectContext project={subjectData.project} subject={subjectData.subject} observations={projectObservations} comments={subjectComments} onNavigate={() => { closeContextPanel(); navigate(`/subjects/${subjectData.subject!.id}`); }} />
+        <SubjectContext project={subjectData.project} subject={subjectData.subject} observations={projectObservations} comments={subjectComments} onNavigate={() => { closeContextPanel(); contextNavigate(`/subjects/${subjectData.subject!.id}`); }} />
       );
     }
   } else if (payload.type === 'link') {
@@ -115,7 +115,7 @@ export function ContextPanelDrawer() {
   } else if (payload.type === 'notification') {
     const notifData = payload.data as { notification?: Notification } | undefined;
     if (notifData?.notification) {
-        content = <NotificationContext notification={notifData.notification} projects={projects} onNavigate={() => { if (notifData.notification?.projectId) { closeContextPanel(); navigate(`/projects/${notifData.notification.projectId}`); } }} />;
+        content = <NotificationContext notification={notifData.notification} projects={projects} onNavigate={() => { if (notifData.notification?.projectId) { closeContextPanel(); contextNavigate(`/projects/${notifData.notification.projectId}`); } }} />;
     }
   } else if (payload.type === 'checklist') {
     const clData = payload.data as { item?: ChecklistItem; project?: VirtualizationProject; subject?: SubjectVirtualization } | undefined;

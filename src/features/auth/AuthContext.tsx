@@ -2,6 +2,9 @@ import { createContext, useContext, useEffect, useMemo, useState, type ReactNode
 import type { Role } from '../../types/domain';
 import type { AuthUser } from '../../services/authApi';
 import { authApi } from '../../services/authApi';
+import { resetNotificationReadDedup } from '../notifications/notificationReadDedup';
+import { resetProjectsBootstrap } from '../operations/projectsBootstrapState';
+import { queryClient } from '../queries/queryClient';
 
 const TOKEN_KEY = 'producto_access_token';
 const USER_KEY = 'producto_auth_user';
@@ -37,6 +40,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } catch {
       // ignore
     }
+    resetProjectsBootstrap();
+    resetNotificationReadDedup();
+    queryClient.clear();
     setUser(null);
   };
 

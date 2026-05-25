@@ -34,6 +34,7 @@ import type {
   ApiObservationStatus,
   ApiRelatedEntityType,
 } from '../../services/types/workflowApi.types';
+import type { ApiSubjectWorkspace } from '../../services/subjectsApi';
 
 export interface CreateProjectFormInput {
   school: string;
@@ -69,7 +70,7 @@ function toIsoDateTime(value: string): string {
   return `${value}T00:00:00.000Z`;
 }
 
-function toDateOnly(value: string): string {
+export function toDateOnly(value: string): string {
   if (!value) return '';
   return value.includes('T') ? value.slice(0, 10) : value;
 }
@@ -192,7 +193,11 @@ export function mapSubjectFromApi(
         ? toDateOnly(fallbackDates.projectExpectedDeliveryDate)
         : ''),
     status: api.status,
+    operationalState: api.operationalState,
     progress: api.progress,
+    createdFromChange: Boolean(api.createdFromChange),
+    openObservationsCount: api.openObservationsCount ?? 0,
+    correctionSentCount: api.correctionSentCount ?? 0,
     checklist: subjectChecklist,
     generalObservations: '',
     contentTopics: mappedTopics.map((t) => t.topicName),
@@ -223,6 +228,7 @@ export function mapSemesterFromApi(
     factoryExpectedDate: toDateOnly(api.factoryExpectedDate),
     continuationDate: api.continuationDate ? toDateOnly(api.continuationDate) : '',
     observations: '',
+    createdFromChange: Boolean(api.createdFromChange),
   };
 }
 
@@ -244,6 +250,7 @@ export function mapSubjectSummaryFromApi(api: ApiSubjectSummary): SubjectSummary
     id: api.id,
     name: api.name,
     status: api.status,
+    operationalState: api.operationalState,
     semesterNumber: api.semesterNumber,
     expectedDeliveryDate: api.expectedDeliveryDate
       ? toDateOnly(api.expectedDeliveryDate)
@@ -252,6 +259,7 @@ export function mapSubjectSummaryFromApi(api: ApiSubjectSummary): SubjectSummary
     openObservationsCount: api.openObservationsCount,
     correctionSentCount: api.correctionSentCount,
     updatedAt: toDateOnly(api.updatedAt),
+    createdFromChange: Boolean(api.createdFromChange),
   };
 }
 
@@ -311,6 +319,60 @@ export function mapProjectDetailFromApi(api: ApiProjectDetail): VirtualizationPr
     semesters,
     subjects,
     links: api.links.map(mapLinkFromApi),
+    recentChanges: api.recentChanges,
+    changeTimeline: api.changeTimeline?.map((entry) => ({
+      ...entry,
+      occurredAt: toDateOnly(entry.occurredAt),
+    })),
+  };
+}
+
+export function isLightSubjectWorkspace(api: ApiSubjectWorkspace): api is Extract<ApiSubjectWorkspace, { projectMeta: unknown }> {
+  return 'projectMeta' in api;
+}
+
+export function mapSubjectWorkspaceProjectFromApi(api: ApiSubjectWorkspace): VirtualizationProject {
+  if (!isLightSubjectWorkspace(api)) {
+    return mapProjectDetailFromApi(api.project);
+  }
+
+  const subject = mapSubjectFromApi(api.subject, api.projectMeta.id, api.semesterMeta.semesterNumber, {
+    semesterFactoryExpectedDate: api.semesterMeta.factoryExpectedDate,
+    projectExpectedDeliveryDate: api.projectMeta.expectedDeliveryDate,
+  });
+  const semester = mapSemesterFromApi({ ...api.semesterMeta, subjects: [api.subject] }, [subject]);
+
+  return {
+    id: api.projectMeta.id,
+    school: api.projectMeta.school,
+    program: api.projectMeta.program,
+    modality: mapModalityFromApi(api.projectMeta.modality),
+    requestType: api.projectMeta.requestType,
+    priority: mapPriorityFromApi(api.projectMeta.priority),
+    status: mapStatusFromApi(api.projectMeta.status),
+    progress: api.projectMeta.progress,
+    createdAt: toDateOnly(api.projectMeta.createdAt),
+    expectedDeliveryDate: toDateOnly(api.projectMeta.expectedDeliveryDate),
+    productOwner: mapOwnerName(api.projectMeta.productOwner),
+    factoryOwner: mapOwnerName(api.projectMeta.factoryOwner),
+    observations: '',
+    semesters: [semester],
+    subjects: [subject],
+    subjectsSummary: [
+      {
+        id: subject.id,
+        name: subject.name,
+        status: subject.status,
+        operationalState: subject.operationalState,
+        semesterNumber: subject.semesterNumber,
+        expectedDeliveryDate: subject.expectedDeliveryDate ?? null,
+        progress: subject.progress,
+        openObservationsCount: subject.openObservationsCount ?? 0,
+        correctionSentCount: subject.correctionSentCount ?? 0,
+        createdFromChange: Boolean(subject.createdFromChange),
+      },
+    ],
+    links: [],
   };
 }
 

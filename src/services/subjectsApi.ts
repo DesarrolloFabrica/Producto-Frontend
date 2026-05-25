@@ -1,9 +1,36 @@
 import { apiClient } from './apiClient';
-import type { ApiAddSubjectPayload, ApiProjectDetail, ApiSubjectDetail } from './types/projectsApi.types';
+import type { ApiObservation } from './types/workflowApi.types';
+import type {
+  ApiAddSubjectPayload,
+  ApiProjectDetail,
+  ApiProjectListItem,
+  ApiSemesterDetail,
+  ApiSubjectDetail,
+} from './types/projectsApi.types';
+
+export interface ApiSubjectWorkspaceLegacy {
+  project: ApiProjectDetail;
+  observations: ApiObservation[];
+}
+
+export type ApiSubjectWorkspaceProjectMeta = Omit<ApiProjectListItem, 'subjectsSummary'>;
+export type ApiSubjectWorkspaceSemesterMeta = Omit<ApiSemesterDetail, 'subjects'>;
+
+export interface ApiSubjectWorkspaceLight {
+  projectMeta: ApiSubjectWorkspaceProjectMeta;
+  semesterMeta: ApiSubjectWorkspaceSemesterMeta;
+  subject: ApiSubjectDetail;
+  observations: ApiObservation[];
+}
+
+export type ApiSubjectWorkspace = ApiSubjectWorkspaceLegacy | ApiSubjectWorkspaceLight;
 
 export const subjectsApi = {
   getSubjectDetail: (subjectId: string) =>
     apiClient.get<ApiProjectDetail>(`/subjects/${subjectId}/detail`),
+
+  getSubjectWorkspace: (subjectId: string) =>
+    apiClient.get<ApiSubjectWorkspace>(`/subjects/${subjectId}/workspace`),
 
   addSubjectToSemester: (semesterId: string, payload: ApiAddSubjectPayload) =>
     apiClient.post<ApiProjectDetail>(`/semesters/${semesterId}/subjects`, payload),

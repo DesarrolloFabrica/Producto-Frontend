@@ -1,4 +1,6 @@
-import { Link, useParams } from 'react-router-dom';
+import { useParams } from 'react-router-dom';
+import { ContextBackLink } from '../../navigation/ContextBackLink';
+import { ContextLink } from '../../navigation/ContextLink';
 import { ArrowLeft, BookOpen, CalendarDays, MessageSquare, ArrowRight } from 'lucide-react';
 import { Card } from '../../components/ui/Card';
 import { ProgressBar } from '../../components/ui/ProgressBar';
@@ -17,6 +19,7 @@ import {
 } from '../../features/operations/subjectOperationalState';
 import { analyzeFactorySemester } from '../../features/operations/factoryProjectState';
 import { calculateSubjectProgress } from '../../features/operations/progress';
+import { ChangeOriginBadge, ChangeOriginCardAccent, ChangeOriginHint } from '../../components/change-tracking/ChangeOriginBadge';
 
 export function FactorySemesterSubjectsView() {
   const { projectId, semesterNumber } = useParams();
@@ -82,9 +85,12 @@ export function FactorySemesterSubjectsView() {
     <div className="space-y-6">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <Link to={`/projects/${project.id}`} className="inline-flex items-center gap-1 text-xs font-medium text-[#64748B] hover:text-[#FF6B00]">
+          <ContextBackLink
+            fallback={`/projects/${project.id}?tab=semesters`}
+            className="inline-flex items-center gap-1 text-xs font-medium text-[#64748B] hover:text-[#FF6B00]"
+          >
             <ArrowLeft className="h-3.5 w-3.5" /> Volver al proyecto
-          </Link>
+          </ContextBackLink>
           <h1 className="mt-2 text-2xl font-bold tracking-[-0.02em] text-[#1E293B]">{project.program}</h1>
           <p className="mt-1 text-[0.9rem] text-[#64748B]">{project.school} · Semestre {semesterNum}</p>
         </div>
@@ -146,12 +152,12 @@ export function FactorySemesterSubjectsView() {
                       <p className="mt-1 text-xs text-[#64748B] line-clamp-2">{obs.text}</p>
                     </div>
                       {subject && (
-                        <Link
+                        <ContextLink
                           to={`/subjects/${subject.id}?focus=correction`}
                           className="shrink-0 inline-flex items-center gap-1.5 rounded-[12px] bg-rose-50 px-3 py-2 text-xs font-bold text-rose-600 hover:bg-rose-100 transition-all"
                         >
                           Ir a asignatura <ArrowRight className="h-3 w-3" />
-                      </Link>
+                      </ContextLink>
                     )}
                   </div>
                 </div>
@@ -197,12 +203,17 @@ export function FactorySemesterSubjectsView() {
             return (
               <div
                 key={subject.id}
-                className="rounded-[20px] bg-white p-5 shadow-[0_4px_20px_-5px_rgba(0,0,0,0.05)] transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_12px_30px_-10px_rgba(0,0,0,0.1)]"
+                className="relative overflow-hidden rounded-[20px] bg-white p-5 pl-6 shadow-[0_4px_20px_-5px_rgba(0,0,0,0.05)] transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_12px_30px_-10px_rgba(0,0,0,0.1)]"
               >
+                <ChangeOriginCardAccent isNew={Boolean(subject.createdFromChange)} />
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0 flex-1">
                     <p className="text-[10px] font-semibold uppercase tracking-[0.1em] text-[#94A3B8]">Semestre {subject.semesterNumber}</p>
-                    <h3 className="mt-1 text-base font-bold tracking-tight text-[#1E293B] truncate">{subject.name}</h3>
+                    <div className="mt-1 flex flex-wrap items-center gap-2">
+                      <h3 className="text-base font-bold tracking-tight text-[#1E293B] truncate">{subject.name}</h3>
+                      {subject.createdFromChange && <ChangeOriginBadge kind="subject" />}
+                    </div>
+                    {subject.createdFromChange && <ChangeOriginHint kind="subject" />}
                   </div>
                   <StatusBadge status={subject.status} size="sm" />
                 </div>
@@ -233,12 +244,12 @@ export function FactorySemesterSubjectsView() {
                 </div>
 
                 <div className="mt-5">
-                  <Link
+                  <ContextLink
                     to={workItem.actionUrl}
                     className="flex w-full items-center justify-center gap-1.5 rounded-[12px] bg-[#FF6B00] px-4 py-2.5 text-xs font-bold text-white shadow-lg shadow-[#FF6B00]/20 transition-all duration-200 hover:scale-105 hover:bg-[#E66000]"
                   >
                     {subjectActionLabel} <ArrowRight className="h-3.5 w-3.5" />
-                  </Link>
+                  </ContextLink>
                 </div>
               </div>
             );

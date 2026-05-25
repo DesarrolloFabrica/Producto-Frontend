@@ -1,5 +1,7 @@
-import { useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { useParams } from 'react-router-dom';
+import { ContextBackLink } from '../../navigation/ContextBackLink';
+import { ContextLink } from '../../navigation/ContextLink';
+import { useUrlTab } from '../../navigation/useUrlTab';
 import { StatusBadge } from '../../components/status/StatusBadge';
 import { Card } from '../../components/ui/Card';
 import { Tabs } from '../../components/ui/Tabs';
@@ -17,6 +19,8 @@ import {
 } from '../../features/operations/subjectOperationalState';
 import { analyzeFactoryProject } from '../../features/operations/factoryProjectState';
 import { ModificationBadge } from '../../components/project/ModificationBadge';
+import { ProjectChangeTrackingPanel } from '../../components/change-tracking/ProjectChangeTrackingPanel';
+import { ChangeOriginBadge, ChangeOriginHint } from '../../components/change-tracking/ChangeOriginBadge';
 import { useDismissNotificationsOnVisit } from '../notifications/useDismissNotificationsOnVisit';
 
 const tabs = [
@@ -29,7 +33,7 @@ export function FactoryProjectDetail() {
   const { projectObservations, notifications, refreshProjects } = useOperations();
   const { project, isLoading, error, notFound } = useEnsureProjectDetail(projectId);
   useDismissNotificationsOnVisit({ projectId: project?.id });
-  const [activeTab, setActiveTab] = useState('summary');
+  const [activeTab, setActiveTab] = useUrlTab(['summary', 'semesters'] as const, 'summary');
 
   if (isLoading) {
     return (
@@ -68,9 +72,12 @@ export function FactoryProjectDetail() {
     <div className="space-y-6">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <Link to="/projects" className="inline-flex items-center gap-1 text-xs font-medium text-[#64748B] hover:text-[#FF6B00]">
+          <ContextBackLink
+            fallback="/projects"
+            className="inline-flex items-center gap-1 text-xs font-medium text-[#64748B] hover:text-[#FF6B00]"
+          >
             <ArrowRight className="h-3.5 w-3.5 rotate-180" /> Volver a Solicitudes
-          </Link>
+          </ContextBackLink>
           <h1 className="mt-2 text-2xl font-bold tracking-[-0.02em] text-[#1E293B]">{project.program}</h1>
           <p className="mt-1 text-[0.9rem] text-[#64748B]">{project.school} · {project.modality}</p>
           {modificationLabel && <div className="mt-3"><ModificationBadge label={modificationLabel} /></div>}
@@ -84,6 +91,8 @@ export function FactoryProjectDetail() {
         <Info label="Prioridad">{priorityLabels[project.priority]}</Info>
         <Info label="Semestres">{project.semesters.length}</Info>
       </Card>
+
+      <ProjectChangeTrackingPanel project={project} />
 
       <Tabs tabs={tabs} activeTab={activeTab} onChange={setActiveTab} />
 
@@ -231,10 +240,10 @@ function SummaryTab({
           </div>
 
           <div className="flex justify-start">
-            <Link to={firstSemesterRoute} className="inline-flex items-center gap-1.5 rounded-2xl bg-[#FF6B00] px-4 py-2.5 text-sm font-black text-white shadow-lg shadow-[#FF6B00]/20 transition-all duration-200 hover:bg-[#E66000]">
+            <ContextLink to={firstSemesterRoute} className="inline-flex items-center gap-1.5 rounded-2xl bg-[#FF6B00] px-4 py-2.5 text-sm font-black text-white shadow-lg shadow-[#FF6B00]/20 transition-all duration-200 hover:bg-[#E66000]">
               Ver asignaturas
               <ArrowRight className="h-3.5 w-3.5" />
-            </Link>
+            </ContextLink>
           </div>
         </div>
       </Card>
@@ -280,7 +289,13 @@ function SemestersTab({
             <div className="flex items-start justify-between gap-4">
               <div>
                 <p className="text-[10px] font-black uppercase tracking-widest text-orange-500">Semestre</p>
-                <h3 className="mt-0.5 text-xl font-black tracking-tight text-slate-950">Semestre {semester.semesterNumber}</h3>
+                <div className="mt-0.5 flex flex-wrap items-center gap-2">
+                  <h3 className="text-xl font-black tracking-tight text-slate-950">
+                    Semestre {semester.semesterNumber}
+                  </h3>
+                  {semester.createdFromChange && <ChangeOriginBadge kind="semester" />}
+                </div>
+                {semester.createdFromChange && <ChangeOriginHint kind="semester" />}
               </div>
               <div className="flex flex-col items-end gap-2">
                 <StatusBadge status={semester.status} />
@@ -318,13 +333,13 @@ function SemestersTab({
 
             {subjects.length > 0 && (
               <div className="mt-5">
-                <Link
+                <ContextLink
                   to={`/projects/${project.id}/semesters/${semester.semesterNumber}`}
                   className="inline-flex items-center gap-1.5 rounded-2xl bg-gradient-to-br from-orange-400 to-orange-600 px-4 py-2.5 text-xs font-black text-white shadow-lg shadow-orange-500/30 transition-all hover:from-orange-500 hover:to-orange-700"
                 >
                   Ver asignaturas
                   <ArrowRight className="h-3.5 w-3.5" />
-                </Link>
+                </ContextLink>
               </div>
             )}
           </Card>

@@ -42,6 +42,7 @@ export function mapFactoryWorkItemFromApi(api: ApiFactorySubjectWorkItem): Subje
     correctionSentCount: api.correctionSentCount,
     lastActivity: api.lastActivity ?? undefined,
     actionUrl: api.actionUrl,
+    createdFromChange: Boolean(api.createdFromChange),
     actionLabel: ctaLabels[state],
     operationalLabel: operationalLabels[state],
   };
@@ -50,9 +51,14 @@ export function mapFactoryWorkItemFromApi(api: ApiFactorySubjectWorkItem): Subje
 export function mapFactorySummaryFromApi(api: ApiFactoryDashboardSummary) {
   return {
     countsByState: api.countsByState,
-    pendingCorrections: api.pendingCorrections.map(mapFactoryWorkItemFromApi),
-    upcomingDeliveries: api.upcomingDeliveries.map(mapFactoryWorkItemFromApi),
-    recentlyCompleted: api.recentlyCompleted.map(mapFactoryWorkItemFromApi),
+    totalAssigned: api.totalAssigned,
+    notStartedTop: api.notStartedTop.map(mapFactoryWorkItemFromApi),
+    inProductionTop: api.inProductionTop.map(mapFactoryWorkItemFromApi),
+    inReviewTop: api.inReviewTop.map(mapFactoryWorkItemFromApi),
+    pendingCorrectionsTop: api.pendingCorrectionsTop.map(mapFactoryWorkItemFromApi),
+    upcomingDeliveriesTop: api.upcomingDeliveriesTop.map(mapFactoryWorkItemFromApi),
+    recentlyCompletedTop: api.recentlyCompletedTop.map(mapFactoryWorkItemFromApi),
+    overdueOrDueSoonCount: api.overdueOrDueSoonCount,
   };
 }
 
@@ -60,9 +66,12 @@ export function workItemsFromSummary(summary: ReturnType<typeof mapFactorySummar
   const seen = new Set<string>();
   const items: SubjectWorkItem[] = [];
   for (const list of [
-    summary.pendingCorrections,
-    summary.upcomingDeliveries,
-    summary.recentlyCompleted,
+    summary.pendingCorrectionsTop,
+    summary.upcomingDeliveriesTop,
+    summary.recentlyCompletedTop,
+    summary.inProductionTop,
+    summary.notStartedTop,
+    summary.inReviewTop,
   ]) {
     for (const item of list) {
       if (!seen.has(item.subjectId)) {

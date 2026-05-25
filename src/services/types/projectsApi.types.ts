@@ -1,4 +1,5 @@
 import type { Priority, ProjectStatus, Role } from '../../types/domain';
+import type { SubjectOperationalState } from '../../types/domain';
 
 export type ApiModality = 'VIRTUAL' | 'HIBRIDA' | 'PRESENCIAL';
 export type ApiPriority = Priority;
@@ -37,12 +38,29 @@ export interface ApiSubjectSummary {
   id: string;
   name: string;
   status: ApiSubjectStatus;
+  operationalState?: SubjectOperationalState;
   semesterNumber: number;
   expectedDeliveryDate?: string | null;
   progress: number;
   openObservationsCount: number;
   correctionSentCount: number;
   updatedAt: string;
+  createdFromChange: boolean;
+}
+
+export interface ApiProjectRecentChanges {
+  semestersAdded: number;
+  subjectsAdded: number;
+}
+
+export interface ApiProjectChangeTimelineEntry {
+  occurredAt: string;
+  label: string;
+  kind: 'PROJECT_CREATED' | 'SEMESTER_ADDED' | 'SUBJECT_ADDED';
+  semesterNumber?: number | null;
+  subjectName?: string | null;
+  subjectId?: string | null;
+  actionUrl?: string;
 }
 
 export interface ApiProjectListItem {
@@ -93,7 +111,11 @@ export interface ApiSubjectDetail {
   name: string;
   expectedDeliveryDate?: string | null;
   status: ApiSubjectStatus;
+  operationalState?: SubjectOperationalState;
   progress: number;
+  openObservationsCount?: number;
+  correctionSentCount?: number;
+  createdFromChange: boolean;
   topics: ApiTopicDetail[];
   checklist: ApiChecklistItem[];
   createdAt: string;
@@ -104,6 +126,7 @@ export interface ApiSemesterDetail {
   id: string;
   semesterNumber: number;
   status: ApiSemesterStatus;
+  createdFromChange: boolean;
   factoryExpectedDate: string;
   continuationDate: string | null;
   subjects: ApiSubjectDetail[];
@@ -125,6 +148,8 @@ export interface ApiProjectDetail extends ApiProjectListItem {
   updatedAt: string;
   semesters: ApiSemesterDetail[];
   links: ApiProjectLink[];
+  recentChanges?: ApiProjectRecentChanges;
+  changeTimeline?: ApiProjectChangeTimelineEntry[];
 }
 
 export interface ApiCreateProjectSyllabus {

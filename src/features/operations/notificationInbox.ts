@@ -59,6 +59,13 @@ function isNotificationObsolete(
   }
 
   if (
+    notification.eventType === 'NEW_SUBJECT_ADDED' ||
+    notification.eventType === 'NEW_SEMESTER_ADDED'
+  ) {
+    return false;
+  }
+
+  if (
     notification.eventType === 'PROJECT_MODIFIED' ||
     (notification.projectId && !notification.subjectId)
   ) {

@@ -1,26 +1,22 @@
-import { useEffect, useRef } from 'react';
+import { useEffect } from 'react';
 import { useAuth } from '../auth/AuthContext';
 import { useOperations } from './OperationsContext';
+import { shouldRunProjectsBootstrap } from './projectsBootstrapState';
 
-/** Carga el listado de proyectos cuando hay sesión y backend activo. */
+/** Carga el listado de proyectos y resumen de notificaciones cuando hay sesión y backend activo. */
 export function ProjectsBootstrap() {
-  const { isAuthenticated, isLoading: authLoading } = useAuth();
-  const { backendEnabled, loadProjects, loadNotifications } = useOperations();
-  const loadedRef = useRef(false);
+  const { isAuthenticated, isLoading: authLoading, user } = useAuth();
+  const { backendEnabled, loadProjects, loadNotificationSummary } = useOperations();
 
   useEffect(() => {
-    if (!isAuthenticated) {
-      loadedRef.current = false;
-      return;
-    }
+    if (!isAuthenticated) return;
     if (!backendEnabled || authLoading) return;
-    if (loadedRef.current) return;
+    if (!shouldRunProjectsBootstrap(user?.id)) return;
 
-    loadedRef.current = true;
-    void Promise.all([loadProjects(), loadNotifications()]).catch(() => {
-      loadedRef.current = false;
+    void Promise.all([loadProjects(), loadNotificationSummary()]).catch(() => {
+      // Permite reintentar si falla la carga inicial.
     });
-  }, [backendEnabled, authLoading, isAuthenticated, loadProjects, loadNotifications]);
+  }, [backendEnabled, authLoading, isAuthenticated, user?.id, loadProjects, loadNotificationSummary]);
 
   return null;
 }

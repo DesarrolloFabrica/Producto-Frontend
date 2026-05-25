@@ -1,4 +1,4 @@
-import { Link } from 'react-router-dom';
+import { ContextLink } from '../../navigation/ContextLink';
 import { ArrowRight, AlertTriangle, CheckCircle2, Clock3, ShieldAlert } from 'lucide-react';
 import { motion } from 'motion/react';
 import type { OperationalBlocker, OperationalInsight, OperationalNextStep } from '../../features/operations/operationalTypes';
@@ -115,9 +115,9 @@ function inferImpactHint(text: string) {
 
 function ActionLink({ to, label }: { to: string; label: string }) {
   return (
-    <Link to={to} className="mt-2 inline-flex items-center gap-1 rounded-xl text-[10px] font-black uppercase tracking-widest text-orange-600 hover:text-orange-700">
+    <ContextLink to={to} className="mt-2 inline-flex items-center gap-1 rounded-xl text-[10px] font-black uppercase tracking-widest text-orange-600 hover:text-orange-700">
       {label} <ArrowRight className="h-3 w-3" />
-    </Link>
+    </ContextLink>
   );
 }
 
