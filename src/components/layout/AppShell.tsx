@@ -1,4 +1,4 @@
-import { Bell, ClipboardList, Factory, FolderKanban, Home, LogOut, Settings } from 'lucide-react';
+import { Bell, ClipboardCheck, ClipboardList, CloudUpload, Factory, FolderKanban, Home, LogOut, Settings } from 'lucide-react';
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { ScrollRestoration } from '../../navigation/ScrollRestoration';
 import { useAuth } from '../../features/auth/AuthContext';
@@ -24,12 +24,29 @@ const factoryLinks = [
   { to: '/notifications', label: 'Notificaciones', icon: Bell },
 ];
 
+const planningLinks = [
+  { to: '/planning/dashboard', label: 'Validaciones', icon: ClipboardCheck },
+  { to: '/notifications', label: 'Notificaciones', icon: Bell },
+];
+
+const lmsLinks = [
+  { to: '/lms/dashboard', label: 'Carga LMS', icon: CloudUpload },
+  { to: '/notifications', label: 'Notificaciones', icon: Bell },
+];
+
 export function AppShell() {
   const { role, logout, user } = useAuth();
   const { notifications, notificationSummary, projects } = useOperations();
   const summaryQuery = useNotificationSummaryQuery(Boolean(user));
   const navigate = useNavigate();
-  const links = role === 'FABRICA' ? factoryLinks : productLinks;
+  const links =
+    role === 'FABRICA'
+      ? factoryLinks
+      : role === 'PLANEACION'
+        ? planningLinks
+        : role === 'LMS'
+          ? lmsLinks
+          : productLinks;
   const actionableBadge =
     summaryQuery.data?.actionableCount ??
     notificationSummary?.actionableCount ??

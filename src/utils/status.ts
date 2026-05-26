@@ -2,6 +2,7 @@ import type { ChecklistStatus, Priority, ProjectStatus, SemesterStatus, SubjectS
 
 export const projectStatusLabels: Record<ProjectStatus, string> = {
   PENDING_SYLLABUS: 'Pend. syllabus',
+  PENDING_SUBJECT_MATTER_EXPERT: 'Pend. experto',
   READY_FOR_PRODUCTION: 'Listo fabrica',
   IN_PRODUCTION: 'En produccion',
   IN_REVIEW: 'En revision',
@@ -47,6 +48,7 @@ export const priorityLabels: Record<Priority, string> = {
 
 export const projectStatusTone: Record<ProjectStatus, string> = {
   PENDING_SYLLABUS: 'bg-amber-50 text-amber-600 border-amber-100',
+  PENDING_SUBJECT_MATTER_EXPERT: 'bg-violet-50 text-violet-700 border-violet-100',
   READY_FOR_PRODUCTION: 'bg-blue-50 text-blue-600 border-blue-100',
   IN_PRODUCTION: 'bg-orange-50 text-orange-600 border-orange-100',
   IN_REVIEW: 'bg-purple-50 text-purple-600 border-purple-100',

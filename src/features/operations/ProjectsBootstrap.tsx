@@ -13,10 +13,16 @@ export function ProjectsBootstrap() {
     if (!backendEnabled || authLoading) return;
     if (!shouldRunProjectsBootstrap(user?.id)) return;
 
-    void Promise.all([loadProjects(), loadNotificationSummary()]).catch(() => {
+    const role = user?.role;
+    const usesInstitutionalPanelOnly = role === 'PLANEACION' || role === 'LMS';
+
+    void Promise.all([
+      usesInstitutionalPanelOnly ? Promise.resolve() : loadProjects(),
+      loadNotificationSummary(),
+    ]).catch(() => {
       // Permite reintentar si falla la carga inicial.
     });
-  }, [backendEnabled, authLoading, isAuthenticated, user?.id, loadProjects, loadNotificationSummary]);
+  }, [backendEnabled, authLoading, isAuthenticated, user?.id, user?.role, loadProjects, loadNotificationSummary]);
 
   return null;
 }

@@ -11,6 +11,12 @@ const stateInfo: Record<ProjectStatus, { meaning: string; enables: string; block
     blocks: 'Bloquea produccion completa de Fabrica.',
     next: 'Listo fabrica',
   },
+  PENDING_SUBJECT_MATTER_EXPERT: {
+    meaning: 'La solicitud requiere confirmacion/activacion por experto tematico.',
+    enables: 'Permite asignar y confirmar el experto externo.',
+    blocks: 'Bloquea inicio de produccion hasta activar la solicitud.',
+    next: 'Listo fabrica',
+  },
   READY_FOR_PRODUCTION: {
     meaning: 'Fabrica puede iniciar produccion con los documentos disponibles.',
     enables: 'Habilita checklist, produccion y seguimiento por materia.',

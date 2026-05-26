@@ -1,4 +1,6 @@
 import type { Location } from 'react-router-dom';
+import type { Role } from '../types/domain';
+import { homePathForRole, isPathAllowedForRole } from './roleNavigation';
 
 export type NavigationState = {
   from?: string;
@@ -26,9 +28,15 @@ export function appendReturnTo(destination: string, returnTo: string): string {
   return `${path}${qs ? `?${qs}` : ''}${hash}`;
 }
 
-export function resolveBackTarget(location: Location, fallback: string): string {
+export function resolveBackTarget(
+  location: Location,
+  fallback: string,
+  role: Role | null = null,
+): string {
+  const safeFallback = isPathAllowedForRole(fallback, role) ? fallback : homePathForRole(role);
+
   const state = location.state as NavigationState | null;
-  if (state?.from && state.from.startsWith('/')) {
+  if (state?.from && state.from.startsWith('/') && isPathAllowedForRole(state.from, role)) {
     return state.from;
   }
 
@@ -36,13 +44,17 @@ export function resolveBackTarget(location: Location, fallback: string): string 
   if (returnTo) {
     try {
       const decoded = decodeURIComponent(returnTo);
-      if (decoded.startsWith('/')) return decoded;
+      if (decoded.startsWith('/') && isPathAllowedForRole(decoded, role)) {
+        return decoded;
+      }
     } catch {
-      if (returnTo.startsWith('/')) return returnTo;
+      if (returnTo.startsWith('/') && isPathAllowedForRole(returnTo, role)) {
+        return returnTo;
+      }
     }
   }
 
-  return fallback;
+  return safeFallback;
 }
 
 export function saveScrollPosition(key: string, scrollY = window.scrollY): void {

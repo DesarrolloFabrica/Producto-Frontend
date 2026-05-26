@@ -10,11 +10,49 @@ import type {
 
 export type { SubjectOperationalState } from '../../types/domain';
 
-export function getProjectSubjects(
-  project: VirtualizationProject,
-): Array<SubjectSummary | SubjectVirtualization> {
-  if (project.subjects.length > 0) return project.subjects;
-  return project.subjectsSummary ?? [];
+type ProjectSubject = SubjectSummary | SubjectVirtualization;
+
+/** Lista única de asignaturas por proyecto. */
+export function listSubjectsForProject(project: VirtualizationProject): ProjectSubject[] {
+  const byId = new Map<string, ProjectSubject>();
+
+  if (project.subjects.length > 0) {
+    for (const subject of project.subjects) {
+      if (subject.id) byId.set(subject.id, subject);
+    }
+    return Array.from(byId.values());
+  }
+
+  for (const summary of project.subjectsSummary ?? []) {
+    if (summary.id && !byId.has(summary.id)) {
+      byId.set(summary.id, summary);
+    }
+  }
+
+  return Array.from(byId.values());
+}
+
+export function dedupeWorkItems(items: SubjectWorkItem[]): SubjectWorkItem[] {
+  const seen = new Map<string, SubjectWorkItem>();
+  for (const item of items) {
+    const key = `${item.projectId}:${item.subjectId}`;
+    if (!seen.has(key)) seen.set(key, item);
+  }
+  return Array.from(seen.values());
+}
+
+export function getProjectSubjects(project: VirtualizationProject): ProjectSubject[] {
+  return listSubjectsForProject(project);
+}
+
+export function dedupeProjectsById(projects: VirtualizationProject[]): VirtualizationProject[] {
+  const seen = new Map<string, VirtualizationProject>();
+  for (const project of projects) {
+    if (!seen.has(project.id)) {
+      seen.set(project.id, project);
+    }
+  }
+  return Array.from(seen.values());
 }
 
 export interface SubjectSummaryLike {
@@ -48,6 +86,10 @@ export interface SubjectWorkItem {
   createdFromChange?: boolean;
   actionLabel: string;
   operationalLabel: string;
+  /** Agrupa varias materias de la misma solicitud nueva en un solo ítem de bandeja. */
+  isProjectGrouped?: boolean;
+  groupedSubjectCount?: number;
+  groupedSemesterNumbers?: number[];
 }
 
 const OPERATIONAL_LABELS: Record<SubjectOperationalState, string> = {
@@ -236,13 +278,9 @@ export function buildSubjectWorkItem(
 export function flattenProjectSubjects(
   projects: VirtualizationProject[],
 ): Array<{ project: VirtualizationProject; subject: SubjectSummaryLike }> {
-  return projects.flatMap((project) => {
-    const summaries =
-      project.subjects.length > 0
-        ? project.subjects
-        : (project.subjectsSummary ?? []);
-    return summaries.map((subject) => ({ project, subject }));
-  });
+  return dedupeProjectsById(projects).flatMap((project) =>
+    listSubjectsForProject(project).map((subject) => ({ project, subject })),
+  );
 }
 
 export function groupSubjectsByOperationalState(
@@ -266,9 +304,57 @@ export function buildWorkItemsFromProjects(
   projects: VirtualizationProject[],
   observations: OperationalObservation[] = [],
 ): SubjectWorkItem[] {
-  return flattenProjectSubjects(projects).map(({ project, subject }) =>
+  const items = flattenProjectSubjects(projects).map(({ project, subject }) =>
     buildSubjectWorkItem(project, subject, observations),
   );
+  return dedupeWorkItems(items);
+}
+
+/** Una fila por solicitud en bandejas de solicitudes nuevas (evita N filas por N materias). */
+export function groupNewRequestItemsByProject(items: SubjectWorkItem[]): SubjectWorkItem[] {
+  const initialScope = items.filter(
+    (item) => item.operationalState === 'NOT_STARTED' && !item.createdFromChange,
+  );
+  const addedLater = items.filter(
+    (item) => item.operationalState === 'NOT_STARTED' && item.createdFromChange,
+  );
+
+  const byProject = new Map<string, SubjectWorkItem[]>();
+  for (const item of initialScope) {
+    const list = byProject.get(item.projectId) ?? [];
+    list.push(item);
+    byProject.set(item.projectId, list);
+  }
+
+  const grouped: SubjectWorkItem[] = [];
+  for (const [projectId, group] of byProject) {
+    if (group.length === 1) {
+      grouped.push({
+        ...group[0],
+        actionUrl: `/projects/${projectId}?tab=semesters`,
+      });
+      continue;
+    }
+
+    const first = group[0];
+    const semesters = [...new Set(group.map((g) => g.semesterNumber))].sort((a, b) => a - b);
+    const latestDelivery = group.reduce((latest, item) => {
+      const ts = new Date(item.expectedDeliveryDate).getTime();
+      return ts > new Date(latest).getTime() ? item.expectedDeliveryDate : latest;
+    }, first.expectedDeliveryDate);
+
+    grouped.push({
+      ...first,
+      subjectName: first.program,
+      expectedDeliveryDate: latestDelivery,
+      actionUrl: `/projects/${projectId}?tab=semesters`,
+      isProjectGrouped: true,
+      groupedSubjectCount: group.length,
+      groupedSemesterNumbers: semesters,
+    });
+  }
+
+  return [...grouped, ...addedLater];
 }
 
 export const TRAY_PRIORITY: SubjectOperationalState[] = [

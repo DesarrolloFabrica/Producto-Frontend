@@ -58,9 +58,16 @@ function ProductItemBody({ item }: { item: SubjectWorkItem }) {
         <p className="truncate text-xs font-bold text-slate-900">{item.subjectName}</p>
         {item.createdFromChange && <ChangeOriginBadge kind="subject" />}
       </div>
-      <p className="text-[10px] font-semibold text-amber-700">
-        {item.program} · Sem. {item.semesterNumber}
-      </p>
+      {item.isProjectGrouped ? (
+        <p className="text-[10px] font-semibold text-amber-700">
+          {item.groupedSubjectCount} materia{item.groupedSubjectCount !== 1 ? 's' : ''} · Sem.{' '}
+          {item.groupedSemesterNumbers?.join(', ')}
+        </p>
+      ) : (
+        <p className="text-[10px] font-semibold text-amber-700">
+          {item.program} · Sem. {item.semesterNumber}
+        </p>
+      )}
       <p className="text-[10px] font-medium text-slate-400">
         Entrega: {formatDate(item.expectedDeliveryDate)}
       </p>

@@ -40,9 +40,9 @@ export interface CreateProjectFormInput {
   school: string;
   program: string;
   modality: string;
+  subjectMatterExpertType: 'INTERNAL' | 'EXTERNAL';
   priority: Priority;
   requestType?: string;
-  expectedDeliveryDate: string;
   observations?: string;
   hasSyllabus: boolean | null;
   syllabusUrl?: string;
@@ -225,7 +225,7 @@ export function mapSemesterFromApi(
         : deliveredCount === semesterSubjects.length
           ? 'ENTREGADO'
           : 'EN_PRODUCCION',
-    factoryExpectedDate: toDateOnly(api.factoryExpectedDate),
+    factoryExpectedDate: api.factoryExpectedDate ? toDateOnly(api.factoryExpectedDate) : '',
     continuationDate: api.continuationDate ? toDateOnly(api.continuationDate) : '',
     observations: '',
     createdFromChange: Boolean(api.createdFromChange),
@@ -275,7 +275,11 @@ export function mapProjectListItemFromApi(api: ApiProjectListItem): Virtualizati
     status: mapStatusFromApi(api.status),
     progress: api.progress,
     createdAt: toDateOnly(api.createdAt),
-    expectedDeliveryDate: toDateOnly(api.expectedDeliveryDate),
+    expectedDeliveryDate: api.expectedDeliveryDate ? toDateOnly(api.expectedDeliveryDate) : '',
+    subjectMatterExpertType: api.subjectMatterExpertType ?? 'INTERNAL',
+    subjectMatterExpertStatus: api.subjectMatterExpertStatus ?? 'READY',
+    activatedAt: api.activatedAt ? toDateOnly(api.activatedAt) : null,
+    expertConfirmedAt: api.expertConfirmedAt ? toDateOnly(api.expertConfirmedAt) : null,
     productOwner: mapOwnerName(api.productOwner),
     factoryOwner: mapOwnerName(api.factoryOwner),
     observations: '',
@@ -287,11 +291,13 @@ export function mapProjectListItemFromApi(api: ApiProjectListItem): Virtualizati
 }
 
 export function mapProjectDetailFromApi(api: ApiProjectDetail): VirtualizationProject {
-  const subjects: SubjectVirtualization[] = [];
+  const subjectsById = new Map<string, SubjectVirtualization>();
 
   api.semesters.forEach((semester) => {
     semester.subjects.forEach((subject) => {
-      subjects.push(
+      if (subjectsById.has(subject.id)) return;
+      subjectsById.set(
+        subject.id,
         mapSubjectFromApi(subject, api.id, semester.semesterNumber, {
           semesterFactoryExpectedDate: semester.factoryExpectedDate,
           projectExpectedDeliveryDate: api.expectedDeliveryDate,
@@ -299,6 +305,8 @@ export function mapProjectDetailFromApi(api: ApiProjectDetail): VirtualizationPr
       );
     });
   });
+
+  const subjects = Array.from(subjectsById.values());
 
   const semesters = api.semesters.map((semester) => mapSemesterFromApi(semester, subjects));
 
@@ -312,7 +320,11 @@ export function mapProjectDetailFromApi(api: ApiProjectDetail): VirtualizationPr
     status: mapStatusFromApi(api.status),
     progress: api.progress,
     createdAt: toDateOnly(api.createdAt),
-    expectedDeliveryDate: toDateOnly(api.expectedDeliveryDate),
+    expectedDeliveryDate: api.expectedDeliveryDate ? toDateOnly(api.expectedDeliveryDate) : '',
+    subjectMatterExpertType: api.subjectMatterExpertType ?? 'INTERNAL',
+    subjectMatterExpertStatus: api.subjectMatterExpertStatus ?? 'READY',
+    activatedAt: api.activatedAt ? toDateOnly(api.activatedAt) : null,
+    expertConfirmedAt: api.expertConfirmedAt ? toDateOnly(api.expertConfirmedAt) : null,
     productOwner: mapOwnerName(api.productOwner),
     factoryOwner: mapOwnerName(api.factoryOwner),
     observations: api.observations ?? '',
@@ -352,7 +364,15 @@ export function mapSubjectWorkspaceProjectFromApi(api: ApiSubjectWorkspace): Vir
     status: mapStatusFromApi(api.projectMeta.status),
     progress: api.projectMeta.progress,
     createdAt: toDateOnly(api.projectMeta.createdAt),
-    expectedDeliveryDate: toDateOnly(api.projectMeta.expectedDeliveryDate),
+    expectedDeliveryDate: api.projectMeta.expectedDeliveryDate
+      ? toDateOnly(api.projectMeta.expectedDeliveryDate)
+      : '',
+    subjectMatterExpertType: api.projectMeta.subjectMatterExpertType ?? 'INTERNAL',
+    subjectMatterExpertStatus: api.projectMeta.subjectMatterExpertStatus ?? 'READY',
+    activatedAt: api.projectMeta.activatedAt ? toDateOnly(api.projectMeta.activatedAt) : null,
+    expertConfirmedAt: api.projectMeta.expertConfirmedAt
+      ? toDateOnly(api.projectMeta.expertConfirmedAt)
+      : null,
     productOwner: mapOwnerName(api.projectMeta.productOwner),
     factoryOwner: mapOwnerName(api.projectMeta.factoryOwner),
     observations: '',
@@ -381,18 +401,15 @@ export function mapProjectsFromApi(items: ApiProjectListItem[]): VirtualizationP
 }
 
 export function mapCreateProjectToApi(input: CreateProjectFormInput): ApiCreateProjectPayload {
-  const deliveryIso = toIsoDateTime(input.expectedDeliveryDate);
-
   const payload: ApiCreateProjectPayload = {
     school: input.school.trim(),
     program: input.program.trim(),
     modality: mapModalityToApi(input.modality),
+    subjectMatterExpertType: input.subjectMatterExpertType,
     requestType: input.requestType?.trim() || 'Virtualizacion completa',
     priority: mapPriorityToApi(input.priority),
-    expectedDeliveryDate: deliveryIso,
     semesters: input.semesters.map((semester) => ({
       semesterNumber: semester.number,
-      factoryExpectedDate: deliveryIso,
       subjects: semester.subjects.map((subject) => ({
         name: subject.name.trim(),
         topics: subject.topics.map((t) => t.trim()).filter(Boolean),

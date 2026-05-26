@@ -159,7 +159,7 @@ export function FactorySubjectDetail({ project, subject, observations }: Factory
     subject.checklist.length > 0 ? calculateSubjectProgress(subject) : mapSubjectToProgress(subject.status);
   const semester = project.semesters.find((item) => item.semesterNumber === subject.semesterNumber);
   const canSendCorrections = openCorrections.length === 0 && correctionsInReview.length > 0;
-  const hasCorrectionFlow = productCorrections.length > 0;
+  const hasCorrectionFlow = openCorrections.length > 0 || correctionsInReview.length > 0;
   const isApproved = productionState === 'APROBADA';
 
   const handleStartProduction = async () => {
@@ -183,7 +183,7 @@ export function FactorySubjectDetail({ project, subject, observations }: Factory
     setSubmittingAction('complete');
     try {
       await updateProductionStatusMutation.mutateAsync({ subjectId: subject.id, projectId: project.id, status: 'COMPLETADA' });
-      showToast('Materia enviada a Product para revisión.');
+      showToast('Producción finalizada — enviada a validación de Planeación.');
     } catch (updateError) {
       showToast(getApiErrorMessage(updateError), 'error');
     } finally {
@@ -198,7 +198,7 @@ export function FactorySubjectDetail({ project, subject, observations }: Factory
     setSubmittingAction('send-corrections');
     try {
       await updateProductionStatusMutation.mutateAsync({ subjectId: subject.id, projectId: project.id, status: 'COMPLETADA' });
-      showToast('Correcciones enviadas a Product.');
+      showToast('Producción corregida reentregada a validación operacional.');
     } catch (updateError) {
       showToast(getApiErrorMessage(updateError), 'error');
     } finally {
@@ -341,7 +341,7 @@ export function FactorySubjectDetail({ project, subject, observations }: Factory
                 : productionState === 'PENDIENTE'
                   ? 'Cuando el equipo inicie el trabajo, marca la materia como En producción.'
                   : productionState === 'EN_PRODUCCION'
-                    ? 'Cuando el contenido esté listo, envía la materia a Product para revisión.'
+                    ? 'Cuando el contenido esté listo, finalice la producción para enviarla a validación de Planeación.'
                     : isApproved
                       ? 'Product aprobó esta materia. No hay acciones pendientes de Fábrica.'
                       : 'La materia ya fue enviada a Product. Espera validación.'}
@@ -364,7 +364,7 @@ export function FactorySubjectDetail({ project, subject, observations }: Factory
             {productionState === 'EN_PRODUCCION' && (
               <div className="space-y-3">
                 <div className="rounded-[12px] bg-amber-50 px-4 py-3 text-sm font-medium text-amber-700">
-                  Usa esta acción cuando el contenido ya esté listo para revisión de Product.
+                  Entrega la producción a validación operacional de Planeación. El flujo continúa hacia LMS antes de la revisión académica de Product.
                 </div>
                 <Button
                   onClick={() => void handleMarkCompleted()}
@@ -372,7 +372,7 @@ export function FactorySubjectDetail({ project, subject, observations }: Factory
                   className="w-full py-3 text-sm font-bold shadow-[0_14px_28px_-20px_rgba(249,115,22,0.55)]"
                 >
                   {submittingAction === 'complete' ? <Clock3 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
-                  Enviar materia a Product
+                  Finalizar producción
                 </Button>
               </div>
             )}
@@ -458,7 +458,7 @@ export function FactorySubjectDetail({ project, subject, observations }: Factory
                         className="min-w-[280px] py-3 text-sm font-bold shadow-[0_14px_28px_-20px_rgba(14,165,233,0.6)]"
                       >
                         {submittingAction === 'send-corrections' ? <Clock3 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-                        Enviar correcciones a Product
+                        Reentregar producción corregida
                       </Button>
                     </div>
                   </div>

@@ -243,6 +243,8 @@ export function useUpdateSubjectProductionStatusMutation() {
         (current) => reconcileProjectsList(current, project, variables.subjectId),
       );
       void queryClient.invalidateQueries({ queryKey: queryKeys.notificationsSummary(), refetchType: 'none' });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.operationalWorkspace(variables.subjectId) });
+      void queryClient.invalidateQueries({ queryKey: ['institutional-work'] });
       markFactoryQueriesStale(queryClient);
     },
   });

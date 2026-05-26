@@ -1,5 +1,5 @@
 import { useMemo, useState, useEffect } from 'react';
-import { ArrowRight, BookOpenCheck, Factory, Lock, Shield, Sparkles, AlertTriangle } from 'lucide-react';
+import { ArrowRight, BookOpenCheck, Factory, Lock, Shield, Sparkles, AlertTriangle, ClipboardCheck, CloudUpload } from 'lucide-react';
 import { motion } from 'motion/react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { Button } from '../../components/ui/Button';
@@ -32,6 +32,8 @@ export function LoginPage() {
     () => [
       { label: 'Product', email: 'product@local', password: 'Product123!', icon: BookOpenCheck },
       { label: 'Fábrica', email: 'fabrica@local', password: 'Fabrica123!', icon: Factory },
+      { label: 'Planeación', email: 'planeacion@local', password: 'Planeacion123!', icon: ClipboardCheck },
+      { label: 'LMS', email: 'lms@local', password: 'Lms123!', icon: CloudUpload },
       { label: 'Admin', email: 'admin@local', password: 'Admin123!', icon: Shield },
     ],
     [],

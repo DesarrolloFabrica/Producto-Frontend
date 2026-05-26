@@ -1,37 +1,28 @@
-import { useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { ContextBackLink } from '../../navigation/ContextBackLink';
 import { ContextLink } from '../../navigation/ContextLink';
-import { ArrowLeft, BookOpen, CalendarDays, CheckCircle2, MessageSquare, Plus, X, Loader2 } from 'lucide-react';
+import { ArrowLeft, BookOpen, CalendarDays, CheckCircle2, MessageSquare } from 'lucide-react';
 import { Card } from '../../components/ui/Card';
 import { PageHeader } from '../../components/ui/PageHeader';
 import { ProgressBar } from '../../components/ui/ProgressBar';
 import { StatusBadge } from '../../components/status/StatusBadge';
-import { Modal } from '../../components/ui/Modal';
-import { Button } from '../../components/ui/Button';
 import { DeepLinkNotFound } from '../../components/feedback/DeepLinkNotFound';
 import { ProjectsLoadNotice } from '../../components/feedback/ProjectsLoadNotice';
 import { useOperations } from '../../features/operations/OperationsContext';
 import { useEnsureProjectDetail } from '../operations/useEnsureProjectDetail';
 import { useAuth } from '../auth/AuthContext';
 import { formatDate } from '../../utils/formatters';
-import { cn } from '../../components/ui/tokens';
 import { FactorySemesterSubjectsView } from './FactorySemesterSubjectsView';
-import { useToast } from '../../components/ui/ToastProvider';
 import { useDismissNotificationsOnVisit } from '../notifications/useDismissNotificationsOnVisit';
 import { ChangeOriginBadge, ChangeOriginCardAccent, ChangeOriginHint } from '../../components/change-tracking/ChangeOriginBadge';
-import { SubjectTopicsEditor } from '../../components/forms/SubjectTopicsEditor';
-import { SUBJECT_TOPICS_MIN, validateSubjectTopicsList } from '../../utils/subjectTopics';
 
 export function ProjectSemesterSubjectsPage() {
   const { projectId, semesterNumber } = useParams();
-  const { projectObservations, addSubjectToSemester, refreshProjects } = useOperations();
-  const { showToast } = useToast();
+  const { projectObservations, refreshProjects } = useOperations();
   const { role } = useAuth();
   const { project, isLoading, error, notFound } = useEnsureProjectDetail(projectId);
   useDismissNotificationsOnVisit({ projectId: project?.id });
   const semesterNum = parseInt(semesterNumber ?? '0', 10);
-  const [showAddSubjectModal, setShowAddSubjectModal] = useState(false);
 
   if (isLoading) {
     return (
@@ -128,7 +119,10 @@ export function ProjectSemesterSubjectsPage() {
           <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-orange-500" />
           <div>
             <p className="text-sm font-bold text-slate-900">Revisión de asignaturas</p>
-            <p className="text-xs font-medium text-slate-600">Revisa las asignaturas de este semestre y valida el checklist de entregables. Cada asignatura tiene su propio checklist y observaciones.</p>
+            <p className="text-xs font-medium text-slate-600">
+              Revisa las asignaturas de este semestre y valida el checklist de entregables. Las asignaturas de un semestre
+              quedan definidas al crearlo; para agregar más materias, crea un nuevo semestre desde el detalle del proyecto.
+            </p>
           </div>
         </div>
       </Card>
@@ -136,8 +130,11 @@ export function ProjectSemesterSubjectsPage() {
       {subjects.length === 0 ? (
         <Card variant="subjectPanel" className="p-8 text-center">
           <BookOpen className="mx-auto h-10 w-10 text-slate-300" />
-          <p className="mt-3 text-sm font-bold text-slate-700">Sin asignaturas registradas</p>
-          <p className="mt-1 text-xs font-medium text-slate-500">Agrega la primera asignatura para comenzar la revisión.</p>
+          <p className="mt-3 text-sm font-bold text-slate-700">Sin asignaturas en este semestre</p>
+          <p className="mt-1 text-xs font-medium text-slate-500">
+            Este semestre no tiene materias registradas. Para incluir materias nuevas, agrega un semestre desde el detalle
+            del proyecto.
+          </p>
         </Card>
       ) : (
         <div className="grid gap-4 md:grid-cols-2">
@@ -207,24 +204,6 @@ export function ProjectSemesterSubjectsPage() {
           })}
         </div>
       )}
-
-      <button
-        type="button"
-        onClick={() => setShowAddSubjectModal(true)}
-        className="w-full flex items-center justify-center gap-2 rounded-2xl border-2 border-dashed border-orange-200 bg-orange-50/20 py-4 text-sm font-bold text-orange-600 hover:border-orange-300 hover:bg-orange-50/40 transition-all"
-      >
-        <Plus className="h-4 w-4" /> Agregar asignatura
-      </button>
-
-      <AddSubjectModal
-        isOpen={showAddSubjectModal}
-        onClose={() => setShowAddSubjectModal(false)}
-        semesterNumber={semesterNum}
-        defaultExpectedDate={semester?.factoryExpectedDate || project.expectedDeliveryDate}
-        onAdd={(payload) => addSubjectToSemester(project.id, payload)}
-        onSuccess={() => showToast('Modificación guardada y notificada a Fábrica.')}
-        onError={(message) => showToast(message, 'error')}
-      />
     </div>
   );
 }
@@ -235,126 +214,5 @@ function Info({ label, children }: { label: string; children: React.ReactNode })
       <p className="mb-1 text-[10px] font-semibold uppercase tracking-[0.1em] text-[#94A3B8]">{label}</p>
       <div className="text-sm font-medium text-[#1E293B]">{children}</div>
     </div>
-  );
-}
-
-interface AddSubjectModalProps {
-  isOpen: boolean;
-  onClose: () => void;
-  semesterNumber: number;
-  defaultExpectedDate: string;
-  onAdd: (payload: { semesterNumber: number; name: string; topics: string[]; expectedDeliveryDate: string; changeReason?: string }) => Promise<void>;
-  onSuccess: () => void;
-  onError: (message: string) => void;
-}
-
-function AddSubjectModal({ isOpen, onClose, semesterNumber, defaultExpectedDate, onAdd, onSuccess, onError }: AddSubjectModalProps) {
-  const [name, setName] = useState('');
-  const [topics, setTopics] = useState<string[]>([]);
-  const [expectedDeliveryDate, setExpectedDeliveryDate] = useState(defaultExpectedDate);
-  const [changeReason, setChangeReason] = useState('');
-  const [errors, setErrors] = useState<string[]>([]);
-  const [saving, setSaving] = useState(false);
-
-  const filledTopicsCount = topics.map((topic) => topic.trim()).filter(Boolean).length;
-  const canSubmit =
-    Boolean(name.trim()) &&
-    Boolean(expectedDeliveryDate) &&
-    filledTopicsCount >= SUBJECT_TOPICS_MIN &&
-    filledTopicsCount <= 6 &&
-    topics.every((topic) => topic.trim().length > 0);
-
-  const validate = (): boolean => {
-    const newErrors: string[] = [];
-    if (!name.trim()) newErrors.push('Ingresa el nombre de la asignatura.');
-    if (!expectedDeliveryDate) newErrors.push('Selecciona una fecha de entrega para esta asignatura.');
-    newErrors.push(...validateSubjectTopicsList(topics, name));
-    setErrors(newErrors);
-    return newErrors.length === 0;
-  };
-
-  const handleSubmit = async () => {
-    if (!validate()) return;
-    setSaving(true);
-    try {
-      await onAdd({
-        semesterNumber,
-        name,
-        topics: topics.map((topic) => topic.trim()).filter(Boolean),
-        expectedDeliveryDate,
-        changeReason: changeReason.trim() || undefined,
-      });
-      onSuccess();
-      setName('');
-      setTopics([]);
-      setExpectedDeliveryDate(defaultExpectedDate);
-      setChangeReason('');
-      setErrors([]);
-      onClose();
-    } catch (error) {
-      onError(error instanceof Error ? error.message : 'No se pudo guardar la modificación.');
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const handleClose = () => {
-    setName('');
-    setTopics([]);
-    setExpectedDeliveryDate(defaultExpectedDate);
-    setChangeReason('');
-    setErrors([]);
-    onClose();
-  };
-
-  const inputClass = 'w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-bold text-slate-900 focus:border-orange-300 focus:ring-2 focus:ring-orange-100 focus:outline-none transition-all';
-  const labelClass = 'block mb-2 text-[10px] font-black uppercase tracking-widest text-slate-400';
-
-  return (
-    <Modal isOpen={isOpen} onClose={handleClose} title="Agregar asignatura" description="Agrega una nueva asignatura al semestre. Los entregables quedarán en Pendiente para revisión." size="md">
-      <div className="space-y-5">
-        {errors.length > 0 && (
-          <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4">
-            <p className="text-xs font-bold text-rose-700">Corrige los siguientes errores:</p>
-            <ul className="mt-2 space-y-1">
-              {errors.map((err, i) => (
-                <li key={i} className="text-[11px] font-medium text-rose-600">• {err}</li>
-              ))}
-            </ul>
-          </div>
-        )}
-
-        <div>
-          <label className={labelClass}>Nombre de la asignatura</label>
-          <input className={inputClass} value={name} onChange={(e) => setName(e.target.value)} placeholder="Ej: Pensamiento Algoritmico" />
-        </div>
-
-        <div>
-          <label className={labelClass}>Fecha de entrega esperada de la asignatura</label>
-          <input required type="date" className={inputClass} value={expectedDeliveryDate} onChange={(e) => setExpectedDeliveryDate(e.target.value)} />
-          <p className="mt-1 text-[10px] font-medium text-slate-400">Esta fecha aplica solo para la nueva asignatura agregada.</p>
-        </div>
-
-        <div>
-          <label className={labelClass}>Motivo del cambio</label>
-          <textarea
-            className={cn(inputClass, 'min-h-24 resize-y')}
-            value={changeReason}
-            onChange={(e) => setChangeReason(e.target.value)}
-            placeholder="Opcional: explica por qué se agrega esta asignatura"
-          />
-        </div>
-
-        <SubjectTopicsEditor topics={topics} onChange={setTopics} inputClass={inputClass} labelClass={labelClass} />
-
-        <div className="flex justify-end gap-3 pt-4 border-t border-slate-100">
-          <Button type="button" variant="secondary" onClick={handleClose}>Cancelar</Button>
-          <Button disabled={saving || !canSubmit} onClick={handleSubmit}>
-            {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
-            {saving ? 'Guardando...' : 'Agregar asignatura'}
-          </Button>
-        </div>
-      </div>
-    </Modal>
   );
 }

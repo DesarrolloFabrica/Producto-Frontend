@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { AlertTriangle, ClipboardList, FolderKanban, Plus } from 'lucide-react';
+import { AlertTriangle, ClipboardList, FolderKanban, Plus, Sparkles, Factory } from 'lucide-react';
 import { MetricCard } from '../../components/cards/MetricCard';
 import { OperationalTray } from '../../components/operational/OperationalTray';
 import { Button } from '../../components/ui/Button';
@@ -7,8 +7,12 @@ import { PageHeader } from '../../components/ui/PageHeader';
 import { CreateProjectModal } from '../../components/forms/CreateProjectModal';
 import { ProjectsLoadNotice } from '../../components/feedback/ProjectsLoadNotice';
 import { useOperations } from '../../features/operations/OperationsContext';
-import { buildWorkItemsFromProjects } from '../../features/operations/subjectOperationalState';
+import {
+  buildWorkItemsFromProjects,
+  groupNewRequestItemsByProject,
+} from '../../features/operations/subjectOperationalState';
 import { isProjectLate } from '../../utils/status';
+import { isPendingExternalSubjectMatterExpert } from '../../utils/projectSme';
 
 function toTs(value?: string | null) {
   if (!value) return 0;
@@ -28,7 +32,32 @@ export function ProductDashboardPage() {
 
   const activeProjects = projects.filter((project) => !['CLOSED', 'DELIVERED_TO_LMS'].includes(project.status)).length;
   const deliveredProjects = projects.filter((project) => project.status === 'DELIVERED_TO_LMS' || project.status === 'CLOSED').length;
-  const lateProjects = projects.filter((project) => isProjectLate(project.expectedDeliveryDate, project.status)).length;
+  const pendingSubjectMatterExpert = projects.filter(isPendingExternalSubjectMatterExpert).length;
+  const lateProjects = projects.filter(
+    (project) =>
+      !isPendingExternalSubjectMatterExpert(project) &&
+      isProjectLate(project.expectedDeliveryDate, project.status),
+  ).length;
+
+  const projectCreatedAt = useMemo(
+    () => new Map(projects.map((project) => [project.id, toTs(project.createdAt)])),
+    [projects],
+  );
+
+  const notStarted = useMemo(() => {
+    const items = workItems
+      .filter((i) => i.operationalState === 'NOT_STARTED')
+      .sort(
+        (a, b) =>
+          (projectCreatedAt.get(b.projectId) ?? 0) - (projectCreatedAt.get(a.projectId) ?? 0),
+      );
+    return groupNewRequestItemsByProject(items);
+  }, [workItems, projectCreatedAt]);
+
+  const inProduction = useMemo(
+    () => workItems.filter((i) => i.operationalState === 'IN_PRODUCTION'),
+    [workItems],
+  );
 
   const inReview = useMemo(() => workItems.filter((i) => i.operationalState === 'IN_REVIEW'), [workItems]);
   const correctionSent = useMemo(() => workItems.filter((i) => i.operationalState === 'CORRECTION_SENT'), [workItems]);
@@ -74,11 +103,41 @@ export function ProductDashboardPage() {
         />
       )}
 
-      <section className="grid gap-3 md:grid-cols-4">
+      <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
         <MetricCard variant="subjectPanel" label="Solicitudes activas" value={activeProjects} icon={FolderKanban} />
+        <MetricCard
+          variant="subjectPanel"
+          label="Pend. experto temático"
+          value={pendingSubjectMatterExpert}
+          icon={ClipboardList}
+        />
+        <MetricCard variant="subjectPanel" label="Solicitudes nuevas" value={notStarted.length} icon={Sparkles} />
         <MetricCard variant="subjectPanel" label="Materias por revisar" value={inReview.length} icon={ClipboardList} />
         <MetricCard variant="subjectPanel" label="Correcciones por validar" value={correctionSent.length} icon={AlertTriangle} />
         <MetricCard variant="subjectPanel" label="Proyectos atrasados" value={lateProjects} icon={AlertTriangle} />
+      </section>
+
+      <section className="grid gap-4 md:grid-cols-2">
+        <OperationalTray
+          title="Solicitudes nuevas"
+          description="Solicitudes recién creadas con materias pendientes de iniciar producción en Fábrica."
+          count={notStarted.length}
+          items={notStarted}
+          emptyMessage="Sin solicitudes nuevas pendientes."
+          viewAllTo="/product/work?status=NOT_STARTED"
+          icon={Sparkles}
+          role="product"
+        />
+        <OperationalTray
+          title="En producción (Fábrica)"
+          description="Materias que Fábrica está produciendo actualmente."
+          count={inProduction.length}
+          items={inProduction}
+          emptyMessage="Sin materias en producción."
+          viewAllTo="/product/work?status=IN_PRODUCTION"
+          icon={Factory}
+          role="product"
+        />
       </section>
 
       <section className="grid gap-4 md:grid-cols-2">

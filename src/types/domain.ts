@@ -1,7 +1,52 @@
-export type Role = 'PRODUCT' | 'FABRICA' | 'ADMIN';
+export type Role = 'PRODUCT' | 'FABRICA' | 'PLANEACION' | 'LMS' | 'ADMIN';
+
+export type InstitutionalOperationalState =
+  | 'PENDING_PLANNING_INITIAL_VALIDATION'
+  | 'RETURNED_TO_PRODUCT_FROM_PLANNING'
+  | 'PENDING_FACTORY'
+  | 'IN_FACTORY_PRODUCTION'
+  | 'PENDING_PLANNING_PRODUCTION_VALIDATION'
+  | 'RETURNED_TO_FACTORY_FROM_PLANNING'
+  | 'PENDING_LMS_UPLOAD'
+  | 'IN_LMS_UPLOAD'
+  | 'PENDING_PLANNING_LMS_VALIDATION'
+  | 'RETURNED_TO_LMS_FROM_PLANNING'
+  | 'PENDING_PRODUCT_ACADEMIC_REVIEW'
+  | 'IN_PRODUCT_ACADEMIC_REVIEW'
+  | 'CHANGES_REQUESTED_BY_PRODUCT'
+  | 'PENDING_PROJECT_RADICATION'
+  | 'FINALIZED';
+
+export type InstitutionalOperationalAction =
+  | 'INSTITUTIONAL_SUBJECT_CREATED'
+  | 'PLANNING_VALIDATE_INITIAL'
+  | 'PLANNING_RETURN_INITIAL'
+  | 'FACTORY_START_PRODUCTION'
+  | 'FACTORY_DELIVER_CONTENT'
+  | 'PLANNING_VALIDATE_PRODUCTION'
+  | 'PLANNING_RETURN_PRODUCTION'
+  | 'LMS_START_UPLOAD'
+  | 'LMS_CONFIRM_UPLOAD'
+  | 'PLANNING_VALIDATE_LMS'
+  | 'PLANNING_RETURN_LMS'
+  | 'PRODUCT_START_ACADEMIC_REVIEW'
+  | 'PRODUCT_REQUEST_CHANGES'
+  | 'PRODUCT_APPROVE_ACADEMIC'
+  | 'PRODUCT_RESUBMIT_REQUEST';
+
+export type SlaStatus =
+  | 'ON_TIME'
+  | 'AT_RISK'
+  | 'OVERDUE'
+  | 'FINALIZED_ON_TIME'
+  | 'FINALIZED_OVERDUE';
+
+export type SubjectMatterExpertType = 'INTERNAL' | 'EXTERNAL';
+export type SubjectMatterExpertStatus = 'READY' | 'PENDING';
 
 export type ProjectStatus =
   | 'PENDING_SYLLABUS'
+  | 'PENDING_SUBJECT_MATTER_EXPERT'
   | 'READY_FOR_PRODUCTION'
   | 'IN_PRODUCTION'
   | 'IN_REVIEW'
@@ -80,6 +125,10 @@ export interface VirtualizationProject {
   progress: number;
   createdAt: string;
   expectedDeliveryDate: string;
+  subjectMatterExpertType: SubjectMatterExpertType;
+  subjectMatterExpertStatus: SubjectMatterExpertStatus;
+  activatedAt?: string | null;
+  expertConfirmedAt?: string | null;
   productOwner: string;
   factoryOwner: string;
   observations: string;

@@ -24,4 +24,7 @@ export const projectsApi = {
   closeProject: (id: string) => apiClient.post<ApiProjectDetail>(`/projects/${id}/close`, {}),
 
   startProduction: (id: string) => apiClient.post<ApiProjectActionResponse>(`/projects/${id}/start-production`, {}),
+
+  confirmSubjectMatterExpert: (id: string) =>
+    apiClient.patch<ApiProjectDetail>(`/projects/${id}/subject-matter-expert/confirm`, {}),
 };

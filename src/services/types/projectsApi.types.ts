@@ -72,7 +72,11 @@ export interface ApiProjectListItem {
   priority: ApiPriority;
   status: ApiProjectStatus;
   progress: number;
-  expectedDeliveryDate: string;
+  expectedDeliveryDate: string | null;
+  activatedAt?: string | null;
+  subjectMatterExpertType?: 'INTERNAL' | 'EXTERNAL';
+  subjectMatterExpertStatus?: 'READY' | 'PENDING';
+  expertConfirmedAt?: string | null;
   productOwner: ApiProjectOwner;
   factoryOwner: ApiProjectOwner | null;
   createdAt: string;
@@ -127,7 +131,7 @@ export interface ApiSemesterDetail {
   semesterNumber: number;
   status: ApiSemesterStatus;
   createdFromChange: boolean;
-  factoryExpectedDate: string;
+  factoryExpectedDate: string | null;
   continuationDate: string | null;
   subjects: ApiSubjectDetail[];
   createdAt: string;
@@ -164,7 +168,7 @@ export interface ApiCreateProjectSubject {
 
 export interface ApiCreateProjectSemester {
   semesterNumber: number;
-  factoryExpectedDate: string;
+  factoryExpectedDate?: string;
   subjects: ApiCreateProjectSubject[];
 }
 
@@ -172,9 +176,10 @@ export interface ApiCreateProjectPayload {
   school: string;
   program: string;
   modality: ApiModality;
+  subjectMatterExpertType: 'INTERNAL' | 'EXTERNAL';
   requestType: string;
   priority: ApiPriority;
-  expectedDeliveryDate: string;
+  expectedDeliveryDate?: string;
   factoryOwnerId?: string;
   observations?: string;
   syllabus?: ApiCreateProjectSyllabus;

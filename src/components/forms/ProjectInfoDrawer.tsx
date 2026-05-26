@@ -2,6 +2,7 @@ import { Drawer } from '../ui/Drawer';
 import { StatusBadge } from '../status/StatusBadge';
 import { CalendarDays, CheckCircle2, FileText, User, BookOpen, X } from 'lucide-react';
 import { formatDate } from '../../utils/formatters';
+import { formatProjectExpectedDelivery } from '../../utils/projectSme';
 import { Button } from '../ui/Button';
 import type { VirtualizationProject } from '../../types/domain';
 import { cn } from '../ui/tokens';
@@ -43,7 +44,11 @@ export function ProjectInfoDrawer({ isOpen, onClose, project }: ProjectInfoDrawe
         {/* Fechas y responsables */}
         <div className="space-y-3">
           <InfoRow icon={CalendarDays} label="Fecha de creación" value={formatDate(project.createdAt)} />
-          <InfoRow icon={CalendarDays} label="Entrega esperada (inicial)" value={formatDate(project.expectedDeliveryDate)} />
+          <InfoRow
+            icon={CalendarDays}
+            label="Entrega esperada (inicial)"
+            value={formatProjectExpectedDelivery(project)}
+          />
           <InfoRow icon={User} label="Responsable Product" value={project.productOwner} />
           <InfoRow icon={User} label="Responsable Fábrica" value={project.factoryOwner} />
         </div>

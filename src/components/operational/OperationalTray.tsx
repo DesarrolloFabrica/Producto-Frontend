@@ -48,7 +48,7 @@ export function OperationalTray({
       ) : (
         <div className="space-y-2">
           {visible.map((item) => (
-            <OperationalTrayItem key={item.subjectId} item={item} role={role} />
+            <OperationalTrayItem key={`${item.projectId}:${item.subjectId}`} item={item} role={role} />
           ))}
         </div>
       )}

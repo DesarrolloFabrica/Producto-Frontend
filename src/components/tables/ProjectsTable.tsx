@@ -2,6 +2,7 @@ import { ContextLink } from '../../navigation/ContextLink';
 import { ArrowRight, CalendarDays, Eye, GraduationCap, UserRound } from 'lucide-react';
 import type { VirtualizationProject } from '../../types/domain';
 import { formatDate } from '../../utils/formatters';
+import { formatProjectExpectedDelivery } from '../../utils/projectSme';
 import { projectStatusLabels } from '../../utils/status';
 import { PriorityBadge } from '../status/PriorityBadge';
 import { ProgressBar } from '../ui/ProgressBar';
@@ -11,6 +12,7 @@ import { cn, surface, radius } from '../ui/tokens';
 
 const statusAccent: Record<VirtualizationProject['status'], string> = {
   PENDING_SYLLABUS: 'bg-amber-400',
+  PENDING_SUBJECT_MATTER_EXPERT: 'bg-violet-400',
   READY_FOR_PRODUCTION: 'bg-sky-400',
   IN_PRODUCTION: 'bg-[#FF6B00]',
   IN_REVIEW: 'bg-violet-500',
@@ -21,6 +23,7 @@ const statusAccent: Record<VirtualizationProject['status'], string> = {
 
 const statusCardTone: Record<VirtualizationProject['status'], string> = {
   PENDING_SYLLABUS: 'bg-amber-50 text-amber-800 ring-1 ring-amber-200/80',
+  PENDING_SUBJECT_MATTER_EXPERT: 'bg-violet-50 text-violet-800 ring-1 ring-violet-200/80',
   READY_FOR_PRODUCTION: 'bg-sky-50 text-sky-800 ring-1 ring-sky-200/80',
   IN_PRODUCTION: 'bg-[#FFEDD5] text-[#9A3412] ring-1 ring-[#FED7AA]',
   IN_REVIEW: 'bg-violet-50 text-violet-800 ring-1 ring-violet-200/80',
@@ -89,7 +92,7 @@ export function ProjectsTable({ projects }: { projects: VirtualizationProject[] 
             </div>
             <div className="flex items-center gap-2 rounded-[12px] bg-[#F8FAFC] px-3 py-2 text-xs font-medium text-[#64748B] lg:col-span-1">
               <CalendarDays className="h-4 w-4 text-[#94A3B8] lg:hidden" />
-              {formatDate(project.expectedDeliveryDate)}
+              {formatProjectExpectedDelivery(project)}
             </div>
             <div className="lg:col-span-3">
               <div className="space-y-3">

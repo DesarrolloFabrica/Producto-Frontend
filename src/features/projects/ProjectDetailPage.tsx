@@ -16,9 +16,11 @@ import { EditProjectDrawer } from '../../components/forms/EditProjectDrawer';
 import { ProjectInfoDrawer } from '../../components/forms/ProjectInfoDrawer';
 import { Modal } from '../../components/ui/Modal';
 import { useOperations } from '../../features/operations/OperationsContext';
+import { SubjectMatterExpertPendingBanner } from '../../components/projects/SubjectMatterExpertPendingBanner';
+import { formatProjectExpectedDelivery } from '../../utils/projectSme';
 import { useAuth } from '../auth/AuthContext';
 import { formatDate } from '../../utils/formatters';
-import { ArrowRight, BookOpen, CalendarDays, CheckCircle2, ClipboardCheck, Eye, FileText, MessageSquare, Plus, X, Loader2 } from 'lucide-react';
+import { ArrowRight, BookOpen, CalendarDays, CheckCircle2, ClipboardCheck, Eye, FileText, MessageSquare, Plus, Minus, Loader2 } from 'lucide-react';
 import { Button } from '../../components/ui/Button';
 import { useToast } from '../../components/ui/ToastProvider';
 import { priorityLabels } from '../../utils/status';
@@ -28,7 +30,20 @@ import { analyzeProductProject } from '../../features/operations/productDashboar
 import { FactoryProjectDetail } from './FactoryProjectDetail';
 import { useDismissNotificationsOnVisit } from '../notifications/useDismissNotificationsOnVisit';
 import { SubjectTopicsEditor } from '../../components/forms/SubjectTopicsEditor';
-import { SUBJECT_TOPICS_MAX, SUBJECT_TOPICS_MIN, validateSubjectTopicsList } from '../../utils/subjectTopics';
+import {
+  createInitialSemesterSubjects,
+  MAX_SUBJECTS_PER_SEMESTER,
+  resizeSemesterSubjects,
+  semesterSubjectHasContent,
+  type SemesterFormSubject,
+} from '../../components/forms/semesterSubjectsForm';
+import { isSubjectTopicsFormValid, validateSubjectTopicsList } from '../../utils/subjectTopics';
+import {
+  ProjectRadicationPanel,
+  ProjectRadicationScopeLockHint,
+} from '../project-radication/ProjectRadicationPanel';
+import { useQuery } from '@tanstack/react-query';
+import { projectRadicationApi } from '../../services/projectRadicationApi';
 
 const tabs = [
   { id: 'summary', label: 'Resumen' },
@@ -37,7 +52,8 @@ const tabs = [
 
 export function ProjectDetailPage() {
   const { projectId } = useParams();
-  const { addSemesterToProject, refreshProjects, projectObservations } = useOperations();
+  const { addSemesterToProject, refreshProjects, projectObservations, confirmSubjectMatterExpertFromApi } =
+    useOperations();
   const { showToast } = useToast();
   const { role } = useAuth();
   const { project, isLoading, error, notFound } = useEnsureProjectDetail(projectId);
@@ -88,6 +104,14 @@ export function ProjectDetailPage() {
         description={`${project.modality} · Responsable Product: ${project.productOwner}`}
       />
 
+      <SubjectMatterExpertPendingBanner
+        project={project}
+        onConfirm={async () => {
+          await confirmSubjectMatterExpertFromApi(project.id);
+          showToast('Experto temático confirmado. La solicitud quedó activa.');
+        }}
+      />
+
       {/* Executive Summary Card */}
       <Card className="overflow-hidden rounded-[20px] border-none bg-white shadow-[0_10px_25px_-5px_rgba(0,0,0,0.02)]">
         <div className="p-6 sm:p-7">
@@ -99,7 +123,9 @@ export function ProjectDetailPage() {
                 <span className="text-xs font-medium text-slate-500">Prioridad: {priorityLabels[project.priority]}</span>
               </div>
               <div className="mt-3 grid gap-x-8 gap-y-2 sm:grid-cols-2 lg:grid-cols-4">
-                <InfoCompact label="Entrega esperada">{formatDate(project.expectedDeliveryDate)}</InfoCompact>
+                <InfoCompact label="Entrega esperada">
+                  {formatProjectExpectedDelivery(project)}
+                </InfoCompact>
                 <InfoCompact label="Solicitud creada">{formatDate(project.createdAt)}</InfoCompact>
                 <InfoCompact label="Semestres">{project.semesters.map((s) => s.semesterNumber).join(', ')}</InfoCompact>
                 <InfoCompact label="Progreso">{project.progress}%</InfoCompact>
@@ -121,7 +147,9 @@ export function ProjectDetailPage() {
 
       <Tabs tabs={tabs} activeTab={activeTab} onChange={setActiveTab} />
 
-      {activeTab === 'summary' && <Summary project={project} projectInsight={projectInsight} />}
+      {activeTab === 'summary' && (
+        <Summary project={project} projectInsight={projectInsight} projectId={project.id} />
+      )}
       {activeTab === 'semesters' && (
         <Semesters project={project} onAddSemester={() => setShowAddSemesterModal(true)} />
       )}
@@ -161,15 +189,20 @@ function Info({ label, children }: { label: string; children: React.ReactNode })
 function Summary({
   project,
   projectInsight,
+  projectId,
 }: {
   project: ReturnType<typeof useOperations>['projects'][number];
   projectInsight: ReturnType<typeof analyzeProductProject>;
+  projectId: string;
 }) {
+  const { role } = useAuth();
   const hasSyllabus = project.links.some((l) => l.type === 'SYLLABUS');
   const syllabusLink = project.links.find((l) => l.type === 'SYLLABUS');
 
   return (
     <section className="tab-content-active space-y-5">
+      {(role === 'PRODUCT' || role === 'ADMIN') && <ProjectRadicationPanel projectId={projectId} />}
+
       {/* Informacion base */}
       <Card className="rounded-[20px] border-none bg-white shadow-[0_4px_6px_-1px_rgba(0,0,0,0.02),0_2px_4px_-1px_rgba(0,0,0,0.01)]">
         <div className="p-6 sm:p-7">
@@ -181,7 +214,7 @@ function Summary({
             <Info label="Programa">{project.program}</Info>
             <Info label="Modalidad">{project.modality}</Info>
             <Info label="Prioridad">{priorityLabels[project.priority]}</Info>
-            <Info label="Fecha entrega Fábrica">{formatDate(project.expectedDeliveryDate)}</Info>
+            <Info label="Fecha entrega Fábrica">{formatProjectExpectedDelivery(project)}</Info>
             <Info label="Responsable Product">{project.productOwner}</Info>
           </div>
 
@@ -308,8 +341,16 @@ function NextStepCard({ icon: Icon, title, description }: { icon: typeof Clipboa
 }
 
 function Semesters({ project, onAddSemester }: { project: ReturnType<typeof useOperations>['projects'][number]; onAddSemester: () => void }) {
+  const { role } = useAuth();
+  const scopeLockedQuery = useQuery({
+    queryKey: ['project-radication-readiness', project.id],
+    queryFn: () => projectRadicationApi.getReadiness(project.id),
+    enabled: role === 'PRODUCT' || role === 'ADMIN',
+  });
+  const scopeLocked = Boolean(scopeLockedQuery.data?.institutionalScopeLockedAt);
   const existingNumbers = project.semesters.map((s) => s.semesterNumber);
   const availableSemesters = Array.from({ length: 10 }, (_, i) => i + 1).filter((n) => !existingNumbers.includes(n));
+  const canAddSemester = availableSemesters.length > 0 && !scopeLocked;
 
   const subjectsBySemester = project.semesters.map((semester) => {
     const subjects = project.subjects.filter((s) => s.semesterNumber === semester.semesterNumber);
@@ -324,12 +365,13 @@ function Semesters({ project, onAddSemester }: { project: ReturnType<typeof useO
           <p className="text-[10px] font-black uppercase tracking-widest text-orange-500">Semestres a virtualizar</p>
           <p className="mt-1 text-sm font-medium text-slate-500">Gestiona las entregas por semestre, asignaturas y temas.</p>
         </div>
-        {availableSemesters.length > 0 && (
+        {canAddSemester && (
           <Button onClick={onAddSemester} className="shadow-lg shadow-orange-500/25">
             <Plus className="h-3.5 w-3.5" /> Agregar semestre
           </Button>
         )}
       </div>
+      {scopeLocked && <ProjectRadicationScopeLockHint projectId={project.id} />}
 
       {/* Lista de semestres */}
       {subjectsBySemester.length === 0 ? (
@@ -337,7 +379,7 @@ function Semesters({ project, onAddSemester }: { project: ReturnType<typeof useO
           <BookOpen className="mx-auto h-10 w-10 text-slate-300" />
           <p className="mt-3 text-sm font-bold text-slate-700">No hay semestres registrados</p>
           <p className="mt-1 text-xs font-medium text-slate-500">Agrega el primer semestre para comenzar la producción.</p>
-          {availableSemesters.length > 0 && (
+          {canAddSemester && (
             <Button onClick={onAddSemester} className="mt-4" variant="secondary">
               <Plus className="h-3.5 w-3.5" /> Agregar semestre
             </Button>
@@ -432,12 +474,6 @@ interface AddSemesterModalProps {
   onError: (message: string) => void;
 }
 
-interface FormSubject {
-  id: string;
-  name: string;
-  topics: string[];
-}
-
 function AddSemesterModal({ isOpen, onClose, project, onAdd, onSuccess, onError }: AddSemesterModalProps) {
   const existingNumbers = project.semesters.map((s) => s.semesterNumber);
   const availableSemesters = Array.from({ length: 10 }, (_, i) => i + 1).filter((n) => !existingNumbers.includes(n));
@@ -445,37 +481,52 @@ function AddSemesterModal({ isOpen, onClose, project, onAdd, onSuccess, onError 
   const [selectedSemester, setSelectedSemester] = useState<number | null>(null);
   const [expectedDate, setExpectedDate] = useState(project.expectedDeliveryDate);
   const [changeReason, setChangeReason] = useState('');
-  const [subjects, setSubjects] = useState<FormSubject[]>([]);
+  const [subjects, setSubjects] = useState<SemesterFormSubject[]>([]);
   const [errors, setErrors] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
 
-  const addSubject = () => {
-    setSubjects((prev) => [...prev, { id: `subj-${Date.now()}`, name: '', topics: [] }]);
+  const selectSemester = (num: number) => {
+    setSelectedSemester(num);
+    setSubjects(createInitialSemesterSubjects(1));
+    setErrors([]);
+  };
+
+  const applySubjectCount = (nextCount: number) => {
+    setSubjects((prev) => resizeSemesterSubjects(prev, nextCount));
+  };
+
+  const changeSubjectCount = (nextCount: number) => {
+    const safeCount = Math.min(MAX_SUBJECTS_PER_SEMESTER, Math.max(1, nextCount));
+    if (safeCount === subjects.length) return;
+
+    if (safeCount < subjects.length) {
+      const removed = subjects.slice(safeCount);
+      const hasData = removed.some(semesterSubjectHasContent);
+      if (hasData) {
+        const confirmed = window.confirm(
+          `Vas a reducir a ${safeCount} asignatura(s). Se eliminarán ${removed.length} asignatura(s) con información ingresada. ¿Continuar?`,
+        );
+        if (!confirmed) return;
+      }
+    }
+
+    applySubjectCount(safeCount);
   };
 
   const updateSubjectName = (id: string, name: string) => {
     setSubjects((prev) => prev.map((s) => (s.id === id ? { ...s, name } : s)));
   };
 
-  const removeSubject = (id: string) => {
-    setSubjects((prev) => prev.filter((s) => s.id !== id));
-  };
-
-  const canSubmitSemester = subjects.every((subj) => {
-    const filled = subj.topics.map((topic) => topic.trim()).filter(Boolean).length;
-    return (
-      subj.name.trim().length > 0 &&
-      filled >= SUBJECT_TOPICS_MIN &&
-      filled <= SUBJECT_TOPICS_MAX &&
-      subj.topics.every((topic) => topic.trim().length > 0)
-    );
-  });
+  const canSubmitSemester =
+    selectedSemester !== null &&
+    subjects.length >= 1 &&
+    subjects.every((subj) => Boolean(subj.name.trim()) && isSubjectTopicsFormValid(subj.topics));
 
   const validate = (): boolean => {
     const newErrors: string[] = [];
     if (!selectedSemester) newErrors.push('Selecciona un semestre.');
     if (!expectedDate) newErrors.push('Ingresa la fecha de entrega esperada del semestre.');
-    if (subjects.length === 0) newErrors.push('Agrega al menos una asignatura.');
+    if (subjects.length < 1) newErrors.push('Define al menos una asignatura para el nuevo semestre.');
     subjects.forEach((subj) => {
       if (!subj.name.trim()) newErrors.push('Una asignatura no tiene nombre.');
       newErrors.push(...validateSubjectTopicsList(subj.topics, subj.name));
@@ -523,7 +574,7 @@ function AddSemesterModal({ isOpen, onClose, project, onAdd, onSuccess, onError 
   const labelClass = 'block mb-2 text-[10px] font-black uppercase tracking-widest text-slate-400';
 
   return (
-    <Modal isOpen={isOpen} onClose={handleClose} title="Agregar semestre" description="Este semestre se agregará como una nueva entrega operativa. Define la fecha esperada de entrega y las asignaturas correspondientes." size="lg">
+    <Modal isOpen={isOpen} onClose={handleClose} title="Agregar semestre" description="Define el semestre, la fecha de entrega y cuántas asignaturas incluirá. Las materias de un semestre no se pueden ampliar después de crearlo." size="lg">
       <div className="space-y-5">
         {errors.length > 0 && (
           <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4">
@@ -543,7 +594,7 @@ function AddSemesterModal({ isOpen, onClose, project, onAdd, onSuccess, onError 
               <button
                 key={num}
                 type="button"
-                onClick={() => setSelectedSemester(num)}
+                onClick={() => selectSemester(num)}
                 className={cn(
                   'flex items-center justify-center rounded-xl border py-3 text-xs font-bold transition-all',
                   selectedSemester === num
@@ -579,52 +630,85 @@ function AddSemesterModal({ isOpen, onClose, project, onAdd, onSuccess, onError 
           />
         </div>
 
-        <div className="border-t border-slate-100" />
+        {selectedSemester !== null && (
+          <>
+            <div className="border-t border-slate-100" />
 
-        <div className="flex items-center justify-between">
-          <p className="text-[10px] font-black uppercase tracking-widest text-orange-500">Asignaturas</p>
-          <button type="button" onClick={addSubject} className="inline-flex items-center gap-1 text-[10px] font-bold text-orange-600 hover:text-orange-700">
-            <Plus className="h-3 w-3" /> Agregar asignatura
-          </button>
-        </div>
-
-        <div className="space-y-3 max-h-64 overflow-y-auto pr-1">
-          {subjects.map((subj, idx) => (
-            <div key={subj.id} className="rounded-xl border border-orange-100/60 bg-orange-50/20 p-4 space-y-3">
-              <div className="flex items-center justify-between">
-                <span className="text-[10px] font-black uppercase tracking-widest text-orange-500">Asignatura {idx + 1}</span>
-                {subjects.length > 1 && (
-                  <button type="button" onClick={() => removeSubject(subj.id)} className="text-slate-400 hover:text-rose-500">
-                    <X className="h-3.5 w-3.5" />
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <p className="text-[10px] font-black uppercase tracking-widest text-orange-500">
+                Asignaturas del semestre {selectedSemester}
+              </p>
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">
+                  Número de asignaturas
+                </span>
+                <div className="flex items-center rounded-xl border border-slate-200 bg-white">
+                  <button
+                    type="button"
+                    onClick={() => changeSubjectCount(subjects.length - 1)}
+                    disabled={subjects.length <= 1}
+                    className="flex h-9 w-9 items-center justify-center text-slate-500 transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+                    aria-label="Reducir asignaturas"
+                  >
+                    <Minus className="h-3.5 w-3.5" />
                   </button>
-                )}
+                  <input
+                    type="number"
+                    min={1}
+                    max={MAX_SUBJECTS_PER_SEMESTER}
+                    value={subjects.length}
+                    onChange={(e) => {
+                      const parsed = Number(e.target.value);
+                      if (!Number.isFinite(parsed)) return;
+                      changeSubjectCount(parsed);
+                    }}
+                    className="h-9 w-12 border-x border-slate-200 bg-white text-center text-sm font-bold text-slate-900 focus:outline-none"
+                    aria-label="Número de asignaturas"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => changeSubjectCount(subjects.length + 1)}
+                    disabled={subjects.length >= MAX_SUBJECTS_PER_SEMESTER}
+                    className="flex h-9 w-9 items-center justify-center text-slate-500 transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+                    aria-label="Aumentar asignaturas"
+                  >
+                    <Plus className="h-3.5 w-3.5" />
+                  </button>
+                </div>
               </div>
-              <input
-                className={cn(inputClass, 'bg-white')}
-                value={subj.name}
-                onChange={(e) => updateSubjectName(subj.id, e.target.value)}
-                placeholder="Nombre de la asignatura"
-              />
-              <SubjectTopicsEditor
-                topics={subj.topics}
-                onChange={(nextTopics) =>
-                  setSubjects((prev) =>
-                    prev.map((s) => (s.id === subj.id ? { ...s, topics: nextTopics } : s)),
-                  )
-                }
-                inputClass={inputClass}
-              />
             </div>
-          ))}
-          {subjects.length === 0 && (
-            <p className="text-center text-xs font-medium text-slate-400 py-4">Agrega al menos una asignatura para este semestre.</p>
-          )}
-        </div>
+
+            <div className="space-y-3 max-h-64 overflow-y-auto pr-1">
+              {subjects.map((subj, idx) => (
+                <div key={subj.id} className="rounded-xl border border-orange-100/60 bg-orange-50/20 p-4 space-y-3">
+                  <span className="text-[10px] font-black uppercase tracking-widest text-orange-500">
+                    Asignatura {idx + 1}
+                  </span>
+                  <input
+                    className={cn(inputClass, 'bg-white')}
+                    value={subj.name}
+                    onChange={(e) => updateSubjectName(subj.id, e.target.value)}
+                    placeholder="Nombre de la asignatura"
+                  />
+                  <SubjectTopicsEditor
+                    topics={subj.topics}
+                    onChange={(nextTopics) =>
+                      setSubjects((prev) =>
+                        prev.map((s) => (s.id === subj.id ? { ...s, topics: nextTopics } : s)),
+                      )
+                    }
+                    inputClass={inputClass}
+                  />
+                </div>
+              ))}
+            </div>
+          </>
+        )}
 
         <div className="flex justify-end gap-3 pt-4 border-t border-slate-100">
           <Button type="button" variant="secondary" onClick={handleClose}>Cancelar</Button>
           <Button
-            disabled={saving || !selectedSemester || subjects.length === 0 || !canSubmitSemester}
+            disabled={saving || !canSubmitSemester}
             onClick={handleSubmit}
           >
             {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}

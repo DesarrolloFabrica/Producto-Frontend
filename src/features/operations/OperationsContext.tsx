@@ -1,15 +1,22 @@
 import { createContext, useContext, useReducer, useCallback, useMemo, type ReactNode } from 'react';
-import type { ApiProjectDetail } from '../../services/types/projectsApi.types';
+import type { ApiProjectDetail, ApiProjectListItem } from '../../services/types/projectsApi.types';
 import { queryClient } from '../queries/queryClient';
 import { markFactoryQueriesStale } from '../queries/factoryQueryUtils';
 import { queryKeys } from '../queries/queryKeys';
+import { invalidateInstitutionalWorkflowQueries } from '../institutional-workflow/institutionalQueryUtils';
 import {
   normalizeWorkflowScopes,
   type WorkflowRefreshScope,
 } from './workflowRefresh';
+import { dedupeProjectsById } from './subjectOperationalState';
 import { shouldMarkNotificationsRead } from '../notifications/notificationReadDedup';
 import { projectsListStaleTime, projectDetailStaleTime } from '../queries/queryClient';
 import { env } from '../../config/env';
+import {
+  addBusinessDays,
+  FACTORY_DELIVERY_BUSINESS_DAYS,
+  toDateInputValue,
+} from '../../utils/businessDays';
 import { checklistApi, type BulkApproveSectionPayload } from '../../services/checklistApi';
 import { notificationsApi } from '../../services/notificationsApi';
 import { observationsApi } from '../../services/observationsApi';
@@ -400,25 +407,39 @@ function operationsReducer(state: OperationsState, action: OperationsAction): Op
       return { ...state, isMutating: action.payload };
     case 'LOAD_PROJECTS_START':
       return { ...state, isLoadingProjects: true, projectsError: null };
-    case 'LOAD_PROJECTS_SUCCESS':
+    case 'LOAD_PROJECTS_SUCCESS': {
+      const incoming = dedupeProjectsById(action.payload);
+      const merged = incoming.map((listItem) => {
+        const existing = state.projects.find((p) => p.id === listItem.id);
+        const hasFullDetail = Boolean(existing?.semesters.length) && Boolean(existing?.subjects.length);
+        if (!existing || !hasFullDetail) return listItem;
+        return {
+          ...listItem,
+          semesters: existing.semesters,
+          subjects: existing.subjects,
+          links: existing.links,
+          recentChanges: existing.recentChanges,
+          changeTimeline: existing.changeTimeline,
+          subjectsSummary: undefined,
+        };
+      });
       return {
         ...state,
-        projects: recalcProjects(action.payload),
+        projects: recalcProjects(merged),
         isLoadingProjects: false,
         projectsError: null,
       };
+    }
     case 'LOAD_PROJECTS_ERROR':
       return { ...state, isLoadingProjects: false, projectsError: action.payload };
     case 'LOAD_PROJECT_DETAIL_START':
       return { ...state, isLoadingProjectDetail: true, selectedProjectError: null };
     case 'LOAD_PROJECT_DETAIL_SUCCESS': {
       const detail = recalcProject(action.payload);
-      const exists = state.projects.some((p) => p.id === detail.id);
+      const withoutDuplicate = state.projects.filter((p) => p.id !== detail.id);
       return {
         ...state,
-        projects: exists
-          ? state.projects.map((p) => (p.id === detail.id ? detail : recalcProject(p)))
-          : [detail, ...state.projects.map((p) => recalcProject(p))],
+        projects: [detail, ...withoutDuplicate.map((p) => recalcProject(p))],
         isLoadingProjectDetail: false,
         selectedProjectError: null,
       };
@@ -507,7 +528,13 @@ function operationsReducer(state: OperationsState, action: OperationsAction): Op
     case 'MARK_ALL_NOTIFICATIONS_READ':
       return { ...state, notifications: state.notifications.map((notification) => ({ ...notification, read: true })) };
     case 'CREATE_PROJECT':
-      return { ...state, projects: [recalcProject(action.payload), ...state.projects.map((p) => recalcProject(p))] };
+      return {
+        ...state,
+        projects: dedupeProjectsById([
+          recalcProject(action.payload),
+          ...state.projects.map((p) => recalcProject(p)),
+        ]),
+      };
     case 'UPDATE_PROJECT':
       return {
         ...state,
@@ -1052,6 +1079,7 @@ interface OperationsContextValue extends OperationsState {
   ) => Promise<void>;
   refreshProjects: () => Promise<void>;
   createProjectFromApi: (input: CreateProjectFormInput) => Promise<void>;
+  confirmSubjectMatterExpertFromApi: (projectId: string) => Promise<VirtualizationProject>;
   createObservationFromApi: (input: CreateObservationInput) => Promise<void>;
   markObservationCorrectionAppliedFromApi: (observationId: string, projectId?: string) => Promise<void>;
   validateObservationFromApi: (observationId: string, projectId?: string) => Promise<void>;
@@ -1095,7 +1123,6 @@ interface OperationsContextValue extends OperationsState {
   markRecentlyUpdated: (entityId: string) => void;
   clearRecentlyUpdated: (entityId: string) => void;
   addSemesterToProject: (projectId: string, payload: { semesterNumber: number; factoryExpectedDate: string; subjects: { name: string; topics: string[] }[]; changeReason?: string }) => Promise<void>;
-  addSubjectToSemester: (projectId: string, payload: { semesterNumber: number; name: string; topics: string[]; expectedDeliveryDate: string; changeReason?: string }) => Promise<void>;
   startProjectProduction: (projectId: string) => Promise<void>;
   deliverProjectToProduct: (projectId: string) => void;
   updateFactoryChecklistItem: (
@@ -1353,9 +1380,72 @@ export function OperationsProvider({ children }: { children: ReactNode }) {
         throw new Error('Backend deshabilitado. Activa la API o usa VITE_USE_MOCKS=true.');
       }
       await projectsApi.createProject(mapCreateProjectToApi(input));
+      await queryClient.invalidateQueries({ queryKey: queryKeys.projects() });
       await loadProjects();
     },
-    [state.backendEnabled, loadProjects],
+    [state.backendEnabled, loadProjects, queryClient],
+  );
+
+  const confirmSubjectMatterExpertFromApi = useCallback(
+    async (projectId: string) => {
+      if (!state.backendEnabled) {
+        const project = state.projects.find((p) => p.id === projectId);
+        if (!project) throw new Error('Proyecto no encontrado');
+        const activatedAt = new Date().toISOString();
+        const expectedDeliveryDate = toDateInputValue(
+          addBusinessDays(new Date(), FACTORY_DELIVERY_BUSINESS_DAYS),
+        );
+        const updates: Partial<VirtualizationProject> = {
+          subjectMatterExpertStatus: 'READY',
+          status: 'READY_FOR_PRODUCTION',
+          activatedAt,
+          expertConfirmedAt: activatedAt,
+          expectedDeliveryDate,
+          semesters: project.semesters.map((sem) => ({
+            ...sem,
+            factoryExpectedDate: expectedDeliveryDate,
+          })),
+        };
+        dispatch({ type: 'UPDATE_PROJECT', payload: { id: projectId, updates } });
+        return { ...project, ...updates };
+      }
+
+      const detail = await projectsApi.confirmSubjectMatterExpert(projectId);
+      const mapped = mapProjectDetailFromApi(detail);
+      dispatch({
+        type: 'UPDATE_PROJECT',
+        payload: {
+          id: projectId,
+          updates: {
+            status: mapped.status,
+            expectedDeliveryDate: mapped.expectedDeliveryDate,
+            subjectMatterExpertType: mapped.subjectMatterExpertType,
+            subjectMatterExpertStatus: mapped.subjectMatterExpertStatus,
+            activatedAt: mapped.activatedAt,
+            expertConfirmedAt: mapped.expertConfirmedAt,
+            semesters: mapped.semesters,
+            subjects: mapped.subjects,
+          },
+        },
+      });
+      queryClient.setQueryData<ApiProjectListItem[]>(queryKeys.projects(), (current) =>
+        current?.map((item) =>
+          item.id === projectId
+            ? {
+                ...item,
+                status: detail.status,
+                expectedDeliveryDate: detail.expectedDeliveryDate,
+                subjectMatterExpertType: detail.subjectMatterExpertType,
+                subjectMatterExpertStatus: detail.subjectMatterExpertStatus,
+                activatedAt: detail.activatedAt,
+                expertConfirmedAt: detail.expertConfirmedAt,
+              }
+            : item,
+        ),
+      );
+      return mapped;
+    },
+    [state.backendEnabled, state.projects, queryClient],
   );
 
   const createObservationFromApi = useCallback(
@@ -1474,6 +1564,7 @@ export function OperationsProvider({ children }: { children: ReactNode }) {
       dispatch({ type: 'SET_MUTATING', payload: true });
       try {
         await subjectsApi.approveSubject(subjectId);
+        await invalidateInstitutionalWorkflowQueries(queryClient, { subjectId, projectId });
         await refreshWorkflowContext({
           projectId,
           subjectId,
@@ -1493,6 +1584,7 @@ export function OperationsProvider({ children }: { children: ReactNode }) {
       dispatch({ type: 'SET_MUTATING', payload: true });
       try {
         await subjectsApi.rejectSubject(subjectId, reason);
+        await invalidateInstitutionalWorkflowQueries(queryClient, { subjectId, projectId });
         await refreshWorkflowContext({
           projectId,
           subjectId,
@@ -1754,11 +1846,12 @@ export function OperationsProvider({ children }: { children: ReactNode }) {
           await checklistApi.updateStatus(checklistItemId, { status: newStatus });
           void queryClient.invalidateQueries({
             queryKey: queryKeys.subjectWorkspace(subjectId),
-            refetchType: 'none',
+          });
+          void queryClient.invalidateQueries({
+            queryKey: queryKeys.operationalWorkspace(subjectId),
           });
           void queryClient.invalidateQueries({
             queryKey: queryKeys.project(projectId),
-            refetchType: 'none',
           });
         } catch (error) {
           queryClient.setQueryData(queryKeys.subjectWorkspace(subjectId), previousWorkspace);
@@ -2020,55 +2113,6 @@ export function OperationsProvider({ children }: { children: ReactNode }) {
     [state.projects, state.backendEnabled, loadNotifications],
   );
 
-  const addSubjectToSemester = useCallback(
-    async (
-      projectId: string,
-      payload: { semesterNumber: number; name: string; topics: string[]; expectedDeliveryDate: string; changeReason?: string },
-    ) => {
-      const project = state.projects.find((p) => p.id === projectId);
-      const semester = project?.semesters.find((s) => s.semesterNumber === payload.semesterNumber);
-      if (!project || !semester) return;
-
-      if (state.backendEnabled) {
-        dispatch({ type: 'SET_MUTATING', payload: true });
-        try {
-          const apiProject = await subjectsApi.addSubjectToSemester(semester.id, {
-            name: payload.name,
-            topics: payload.topics,
-            expectedDeliveryDate: payload.expectedDeliveryDate,
-            changeReason: payload.changeReason,
-          });
-          dispatch({ type: 'LOAD_PROJECT_DETAIL_SUCCESS', payload: mapProjectDetailFromApi(apiProject) });
-          await loadNotificationSummary();
-        } finally {
-          dispatch({ type: 'SET_MUTATING', payload: false });
-        }
-        return;
-      }
-
-      const subject = {
-        id: `subj-${Date.now()}`,
-        projectId,
-        semesterNumber: payload.semesterNumber,
-        name: payload.name.trim(),
-        expectedDeliveryDate: payload.expectedDeliveryDate,
-        status: 'PENDING' as const,
-        progress: 0,
-        checklist: buildSubjectChecklist(),
-        generalObservations: '',
-        contentTopics: payload.topics.map((topic) => topic.trim()).filter(Boolean),
-        topicChecklists: payload.topics.map((topic, index) => ({
-          topicName: topic.trim(),
-          topicOrder: index + 1,
-          items: buildTopicChecklist(),
-        })),
-      };
-
-      dispatch({ type: 'ADD_SUBJECT_TO_SEMESTER', payload: { projectId, subject } });
-    },
-    [state.projects, state.backendEnabled, loadNotifications],
-  );
-
   const startProjectProduction = useCallback(async (projectId: string) => {
     const project = state.projects.find((p) => p.id === projectId);
     if (!project) return;
@@ -2246,6 +2290,7 @@ export function OperationsProvider({ children }: { children: ReactNode }) {
       refreshWorkflowContext,
       refreshProjects,
       createProjectFromApi,
+      confirmSubjectMatterExpertFromApi,
       createObservationFromApi,
       markObservationCorrectionAppliedFromApi,
       validateObservationFromApi,
@@ -2273,7 +2318,6 @@ export function OperationsProvider({ children }: { children: ReactNode }) {
       markRecentlyUpdated,
       clearRecentlyUpdated,
       addSemesterToProject,
-      addSubjectToSemester,
       startProjectProduction,
       deliverProjectToProduct,
       updateFactoryChecklistItem,
@@ -2297,6 +2341,7 @@ export function OperationsProvider({ children }: { children: ReactNode }) {
       refreshWorkflowContext,
       refreshProjects,
       createProjectFromApi,
+      confirmSubjectMatterExpertFromApi,
       createObservationFromApi,
       markObservationCorrectionAppliedFromApi,
       validateObservationFromApi,
@@ -2324,7 +2369,6 @@ export function OperationsProvider({ children }: { children: ReactNode }) {
       markRecentlyUpdated,
       clearRecentlyUpdated,
       addSemesterToProject,
-      addSubjectToSemester,
       startProjectProduction,
       deliverProjectToProduct,
       updateFactoryChecklistItem,

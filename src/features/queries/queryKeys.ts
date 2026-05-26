@@ -7,6 +7,14 @@ export const queryKeys = {
   projectObservations: (projectId: string) => ['projects', projectId, 'observations'] as const,
   subjectObservations: (subjectId: string) => ['subjects', subjectId, 'observations'] as const,
   subjectWorkspace: (subjectId: string) => ['subjects', subjectId, 'workspace'] as const,
+  operationalWorkspace: (subjectId: string) => ['operational-workspace', subjectId] as const,
+  institutionalWork: {
+    planning: () => ['institutional-work', 'planning'] as const,
+    lms: () => ['institutional-work', 'lms'] as const,
+    product: () => ['institutional-work', 'product'] as const,
+    factory: () => ['institutional-work', 'factory'] as const,
+    forRole: (role: string) => ['institutional-work', role] as const,
+  },
   notificationsInbox: (filters?: { limit?: number; offset?: number; readDays?: number }) =>
     ['notifications', 'inbox', filters ?? {}] as const,
   notificationsSummary: () => ['notifications', 'summary'] as const,

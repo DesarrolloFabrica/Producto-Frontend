@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { useParams } from 'react-router-dom';
+import { Navigate, useParams } from 'react-router-dom';
 import { ContextBackLink } from '../../navigation/ContextBackLink';
 import { ArrowLeft, BookOpen, CheckCircle2, MessageSquare, Plus, X, Loader2, AlertCircle, ChevronDown, Check } from 'lucide-react';
 import { Modal } from '../../components/ui/Modal';
@@ -16,6 +16,10 @@ import {
   isSubjectApproved,
 } from './checklistBulkHelpers';
 import { BulkApproveBlockHint, SubjectReviewBlockBanner } from './BulkApproveBlockHint';
+import { AcademicInstitutionalWaitingView } from '../institutional-workflow/AcademicInstitutionalWaitingView';
+import { PendingProjectRadicationView } from '../institutional-workflow/PendingProjectRadicationView';
+import { AcademicReviewReadyView } from '../institutional-workflow/AcademicReviewReadyView';
+import { AcademicCorrectionInFactoryView } from '../institutional-workflow/AcademicCorrectionInFactoryView';
 import { StatusBadge } from '../../components/status/StatusBadge';
 import { Card } from '../../components/ui/Card';
 import { PageHeader } from '../../components/ui/PageHeader';
@@ -40,6 +44,7 @@ import { ChangeOriginBadge, ChangeOriginHint } from '../../components/change-tra
 import { useDismissNotificationsOnVisit } from '../notifications/useDismissNotificationsOnVisit';
 import { getSubjectTopicsCounterLabel } from '../../utils/subjectTopics';
 import { useSubjectWorkspaceQuery } from '../queries/useSubjectWorkspaceQuery';
+import { useOperationalWorkspaceQuery } from '../queries/useOperationalWorkspaceQuery';
 
 type ProductReviewStatus = 'pendiente' | 'aprobado' | 'rechazado';
 
@@ -464,6 +469,10 @@ export function SubjectDetailPage() {
   const { role } = useAuth();
   const { showToast } = useToast();
   const workspaceQuery = useSubjectWorkspaceQuery(subjectId, backendEnabled);
+  const operationalQuery = useOperationalWorkspaceQuery(
+    subjectId,
+    backendEnabled && (role === 'PRODUCT' || role === 'ADMIN'),
+  );
   const workspaceProject = useMemo(
     () => (workspaceQuery.data ? mapSubjectWorkspaceProjectFromApi(workspaceQuery.data) : undefined),
     [workspaceQuery.data],
@@ -556,6 +565,11 @@ export function SubjectDetailPage() {
     [subjectObservations],
   );
 
+  if (role === 'PLANEACION' || role === 'LMS') {
+    if (!subjectId) return null;
+    return <Navigate to={`/subjects/${subjectId}/operations`} replace />;
+  }
+
   if (isLoading) {
     return (
       <div className="space-y-6">
@@ -617,14 +631,80 @@ export function SubjectDetailPage() {
     return <FactorySubjectDetail project={project} subject={subject} observations={combinedObservations} />;
   }
 
-  const canBulkApprove =
-    (role === 'PRODUCT' || role === 'ADMIN') && isSubjectReviewableForBulkApprove(subject.status);
+  const institutionalGateLoading =
+    backendEnabled && (role === 'PRODUCT' || role === 'ADMIN') && operationalQuery.isLoading;
+  const opWorkspace = operationalQuery.data;
+  const usesInstitutionalUi = Boolean(opWorkspace?.institutionalFlowActive);
+  const academicChecklistEnabled = opWorkspace?.academicChecklistEnabled === true;
 
-  const subjectReviewBlockMessage = getSubjectNotReviewableMessage(subject.status);
+  if (institutionalGateLoading) {
+    return (
+      <div className="space-y-6">
+        <PageHeader
+          eyebrow="Asignatura"
+          title={subject.name}
+          description={`${project.program} · ${project.school} · Semestre ${subject.semesterNumber}`}
+          action={<StatusBadge status={subject.status} />}
+        />
+        <Card className="p-8 text-center text-sm text-slate-500">Verificando estado del flujo institucional...</Card>
+      </div>
+    );
+  }
+
+  if ((role === 'PRODUCT' || role === 'ADMIN') && usesInstitutionalUi && !academicChecklistEnabled) {
+    const institutionalShell = (
+      <div className="space-y-6">
+        <div>
+          <ContextBackLink
+            fallback="/projects"
+            className="inline-flex items-center gap-1 text-xs font-medium text-[#64748B] hover:text-[#FF6B00]"
+          >
+            <ArrowLeft className="h-3.5 w-3.5" /> Volver
+          </ContextBackLink>
+          <PageHeader
+            eyebrow="Asignatura"
+            title={subject.name}
+            description={`${project.program} · ${project.school} · Semestre ${subject.semesterNumber}`}
+            action={<StatusBadge status={subject.status} />}
+          />
+        </div>
+        {opWorkspace!.operationalState === 'PENDING_PROJECT_RADICATION' ? (
+          <PendingProjectRadicationView workspace={opWorkspace!} />
+        ) : opWorkspace!.correctionInFactory ? (
+          <AcademicCorrectionInFactoryView workspace={opWorkspace!} />
+        ) : opWorkspace!.academicReviewReady ? (
+          <AcademicReviewReadyView workspace={opWorkspace!} />
+        ) : (
+          <AcademicInstitutionalWaitingView
+            workspace={opWorkspace!}
+            subjectName={subject.name}
+            program={project.program}
+            school={project.school}
+          />
+        )}
+      </div>
+    );
+    return institutionalShell;
+  }
+
+  const institutionalAcademicBlocked =
+    usesInstitutionalUi && !academicChecklistEnabled
+      ? 'La revisión académica se habilita cuando inicie la revisión desde el centro operacional.'
+      : null;
+
+  const canBulkApprove =
+    (role === 'PRODUCT' || role === 'ADMIN') &&
+    academicChecklistEnabled &&
+    isSubjectReviewableForBulkApprove(subject.status);
+
+  const subjectReviewBlockMessage =
+    institutionalAcademicBlocked ?? getSubjectNotReviewableMessage(subject.status);
 
   const subjectIsApproved = isSubjectApproved(subject.status);
-  const canApproveSubject = canProductApproveSubject(subject.status);
-  const canRequestCorrection = canProductRequestSubjectCorrection(subject.status);
+  const canApproveSubject =
+    academicChecklistEnabled && canProductApproveSubject(subject.status);
+  const canRequestCorrection =
+    academicChecklistEnabled && canProductRequestSubjectCorrection(subject.status);
 
   const productChecklist = subject.checklist.filter((item) => item.ownerRole === 'PRODUCT');
   const totalChecklist = productChecklist.length;
