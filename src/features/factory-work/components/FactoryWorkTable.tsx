@@ -1,6 +1,6 @@
 import { ContextLink } from '../../../navigation/ContextLink';
 import { useContextBack } from '../../../navigation/useContextBack';
-import { ArrowRight, CalendarDays, ClipboardList, MessageSquare } from 'lucide-react';
+import { ArrowRight, CalendarDays, ClipboardList } from 'lucide-react';
 import type { SubjectWorkItem } from '../../operations/subjectOperationalState';
 import { Card } from '../../../components/ui/Card';
 import { EmptyState } from '../../../components/ui/EmptyState';
@@ -44,22 +44,6 @@ function WorkActionButton({ item }: { item: SubjectWorkItem }) {
   );
 }
 
-function CorrectionsBadge({ count }: { count: number }) {
-  if (count <= 0) {
-    return (
-      <span className="inline-flex h-6 min-w-[1.5rem] items-center justify-center rounded-full bg-slate-100 px-2 text-[11px] font-bold text-[#94A3B8]">
-        0
-      </span>
-    );
-  }
-  return (
-    <span className="inline-flex h-6 items-center gap-1 rounded-full bg-rose-50 px-2.5 text-[11px] font-bold text-rose-700 ring-1 ring-rose-100">
-      <MessageSquare className="h-3 w-3" />
-      {count}
-    </span>
-  );
-}
-
 function WorkItemMobileCard({ item }: { item: SubjectWorkItem }) {
   return (
     <div className="relative overflow-hidden rounded-[16px] border border-slate-200/60 bg-white p-4 pl-5 shadow-[0_2px_12px_rgba(15,23,42,0.04)] transition-colors hover:border-cyan-100/80 hover:bg-cyan-50/15">
@@ -70,6 +54,11 @@ function WorkItemMobileCard({ item }: { item: SubjectWorkItem }) {
             <p className="font-bold text-[#1E293B]">{item.subjectName}</p>
             {item.createdFromChange && <ChangeOriginBadge kind="subject" />}
           </div>
+          {typeof item.subjectsTotal === 'number' ? (
+            <p className="mt-0.5 text-xs font-semibold text-[#94A3B8]">
+              {item.subjectsReady ?? 0}/{item.subjectsTotal} asignaturas listas
+            </p>
+          ) : null}
           <p className="mt-0.5 text-sm font-medium text-[#64748B]">{item.program}</p>
           <p className="text-xs text-[#94A3B8]">{item.school}</p>
         </div>
@@ -137,7 +126,7 @@ export function FactoryWorkTable({
     return (
       <EmptyState
         icon={ClipboardList}
-        title="No hay materias con estos filtros"
+        title="No hay semestres con estos filtros"
         description="Ajusta los filtros o vuelve al dashboard para revisar otras bandejas."
         action={
           <div className="flex flex-wrap justify-center gap-3">
@@ -156,9 +145,9 @@ export function FactoryWorkTable({
   return (
     <Card className="overflow-hidden p-0">
       <div className="border-b border-slate-200/60 bg-gradient-to-r from-white to-slate-50/80 px-5 py-4 sm:px-6">
-        <h2 className="text-sm font-bold tracking-[-0.02em] text-[#1E293B]">Materias</h2>
+        <h2 className="text-sm font-bold tracking-[-0.02em] text-[#1E293B]">Semestres operacionales</h2>
         <p className="mt-0.5 text-[11px] font-medium text-[#64748B]">
-          Vista filtrable y paginada de materias asignadas a Fábrica.
+          Vista filtrable y paginada de paquetes asignados a Fábrica.
         </p>
       </div>
 
@@ -171,13 +160,13 @@ export function FactoryWorkTable({
         <table className="min-w-[980px] w-full text-sm">
           <thead className="sticky top-0 z-10 bg-[#F8FAFC]/95 backdrop-blur-sm text-[#64748B] shadow-[0_1px_0_0_rgba(226,232,240,0.8)]">
             <tr className="text-[11px] font-bold uppercase tracking-wide">
-              <th className="px-5 py-3.5 text-left sm:px-6">Materia</th>
+              <th className="px-5 py-3.5 text-left sm:px-6">Paquete</th>
               <th className="px-5 py-3.5 text-left sm:px-6">Programa / Proyecto</th>
               <th className="px-5 py-3.5 text-left sm:px-6">Semestre</th>
               <th className="px-5 py-3.5 text-left sm:px-6">Estado</th>
               <th className="px-5 py-3.5 text-left sm:px-6">Entrega</th>
               <th className="px-5 py-3.5 text-left sm:px-6">Prioridad</th>
-              <th className="px-5 py-3.5 text-left sm:px-6">Correcciones</th>
+              <th className="px-5 py-3.5 text-left sm:px-6">Avance</th>
               <th className="px-5 py-3.5 text-left sm:px-6">Última actividad</th>
               <th className="px-5 py-3.5 text-right sm:px-6">Acción</th>
             </tr>
@@ -205,6 +194,11 @@ export function FactoryWorkTable({
                       <div className="flex flex-wrap items-center gap-2">
                         <p className="font-bold text-[#1E293B]">{item.subjectName}</p>
                         {item.createdFromChange && <ChangeOriginBadge kind="subject" />}
+                        {typeof item.subjectsTotal === 'number' ? (
+                          <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-bold text-slate-500">
+                            {item.subjectsTotal} asignaturas
+                          </span>
+                        ) : null}
                       </div>
                     </td>
                     <td className="px-5 py-5 align-middle sm:px-6">
@@ -241,7 +235,9 @@ export function FactoryWorkTable({
                       </span>
                     </td>
                     <td className="px-5 py-5 align-middle sm:px-6">
-                      <CorrectionsBadge count={item.openObservationsCount} />
+                      <span className="text-xs font-semibold text-slate-600">
+                        {item.subjectsReady ?? 0}/{item.subjectsTotal ?? 0} listas
+                      </span>
                     </td>
                     <td className="px-5 py-5 align-middle text-[#64748B] sm:px-6">
                       {formatDate(item.lastActivity ?? '')}

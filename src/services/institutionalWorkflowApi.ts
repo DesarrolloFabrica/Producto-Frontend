@@ -53,6 +53,8 @@ export interface OperationalWorkspaceDto {
 }
 
 export interface OperationalWorkItemDto {
+  kind?: 'subject' | 'semester';
+  semesterId?: string;
   subjectId: string;
   subjectName: string;
   projectId: string;
@@ -66,6 +68,49 @@ export interface OperationalWorkItemDto {
   availableActions: InstitutionalOperationalAction[];
   lastReturnReason: string | null;
   actionUrl: string;
+  subjectsTotal?: number;
+  subjectsReady?: number;
+  openObservations?: number;
+}
+
+export interface SemesterSubjectOperationalDto {
+  subjectId: string;
+  subjectName: string;
+  status: string;
+  operationalState: InstitutionalOperationalState;
+  internalState: string;
+  blockers: string[];
+}
+
+export interface SemesterOperationalWorkspaceDto {
+  semesterId: string;
+  semesterNumber: number;
+  projectId: string;
+  program: string;
+  school: string;
+  operationalState: InstitutionalOperationalState;
+  currentResponsibleRole: Role;
+  academicReviewEnabled: boolean;
+  academicChecklistEnabled: boolean;
+  academicReviewReady: boolean;
+  correctionInFactory: boolean;
+  institutionalFlowActive: boolean;
+  slaStatus: SlaStatus;
+  stageDueAt: string | null;
+  lastReturnReason: string | null;
+  lastReturnAt: string | null;
+  checks: OperationalCheckDto[];
+  timeline: OperationalTransitionRecordDto[];
+  availableActions: InstitutionalOperationalAction[];
+  readiness: { ready: boolean; blockers: string[] };
+  subjects: SemesterSubjectOperationalDto[];
+  metrics: {
+    subjectsTotal: number;
+    subjectsReady: number;
+    subjectsApproved: number;
+    subjectsBlocked: number;
+    openObservations: number;
+  };
 }
 
 export const institutionalWorkflowApi = {
@@ -74,6 +119,12 @@ export const institutionalWorkflowApi = {
   },
   transition(subjectId: string, body: { action: InstitutionalOperationalAction; comment?: string; returnReason?: string; evidenceUrl?: string }) {
     return apiClient.post<OperationalWorkspaceDto>(`/subjects/${subjectId}/operational-transitions`, body);
+  },
+  getSemesterWorkspace(semesterId: string) {
+    return apiClient.get<SemesterOperationalWorkspaceDto>(`/semesters/${semesterId}/operational-workspace`);
+  },
+  transitionSemester(semesterId: string, body: { action: InstitutionalOperationalAction; comment?: string; returnReason?: string; evidenceUrl?: string }) {
+    return apiClient.post<SemesterOperationalWorkspaceDto>(`/semesters/${semesterId}/operational-transitions`, body);
   },
   planningWork() {
     return apiClient.get<OperationalWorkItemDto[]>('/planning/work');

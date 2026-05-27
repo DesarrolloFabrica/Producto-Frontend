@@ -20,6 +20,7 @@ import { OperationalWorkflowV2Provider } from '../features/operations-v2/store/O
 import { PlanningDashboardPage } from '../features/planning/PlanningDashboardPage';
 import { LmsDashboardPage } from '../features/lms/LmsDashboardPage';
 import { SubjectOperationsPage } from '../features/institutional-workflow/SubjectOperationsPage';
+import { SemesterOperationsPage } from '../features/institutional-workflow/SemesterOperationsPage';
 import type { Role } from '../types/domain';
 
 function RequireAuth() {
@@ -66,6 +67,7 @@ export const router = createBrowserRouter([
       { path: 'planning/dashboard', element: <RoleRedirect expectedRole="PLANEACION"><PlanningDashboardPage /></RoleRedirect> },
       { path: 'lms/dashboard', element: <RoleRedirect expectedRole="LMS"><LmsDashboardPage /></RoleRedirect> },
       { path: 'subjects/:subjectId/operations', element: <SubjectOperationsPage /> },
+      { path: 'projects/:projectId/semesters/:semesterId/operations', element: <SemesterOperationsPage /> },
       { path: 'workflow-preview', element: <OperationalWorkflowV2Provider><WorkflowPreviewPage /></OperationalWorkflowV2Provider> },
       { path: 'operations-v2/subjects/:subjectId', element: <OperationalWorkflowV2Provider><OperationalSubjectDetailV2Page /></OperationalWorkflowV2Provider> },
       { path: 'projects', element: <ProjectsPage /> },

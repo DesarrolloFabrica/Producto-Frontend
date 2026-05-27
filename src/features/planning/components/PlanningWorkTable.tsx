@@ -29,7 +29,7 @@ export function PlanningWorkTable({
   rows: PlanningWorkRow[];
   isLoading: boolean;
   error: string | null;
-  onOpenFlow: (subjectId: string) => void;
+  onOpenFlow: (row: PlanningWorkRow) => void;
   onValidateRadication: (projectId: string) => void;
   onReturnRadication: (projectId: string, reason: string) => Promise<void>;
   busyProjectId: string | null;
@@ -123,7 +123,7 @@ export function PlanningWorkTable({
                             size="sm"
                             variant="secondary"
                             className="gap-1.5"
-                            onClick={() => onOpenFlow(row.subjectId)}
+                            onClick={() => onOpenFlow(row)}
                           >
                             Ver flujo
                             <ArrowRight className="h-3.5 w-3.5" />

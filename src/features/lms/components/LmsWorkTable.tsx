@@ -24,7 +24,7 @@ export function LmsWorkTable({
   error: string | null;
   busySubjectId: string | null;
   onOpenFlow: (subjectId: string) => void;
-  onTransition: (subjectId: string, action: InstitutionalOperationalAction) => void;
+  onTransition: (row: LmsWorkRow, action: InstitutionalOperationalAction) => void;
 }) {
   const primaryAction = (row: LmsWorkRow): InstitutionalOperationalAction | null => {
     // Iniciar carga solo en el centro operacional (/subjects/:id/operations).
@@ -115,7 +115,7 @@ export function LmsWorkTable({
                             type="button"
                             size="sm"
                             disabled={isBusy}
-                            onClick={() => onTransition(row.subjectId, action)}
+                              onClick={() => onTransition(row, action)}
                           >
                             {isBusy ? (
                               <Loader2 className="h-4 w-4 animate-spin" />
@@ -130,7 +130,7 @@ export function LmsWorkTable({
                           variant="secondary"
                           className="gap-1.5"
                           disabled={isBusy}
-                          onClick={() => onOpenFlow(row.subjectId)}
+                          onClick={() => onOpenFlow(row.actionUrl)}
                         >
                           {row.operationalState === 'RETURNED_TO_LMS_FROM_PLANNING'
                             ? LMS_ACTION_COPY.attendReturn

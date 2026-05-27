@@ -11,6 +11,7 @@ export type ApiSubjectOperationalState =
 
 export interface ApiFactorySubjectWorkItem {
   subjectId: string;
+  semesterId?: string | null;
   subjectName: string;
   projectId: string;
   program: string;
@@ -24,6 +25,8 @@ export interface ApiFactorySubjectWorkItem {
   lastActivity: string | null;
   actionUrl: string;
   createdFromChange: boolean;
+  subjectsTotal?: number;
+  subjectsReady?: number;
 }
 
 export interface ApiFactoryDashboardSummary {

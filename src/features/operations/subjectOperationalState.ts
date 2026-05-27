@@ -71,6 +71,7 @@ export interface SubjectSummaryLike {
 
 export interface SubjectWorkItem {
   subjectId: string;
+  semesterId?: string | null;
   subjectName: string;
   projectId: string;
   program: string;
@@ -90,6 +91,8 @@ export interface SubjectWorkItem {
   isProjectGrouped?: boolean;
   groupedSubjectCount?: number;
   groupedSemesterNumbers?: number[];
+  subjectsTotal?: number;
+  subjectsReady?: number;
 }
 
 const OPERATIONAL_LABELS: Record<SubjectOperationalState, string> = {

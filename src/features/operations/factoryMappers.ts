@@ -30,6 +30,7 @@ export function mapFactoryWorkItemFromApi(api: ApiFactorySubjectWorkItem): Subje
   const state = mapApiOperationalState(api.operationalState);
   return {
     subjectId: api.subjectId,
+    semesterId: api.semesterId,
     subjectName: api.subjectName,
     projectId: api.projectId,
     program: api.program,
@@ -45,6 +46,8 @@ export function mapFactoryWorkItemFromApi(api: ApiFactorySubjectWorkItem): Subje
     createdFromChange: Boolean(api.createdFromChange),
     actionLabel: ctaLabels[state],
     operationalLabel: operationalLabels[state],
+    subjectsTotal: api.subjectsTotal,
+    subjectsReady: api.subjectsReady,
   };
 }
 

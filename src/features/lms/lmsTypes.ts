@@ -25,6 +25,8 @@ export type LmsWorkRow = {
   slaStatus: SlaStatus;
   lastActivity: string | null;
   availableActions: InstitutionalOperationalAction[];
+  actionUrl: string;
+  semesterId?: string;
 };
 
 export function parseLmsFilter(raw: string | null): LmsDashboardFilter {
@@ -51,6 +53,8 @@ export function mapWorkItem(item: OperationalWorkItemDto): LmsWorkRow {
     slaStatus: item.slaStatus,
     lastActivity: item.lastReturnReason,
     availableActions: item.availableActions,
+    actionUrl: item.actionUrl,
+    semesterId: item.semesterId,
   };
 }
 
@@ -70,6 +74,7 @@ export function mapPreview(item: LmsSubjectPreview, kind: 'returned' | 'complete
     slaStatus: item.slaStatus,
     lastActivity: item.lastReturnReason,
     availableActions: item.availableActions,
+    actionUrl: `/subjects/${item.subjectId}/operations`,
   };
 }
 

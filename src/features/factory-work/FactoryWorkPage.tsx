@@ -114,7 +114,7 @@ export function FactoryWorkPage() {
       <PageHeader
         eyebrow="Bandeja de trabajo"
         title="Bandeja operativa"
-        description="Gestiona materias por estado, prioridad y fecha de entrega."
+        description="Gestiona semestres/paquetes por estado, prioridad y fecha de entrega."
         action={
           <ContextBackLink
             fallback="/factory/dashboard"

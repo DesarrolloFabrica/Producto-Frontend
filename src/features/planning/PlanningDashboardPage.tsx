@@ -57,8 +57,9 @@ export function PlanningDashboardPage() {
     }
   };
 
-  const openOperationalFlow = (subjectId: string) => {
-    navigate(`/subjects/${subjectId}/operations`, {
+  const openOperationalFlow = (row: typeof visibleRows[number]) => {
+    if (row.kind !== 'subject' && row.kind !== 'returned') return;
+    navigate(row.actionUrl, {
       state: { from: buildFromLocation(location) },
     });
   };

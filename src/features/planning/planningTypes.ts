@@ -28,6 +28,7 @@ export type PlanningWorkRow =
       stageDueAt: string | null;
       slaStatus: SlaStatus;
       lastActivity: string | null;
+      actionUrl: string;
     }
   | {
       kind: 'radication';
@@ -56,6 +57,7 @@ export type PlanningWorkRow =
       stageDueAt: string | null;
       slaStatus: SlaStatus;
       lastActivity: string | null;
+      actionUrl: string;
     }
   | {
       kind: 'finalized';
@@ -102,6 +104,7 @@ export function mapSubjectWorkItem(item: OperationalWorkItemDto): PlanningWorkRo
     stageDueAt: item.stageDueAt,
     slaStatus: item.slaStatus,
     lastActivity: item.lastReturnReason,
+    actionUrl: item.actionUrl,
   };
 }
 
@@ -136,6 +139,7 @@ export function mapReturnedPreview(item: PlanningSubjectPreview): PlanningWorkRo
     stageDueAt: item.stageDueAt,
     slaStatus: item.slaStatus,
     lastActivity: item.lastReturnReason,
+    actionUrl: `/subjects/${item.subjectId}/operations`,
   };
 }
 

@@ -50,19 +50,22 @@ export function LmsDashboardPage() {
     }
   };
 
-  const openOperationalFlow = (subjectId: string) => {
-    navigate(`/subjects/${subjectId}/operations`, {
+  const openOperationalFlow = (actionUrl: string) => {
+    navigate(actionUrl, {
       state: { from: buildFromLocation(location) },
     });
   };
 
   const handleTransition = async (
-    subjectId: string,
+    row: (typeof visibleRows)[number],
     action: InstitutionalOperationalAction,
   ) => {
+    const subjectId = row.subjectId;
     setBusySubjectId(subjectId);
     try {
-      const result = await institutionalWorkflowApi.transition(subjectId, { action });
+      const result = row.semesterId
+        ? await institutionalWorkflowApi.transitionSemester(row.semesterId, { action })
+        : await institutionalWorkflowApi.transition(subjectId, { action });
       if (action === 'LMS_START_UPLOAD') {
         showToast('Carga LMS iniciada');
       } else if (action === 'LMS_CONFIRM_UPLOAD') {
@@ -140,7 +143,7 @@ export function LmsDashboardPage() {
           error={error}
           busySubjectId={busySubjectId}
           onOpenFlow={openOperationalFlow}
-          onTransition={(subjectId, action) => void handleTransition(subjectId, action)}
+          onTransition={(row, action) => void handleTransition(row, action)}
         />
       ) : null}
 

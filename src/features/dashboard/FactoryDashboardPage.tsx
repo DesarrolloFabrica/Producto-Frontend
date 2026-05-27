@@ -86,7 +86,7 @@ export function FactoryDashboardPage() {
         roleAccent="factory"
         eyebrow="Centro de control"
         title="Dashboard Factory"
-        description="Resumen operativo por materia: correcciones, producción, vencimientos y revisiones."
+        description="Resumen operativo por semestre: paquetes, producción, vencimientos y devoluciones."
         action={
           <Button type="button" variant="secondary" size="sm" className="gap-2" onClick={() => void loadSummary()}>
             <RefreshCw className="h-3.5 w-3.5" />

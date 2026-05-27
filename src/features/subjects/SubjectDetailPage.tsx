@@ -630,6 +630,19 @@ export function SubjectDetailPage() {
     [subjectObservations],
   );
 
+  const topicsCount = subject?.topicChecklists?.length ?? 0;
+  const academicApprovalBlockers = useMemo(
+    () =>
+      subject
+        ? getAcademicApprovalBlockers({
+            subject,
+            unresolvedObservationCount: subjectObservations.length,
+            topicsCount,
+          })
+        : [],
+    [subject, subjectObservations.length, topicsCount],
+  );
+
   if (role === 'PLANEACION' || role === 'LMS') {
     if (!subjectId) return null;
     return <Navigate to={homePathForRole(role)} replace />;
@@ -790,15 +803,6 @@ export function SubjectDetailPage() {
     order: topic.topicOrder,
   }));
 
-  const academicApprovalBlockers = useMemo(
-    () =>
-      getAcademicApprovalBlockers({
-        subject,
-        unresolvedObservationCount: subjectObservations.length,
-        topicsCount: topics.length,
-      }),
-    [subject, subjectObservations.length, topics.length],
-  );
   const canApproveSubject =
     academicChecklistEnabled &&
     canProductApproveSubject(subject.status) &&
