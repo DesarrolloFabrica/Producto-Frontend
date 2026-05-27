@@ -27,4 +27,16 @@ export const observationsApi = {
 
   reopenObservation: (observationId: string, reason: string) =>
     apiClient.post<ApiObservationStatusResponse>(`/observations/${observationId}/reopen`, { reason }),
+
+  sendObservationsToFactory: (subjectId: string) =>
+    apiClient.post<{ id: string; observationCount: number }>(
+      `/subjects/${subjectId}/observation-batches/send-to-factory`,
+      {},
+    ),
+
+  notifyCorrectionsToProduct: (subjectId: string) =>
+    apiClient.post<{ id: string; observationCount: number }>(
+      `/subjects/${subjectId}/observation-batches/notify-corrections`,
+      {},
+    ),
 };

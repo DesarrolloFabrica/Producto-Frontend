@@ -18,6 +18,13 @@ export const queryKeys = {
   notificationsInbox: (filters?: { limit?: number; offset?: number; readDays?: number }) =>
     ['notifications', 'inbox', filters ?? {}] as const,
   notificationsSummary: () => ['notifications', 'summary'] as const,
+  planning: {
+    dashboardSummary: () => ['planning', 'dashboard-summary'] as const,
+    radicationWork: () => ['planning', 'radication-work'] as const,
+  },
+  lms: {
+    dashboardSummary: () => ['lms', 'dashboard-summary'] as const,
+  },
   factory: {
     all: () => ['factory'] as const,
     summary: () => ['factory', 'dashboard', 'summary'] as const,

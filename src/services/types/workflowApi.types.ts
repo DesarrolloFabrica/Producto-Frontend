@@ -28,6 +28,8 @@ export interface ApiObservation {
   role?: Role;
   text: string;
   status: ApiObservationStatus | string;
+  notificationStatus?: 'PENDING' | 'SENT';
+  correctionNotificationStatus?: 'PENDING' | 'SENT' | null;
   relatedEntityType?: ApiRelatedEntityType | string | null;
   relatedEntityId?: string | null;
   relatedEntity?: string | null;

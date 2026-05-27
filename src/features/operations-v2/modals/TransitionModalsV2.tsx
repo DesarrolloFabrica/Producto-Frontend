@@ -1,6 +1,6 @@
 import type React from 'react';
 import { useMemo, useState } from 'react';
-import { AlertCircle, CheckCircle2, CornerDownLeft, FileCheck2, Factory, Flag, GraduationCap, UploadCloud } from 'lucide-react';
+import { AlertCircle, CheckCircle2, CornerDownLeft, FileCheck2, Factory, GraduationCap, UploadCloud } from 'lucide-react';
 import type { OperationalActionV2 } from '../../../types/operationalWorkflow';
 import { Modal } from '../../../components/ui/Modal';
 import { Button } from '../../../components/ui/Button';
@@ -39,8 +39,6 @@ function actionMeta(action: OperationalActionV2): { icon: React.ComponentType<an
       return { icon: AlertCircle, title: 'Solicitar correcciones', description: 'Simula solicitud de correcciones académicas a Fábrica (sin tocar observaciones reales).', requiresComment: true };
     case 'PRODUCT_APPROVE_ACADEMIC':
       return { icon: FileCheck2, title: 'Aprobar revisión académica', description: 'Marca la revisión como aprobada y pasa a radicación final.', requiresComment: false };
-    case 'PLANNING_FINALIZE':
-      return { icon: Flag, title: 'Radicar y finalizar', description: 'Planeación radica y cierra el proceso institucional.', requiresComment: false };
     default:
       return { icon: FileCheck2, title: actionLabelV2(action), description: 'Acción operativa.', requiresComment: false };
   }

@@ -1,5 +1,7 @@
 import { useMemo, useState } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { AlertTriangle, ClipboardList, FolderKanban, Plus, Sparkles, Factory } from 'lucide-react';
+import { buildFromLocation } from '../../navigation/contextNavigation';
 import { MetricCard } from '../../components/cards/MetricCard';
 import { OperationalTray } from '../../components/operational/OperationalTray';
 import { Button } from '../../components/ui/Button';
@@ -7,6 +9,10 @@ import { PageHeader } from '../../components/ui/PageHeader';
 import { CreateProjectModal } from '../../components/forms/CreateProjectModal';
 import { ProjectsLoadNotice } from '../../components/feedback/ProjectsLoadNotice';
 import { useOperations } from '../../features/operations/OperationsContext';
+import { useInstitutionalWorkQuery } from '../../features/queries/useInstitutionalWorkQuery';
+import { OperationalWorkTableV2 } from '../../features/operations-v2/OperationalWorkTableV2';
+import type { OperationalWorkItemV2 } from '../../types/operationalWorkflow';
+import { institutionalStateLabel } from '../institutional-workflow/institutionalCopy';
 import {
   buildWorkItemsFromProjects,
   groupNewRequestItemsByProject,
@@ -21,9 +27,49 @@ function toTs(value?: string | null) {
 }
 
 export function ProductDashboardPage() {
+  const navigate = useNavigate();
+  const location = useLocation();
   const { projects, projectObservations, isLoadingProjects, projectsError, refreshProjects, backendEnabled } =
     useOperations();
   const [showCreateModal, setShowCreateModal] = useState(false);
+
+  // En flujo institucional, Product debe ver sus pendientes desde la bandeja operacional (no desde subject.status legacy).
+  const institutionalWorkQuery = useInstitutionalWorkQuery('PRODUCT', backendEnabled);
+  const institutionalPendingReview = useMemo(() => {
+    return (institutionalWorkQuery.data ?? []).filter(
+      (i) => i.operationalState === 'PENDING_PRODUCT_ACADEMIC_REVIEW' || i.operationalState === 'IN_PRODUCT_ACADEMIC_REVIEW',
+    );
+  }, [institutionalWorkQuery.data]);
+  const useInstitutionalReviewTray = backendEnabled && institutionalPendingReview.length > 0;
+
+  const openOperationalFlow = (subjectId: string) => {
+    navigate(`/subjects/${subjectId}/operations`, {
+      state: { from: buildFromLocation(location) },
+    });
+  };
+  const institutionalReviewItems: OperationalWorkItemV2[] = useMemo(() => {
+    return institutionalPendingReview.map((item) => ({
+      subjectId: item.subjectId,
+      projectId: item.projectId,
+      subjectName: item.subjectName,
+      program: item.program,
+      school: item.school,
+      semesterNumber: item.semesterNumber,
+      modality: '—',
+      priority: 'MEDIUM',
+      expectedDeliveryDate: item.stageDueAt ?? new Date().toISOString(),
+      operationalState: item.operationalState,
+      currentStageLabel: institutionalStateLabel(item.operationalState),
+      currentResponsibleRole: item.currentResponsibleRole,
+      slaStatus: item.slaStatus,
+      stageDueAt: item.stageDueAt ?? new Date().toISOString(),
+      lastActivityAt: item.stageDueAt ?? new Date().toISOString(),
+      checksCompleted: 0,
+      checksTotal: 7,
+      primaryAction: 'VIEW_DETAIL',
+      actions: ['VIEW_DETAIL'],
+    }));
+  }, [institutionalPendingReview]);
 
   const workItems = useMemo(
     () => buildWorkItemsFromProjects(projects, projectObservations),
@@ -112,7 +158,12 @@ export function ProductDashboardPage() {
           icon={ClipboardList}
         />
         <MetricCard variant="subjectPanel" label="Solicitudes nuevas" value={notStarted.length} icon={Sparkles} />
-        <MetricCard variant="subjectPanel" label="Materias por revisar" value={inReview.length} icon={ClipboardList} />
+        <MetricCard
+          variant="subjectPanel"
+          label="Materias por revisar"
+          value={backendEnabled && institutionalPendingReview.length > 0 ? institutionalPendingReview.length : inReview.length}
+          icon={ClipboardList}
+        />
         <MetricCard variant="subjectPanel" label="Correcciones por validar" value={correctionSent.length} icon={AlertTriangle} />
         <MetricCard variant="subjectPanel" label="Proyectos atrasados" value={lateProjects} icon={AlertTriangle} />
       </section>
@@ -140,26 +191,65 @@ export function ProductDashboardPage() {
         />
       </section>
 
-      <section className="grid gap-4 md:grid-cols-2">
-        <OperationalTray
-          title="Pendientes por revisar"
-          description="Materias realmente en revision Product."
-          count={inReview.length}
-          items={inReview}
-          emptyMessage="Sin materias por revisar."
-          viewAllTo="/product/work?status=IN_REVIEW"
-          role="product"
-        />
-        <OperationalTray
-          title="Correcciones por validar"
-          description="Materias con correcciones aplicadas esperando validacion."
-          count={correctionSent.length}
-          items={correctionSent}
-          emptyMessage="Sin correcciones por validar."
-          viewAllTo="/product/work?status=CORRECTION_SENT"
-          role="product"
-        />
-      </section>
+      {!useInstitutionalReviewTray ? (
+        <section className="grid gap-4 md:grid-cols-2">
+          <OperationalTray
+            title="Pendientes por revisar"
+            description="Materias realmente en revisión Product."
+            count={inReview.length}
+            items={inReview}
+            emptyMessage="Sin materias por revisar."
+            viewAllTo="/product/work?status=IN_REVIEW"
+            role="product"
+          />
+          <OperationalTray
+            title="Correcciones por validar"
+            description="Materias con correcciones aplicadas esperando validación."
+            count={correctionSent.length}
+            items={correctionSent}
+            emptyMessage="Sin correcciones por validar."
+            viewAllTo="/product/work?status=CORRECTION_SENT"
+            role="product"
+          />
+        </section>
+      ) : (
+        <section className="grid gap-4 md:grid-cols-2">
+          <OperationalTray
+            title="Correcciones por validar"
+            description="Materias con correcciones aplicadas esperando validación."
+            count={correctionSent.length}
+            items={correctionSent}
+            emptyMessage="Sin correcciones por validar."
+            viewAllTo="/product/work?status=CORRECTION_SENT"
+            role="product"
+          />
+        </section>
+      )}
+
+      {useInstitutionalReviewTray && (
+        <section className="space-y-3">
+          <PageHeader
+            eyebrow="Flujo institucional"
+            title="Revisión académica pendiente"
+            description="Estas materias ya están en etapa Product. Entra al centro operacional para iniciar la revisión y abrir el checklist académico."
+          />
+          <OperationalWorkTableV2
+            role="PRODUCT"
+            items={institutionalReviewItems}
+            isLoading={institutionalWorkQuery.isLoading}
+            error={
+              institutionalWorkQuery.error
+                ? institutionalWorkQuery.error instanceof Error
+                  ? institutionalWorkQuery.error.message
+                  : 'No se pudo cargar'
+                : null
+            }
+            flowOnly
+            onRefresh={() => void institutionalWorkQuery.refetch()}
+            onOpenFlow={openOperationalFlow}
+          />
+        </section>
+      )}
 
       <section className="grid gap-4 md:grid-cols-2">
         <OperationalTray

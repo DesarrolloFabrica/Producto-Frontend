@@ -13,6 +13,8 @@ import {
   isSubjectReviewableForBulkApprove,
   canProductApproveSubject,
   canProductRequestSubjectCorrection,
+  getAcademicApprovalBlockers,
+  isReadyForAcademicApproval,
   isSubjectApproved,
 } from './checklistBulkHelpers';
 import { BulkApproveBlockHint, SubjectReviewBlockBanner } from './BulkApproveBlockHint';
@@ -43,8 +45,19 @@ import { FactorySubjectDetail } from './FactorySubjectDetail';
 import { ChangeOriginBadge, ChangeOriginHint } from '../../components/change-tracking/ChangeOriginBadge';
 import { useDismissNotificationsOnVisit } from '../notifications/useDismissNotificationsOnVisit';
 import { getSubjectTopicsCounterLabel } from '../../utils/subjectTopics';
-import { useSubjectWorkspaceQuery } from '../queries/useSubjectWorkspaceQuery';
+import { AcademicTopicsDefinitionPanel } from '../../components/forms/AcademicTopicsDefinitionPanel';
+import { subjectsApi } from '../../services/subjectsApi';
+import { DeliverableObservationsDrawer } from '../observations/DeliverableObservationsDrawer';
+import { ObservationDeliverableButton } from '../observations/ObservationDeliverableButton';
+import {
+  countPendingProductObservations,
+  filterObservationsForChecklistItem,
+  getObservationBadgeState,
+} from '../observations/observationDeliverableHelpers';
+import type { OperationalObservation } from '../../types/domain';
 import { useOperationalWorkspaceQuery } from '../queries/useOperationalWorkspaceQuery';
+import { homePathForRole } from '../../navigation/roleNavigation';
+import { useSubjectWorkspaceQuery } from '../queries/useSubjectWorkspaceQuery';
 
 type ProductReviewStatus = 'pendiente' | 'aprobado' | 'rechazado';
 
@@ -115,12 +128,24 @@ type FilterStatus = 'todos' | 'pendiente' | 'aprobado' | 'rechazado';
 interface ChecklistItemCardProps {
   item: ChecklistItem;
   status: ProductReviewStatus;
+  itemObservations: OperationalObservation[];
   onUpdate: (id: string, newStatus: ProductReviewStatus, label: string) => void | Promise<void>;
   onCreateObservation: (label: string) => void;
+  onOpenObservations: (item: ChecklistItem) => void;
+  selectorDisabled?: boolean;
 }
 
-function ChecklistItemCard({ item, status, onUpdate, onCreateObservation }: ChecklistItemCardProps) {
+function ChecklistItemCard({
+  item,
+  status,
+  itemObservations,
+  onUpdate,
+  onCreateObservation,
+  onOpenObservations,
+  selectorDisabled = false,
+}: ChecklistItemCardProps) {
   const config = reviewStatusConfig[status];
+  const observationState = getObservationBadgeState(itemObservations);
 
   return (
     <div className={cn(
@@ -143,7 +168,18 @@ function ChecklistItemCard({ item, status, onUpdate, onCreateObservation }: Chec
             <span className="text-[9px] font-medium text-slate-400">{item.ownerRole}</span>
           </div>
         </div>
-        <StatusSelector value={status} onChange={(s) => void onUpdate(item.id, s, item.label)} />
+        <div className="flex shrink-0 flex-col items-end gap-2">
+          <ObservationDeliverableButton
+            count={itemObservations.length}
+            state={observationState}
+            onClick={() => onOpenObservations(item)}
+          />
+          <StatusSelector
+            value={status}
+            disabled={selectorDisabled}
+            onChange={(s) => void onUpdate(item.id, s, item.label)}
+          />
+        </div>
       </div>
     </div>
   );
@@ -161,16 +197,18 @@ function MetaBox({ label, value }: { label: string; value: string }) {
 function StatusSelector({
   value,
   onChange,
+  disabled: disabledProp = false,
 }: {
   value: ProductReviewStatus;
   onChange: (s: ProductReviewStatus) => void;
+  disabled?: boolean;
 }) {
   const [isOpen, setIsOpen] = useState(false);
   const [dropdownStyle, setDropdownStyle] = useState<React.CSSProperties | null>(null);
   const config = reviewStatusConfig[value];
 
   const allowed = getAllowedProductReviewTransitions(value);
-  const disabled = allowed.length === 0;
+  const disabled = disabledProp || allowed.length === 0;
 
   const handleClick = (e: React.MouseEvent<HTMLButtonElement>) => {
     e.stopPropagation();
@@ -285,22 +323,28 @@ function CategorySection({
   checklist,
   onUpdate,
   onCreateObservation,
+  onOpenObservations,
+  subjectObservations,
   canBulkApprove,
   approvableCount,
   bulkBlockMessage,
   bulkLoading,
   onBulkApprove,
+  selectorDisabled = false,
 }: {
   categoryId: string;
   title: string;
   checklist: ChecklistItem[];
   onUpdate: (id: string, newStatus: ProductReviewStatus, label: string) => void | Promise<void>;
   onCreateObservation: (label: string) => void;
+  onOpenObservations: (item: ChecklistItem) => void;
+  subjectObservations: OperationalObservation[];
   canBulkApprove: boolean;
   approvableCount: number;
   bulkBlockMessage: string | null;
   bulkLoading: boolean;
   onBulkApprove: () => void;
+  selectorDisabled?: boolean;
 }) {
   const categoryItems = checklist.filter((item) => getCategoryForItem(item.label) === categoryId);
   const approved = categoryItems.filter((i) => toProductReviewStatus(i.status) === 'aprobado').length;
@@ -341,8 +385,11 @@ function CategorySection({
             key={item.id}
             item={item}
             status={toProductReviewStatus(item.status)}
+            itemObservations={filterObservationsForChecklistItem(subjectObservations, item.id)}
             onUpdate={onUpdate}
             onCreateObservation={onCreateObservation}
+            onOpenObservations={onOpenObservations}
+            selectorDisabled={selectorDisabled}
           />
         ))}
       </div>
@@ -359,6 +406,7 @@ interface TopicCardProps {
   bulkBlockMessage: string | null;
   bulkLoading: boolean;
   onBulkApprove: () => void;
+  selectorDisabled?: boolean;
 }
 
 function TopicCard({
@@ -370,6 +418,7 @@ function TopicCard({
   bulkBlockMessage,
   bulkLoading,
   onBulkApprove,
+  selectorDisabled = false,
 }: TopicCardProps) {
   const [expanded, setExpanded] = useState(false);
   const approved = items.filter((i) => i.status === 'APROBADO').length;
@@ -436,6 +485,7 @@ function TopicCard({
                     <span className="text-[11px] font-bold text-slate-800">{item.label}</span>
                     <StatusSelector
                       value={status}
+                      disabled={selectorDisabled}
                       onChange={(newStatus) => void onUpdate(topic.name, item.id, newStatus)}
                     />
                   </div>
@@ -463,6 +513,9 @@ export function SubjectDetailPage() {
     approveSubjectFromApi,
     requestSubjectCorrectionFromApi,
     reopenObservation,
+    sendObservationsBatchToFactoryFromApi,
+    validateObservationFromApi,
+    markObservationCorrectionAppliedFromApi,
     backendEnabled,
     isMutating,
   } = useOperations();
@@ -511,6 +564,9 @@ export function SubjectDetailPage() {
     isTopic: boolean;
   } | null>(null);
   const [bulkLoadingKey, setBulkLoadingKey] = useState<string | null>(null);
+  const [savingTopics, setSavingTopics] = useState(false);
+  const [observationDrawerItem, setObservationDrawerItem] = useState<ChecklistItem | null>(null);
+  const [sendingObservationBatch, setSendingObservationBatch] = useState(false);
   const observationsSectionRef = useRef<HTMLDivElement | null>(null);
   const correctionActiveRef = useRef<HTMLDivElement | null>(null);
   const observationTextareaRef = useRef<HTMLTextAreaElement | null>(null);
@@ -526,18 +582,27 @@ export function SubjectDetailPage() {
     return () => window.clearTimeout(timeoutId);
   }, [correctionPanelHighlighted]);
 
-  const combinedObservations = useMemo(
-    () => {
-      const byId = new Map(workspaceObservations.map((observation) => [observation.id, observation]));
-      for (const observation of projectObservations) {
-        if (observation.subjectId === subject?.id && !byId.has(observation.id)) {
-          byId.set(observation.id, observation);
-        }
+  const combinedObservations = useMemo(() => {
+    const byId = new Map<string, (typeof projectObservations)[number]>();
+    for (const observation of projectObservations) {
+      if (observation.subjectId !== subject?.id) continue;
+      byId.set(observation.id, observation);
+    }
+    for (const observation of workspaceObservations) {
+      const existing = byId.get(observation.id);
+      if (!existing) {
+        byId.set(observation.id, observation);
+        continue;
       }
-      return Array.from(byId.values());
-    },
-    [projectObservations, subject?.id, workspaceObservations],
-  );
+      if (
+        existing.notificationStatus === 'PENDING' &&
+        observation.notificationStatus === 'SENT'
+      ) {
+        byId.set(observation.id, observation);
+      }
+    }
+    return Array.from(byId.values());
+  }, [projectObservations, subject?.id, workspaceObservations]);
 
   const subjectObservations = useMemo(
     () =>
@@ -567,7 +632,7 @@ export function SubjectDetailPage() {
 
   if (role === 'PLANEACION' || role === 'LMS') {
     if (!subjectId) return null;
-    return <Navigate to={`/subjects/${subjectId}/operations`} replace />;
+    return <Navigate to={homePathForRole(role)} replace />;
   }
 
   if (isLoading) {
@@ -701,8 +766,6 @@ export function SubjectDetailPage() {
     institutionalAcademicBlocked ?? getSubjectNotReviewableMessage(subject.status);
 
   const subjectIsApproved = isSubjectApproved(subject.status);
-  const canApproveSubject =
-    academicChecklistEnabled && canProductApproveSubject(subject.status);
   const canRequestCorrection =
     academicChecklistEnabled && canProductRequestSubjectCorrection(subject.status);
 
@@ -726,6 +789,84 @@ export function SubjectDetailPage() {
     name: topic.topicName,
     order: topic.topicOrder,
   }));
+
+  const academicApprovalBlockers = useMemo(
+    () =>
+      getAcademicApprovalBlockers({
+        subject,
+        unresolvedObservationCount: subjectObservations.length,
+        topicsCount: topics.length,
+      }),
+    [subject, subjectObservations.length, topics.length],
+  );
+  const canApproveSubject =
+    academicChecklistEnabled &&
+    canProductApproveSubject(subject.status) &&
+    isReadyForAcademicApproval({
+      subject,
+      unresolvedObservationCount: subjectObservations.length,
+      topicsCount: topics.length,
+    });
+
+  const needsTopicDefinition = academicChecklistEnabled && topics.length === 0;
+
+  const pendingObservationSendCount = countPendingProductObservations(combinedObservations, subject.id);
+
+  const drawerObservations = observationDrawerItem
+    ? filterObservationsForChecklistItem(combinedObservations, observationDrawerItem.id)
+    : [];
+
+  const handleCreateDeliverableObservation = async (text: string) => {
+    if (!observationDrawerItem || !project) return;
+    setSavingObservation(true);
+    try {
+      await createObservationFromApi({
+        projectId: project.id,
+        subjectId: subject.id,
+        checklistItemId: observationDrawerItem.id,
+        relatedEntityType: 'CHECKLIST_ITEM',
+        relatedEntityId: observationDrawerItem.id,
+        text,
+        priority: 'MEDIUM',
+      });
+      showToast('Observación guardada (pendiente de envío)');
+    } catch (error) {
+      showToast(getApiErrorMessage(error), 'error');
+    } finally {
+      setSavingObservation(false);
+    }
+  };
+
+  const handleSendObservationsBatch = async () => {
+    if (!project) return;
+    setSendingObservationBatch(true);
+    try {
+      const count = await sendObservationsBatchToFactoryFromApi(subject.id, project.id);
+      showToast(`${count} observación(es) enviadas a Fábrica`);
+    } catch (error) {
+      showToast(getApiErrorMessage(error), 'error');
+    } finally {
+      setSendingObservationBatch(false);
+    }
+  };
+
+  const handleDefineTopics = async (topicNames: string[]) => {
+    if (!subject?.id) return;
+    setSavingTopics(true);
+    try {
+      await subjectsApi.defineTopics(subject.id, topicNames);
+      await workspaceQuery.refetch();
+      await refreshProjects();
+      showToast('Gránulos académicos guardados');
+    } catch (defineError) {
+      showToast(getApiErrorMessage(defineError), 'error');
+    } finally {
+      setSavingTopics(false);
+    }
+  };
+
+  const inputClass =
+    'w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-bold text-slate-900 focus:border-orange-300 focus:ring-2 focus:ring-orange-100 focus:outline-none transition-all';
 
   const handleCreateObservation = (itemLabel: string) => {
     setShowObservationForm(true);
@@ -860,7 +1001,7 @@ export function SubjectDetailPage() {
       setObservationForm({ text: '', level: 'subject', topicId: '' });
       setShowObservationForm(false);
       setObservationError('');
-      showToast('Observación enviada a Fábrica');
+      showToast('Observación guardada (pendiente de envío)');
     } catch (error) {
       setObservationError(getApiErrorMessage(error));
       showToast(getApiErrorMessage(error), 'error');
@@ -951,7 +1092,7 @@ export function SubjectDetailPage() {
     <div className="space-y-6">
       <PageHeader
         prominentEyebrow
-        eyebrow={`${project.program} Â· Semestre ${subject.semesterNumber}`}
+        eyebrow={`${project.program} · Semestre ${subject.semesterNumber}`}
         title={
           <span className="inline-flex flex-wrap items-center gap-2">
             {subject.name}
@@ -1017,6 +1158,13 @@ export function SubjectDetailPage() {
             <p className="text-[10px] font-black uppercase tracking-widest text-orange-500">Cierre Product</p>
             <h2 className="text-sm font-black tracking-tight text-slate-950">Aprobación de asignatura</h2>
             <p className="mt-1 text-xs font-medium text-slate-500">Aprueba la asignatura si cumple con los criterios o solicita una corrección con una observación clara para Fábrica.</p>
+            {!subjectIsApproved && academicApprovalBlockers.length > 0 && (
+              <ul className="mt-3 space-y-1 rounded-xl border border-amber-200 bg-amber-50/80 px-3 py-2 text-xs font-medium text-amber-900">
+                {academicApprovalBlockers.map((blocker) => (
+                  <li key={blocker}>• {blocker}</li>
+                ))}
+              </ul>
+            )}
           </div>
           <div className="flex flex-col gap-2 sm:min-w-80">
             {subjectIsApproved ? (
@@ -1038,7 +1186,7 @@ export function SubjectDetailPage() {
                   disabled={!canApproveSubject || isMutating || subjectAction !== null || !subject.id}
                 >
                   {subjectAction === 'approve' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}
-                  {subjectAction === 'approve' ? 'Aprobandoâ€¦' : 'Aprobar asignatura'}
+                  {subjectAction === 'approve' ? 'Aprobando…' : 'Aprobar asignatura'}
                 </Button>
                 <Button
                   variant="secondary"
@@ -1055,6 +1203,34 @@ export function SubjectDetailPage() {
           </div>
         </div>
       </Card>
+
+      {academicChecklistEnabled && pendingObservationSendCount > 0 && (
+        <div className="sticky bottom-4 z-20 rounded-2xl border border-orange-200 bg-white/95 p-4 shadow-lg backdrop-blur">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <p className="text-sm font-black text-slate-950">Observaciones pendientes de envío</p>
+              <p className="text-xs text-slate-500">
+                {pendingObservationSendCount} observación(es) en borrador. Fábrica las verá al enviar el lote.
+              </p>
+            </div>
+            <Button
+              disabled={sendingObservationBatch || isMutating}
+              onClick={() => void handleSendObservationsBatch()}
+            >
+              {sendingObservationBatch ? <Loader2 className="h-4 w-4 animate-spin" /> : <MessageSquare className="h-4 w-4" />}
+              Enviar observaciones a Fábrica
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {needsTopicDefinition && (
+        <AcademicTopicsDefinitionPanel
+          inputClass={inputClass}
+          saving={savingTopics}
+          onSave={handleDefineTopics}
+        />
+      )}
 
       <Card variant="subjectPanel" className="p-0 overflow-hidden">
         <div className="border-b border-slate-100 bg-gradient-to-r from-orange-50/30 to-white px-5 py-4">
@@ -1126,10 +1302,13 @@ export function SubjectDetailPage() {
                     checklist={filteredChecklist}
                     onUpdate={handleChecklistUpdate}
                     onCreateObservation={handleCreateObservation}
+                    onOpenObservations={setObservationDrawerItem}
+                    subjectObservations={combinedObservations.filter((obs) => obs.subjectId === subject.id)}
                     canBulkApprove={canBulkApprove}
                     approvableCount={countApprovableProductItems(sectionItems)}
                     bulkBlockMessage={getProductSectionBulkBlockMessage(sectionItems, canBulkApprove)}
                     bulkLoading={Boolean(bulkLoadingKey)}
+                    selectorDisabled={isMutating || Boolean(bulkLoadingKey)}
                     onBulkApprove={() =>
                       openBulkConfirm({
                         sectionKey,
@@ -1155,7 +1334,7 @@ export function SubjectDetailPage() {
                 <p className="text-[10px] font-black uppercase tracking-widest text-orange-500">Contenido</p>
                 <h2 className="text-sm font-black tracking-tight text-slate-950">Revisión por temas / gránulos</h2>
                 <p className="mt-0.5 text-[11px] font-medium text-slate-500">
-                  Cada tema debe contar con material descargable, podcast, video e infografía. Los temas se definen al crear la asignatura.
+                  Cada gránulo debe contar con material descargable, podcast, video e infografía.
                 </p>
               </div>
               <span className="shrink-0 rounded-full bg-orange-50 px-3 py-1.5 text-[10px] font-bold text-orange-700 ring-1 ring-orange-200/80">
@@ -1182,6 +1361,7 @@ export function SubjectDetailPage() {
                     approvableCount={countApprovableTopicItems(tc.items)}
                     bulkBlockMessage={getTopicBulkBlockMessage(tc.items, canBulkApprove, Boolean(tc.id))}
                     bulkLoading={Boolean(bulkLoadingKey)}
+                    selectorDisabled={isMutating || Boolean(bulkLoadingKey)}
                     onBulkApprove={() => {
                       if (!tc.id) return;
                       openBulkConfirm({
@@ -1314,7 +1494,7 @@ export function SubjectDetailPage() {
                 <span className="flex h-5 w-5 items-center justify-center rounded-full bg-orange-100">
                   <span className="h-2 w-2 rounded-full bg-orange-500" />
                 </span>
-                <p className="text-[10px] font-black uppercase tracking-widest text-orange-600">Correcciones activas Â· {activeCorrectionObservations.length}</p>
+                <p className="text-[10px] font-black uppercase tracking-widest text-orange-600">Correcciones activas · {activeCorrectionObservations.length}</p>
               </div>
               {activeCorrectionObservations.map((observation, index) => (
                 <div
@@ -1338,7 +1518,7 @@ export function SubjectDetailPage() {
                         <MetaBox label="Última actualización" value={formatDate(observation.updatedAt ?? observation.createdAt)} />
                       </div>
                       <div className="mt-3 flex flex-wrap items-center gap-3 text-[10px] font-medium text-slate-500">
-                        <span>{observation.author} Â· {observation.role}</span>
+                        <span>{observation.author} · {observation.role}</span>
                         <span className="font-bold text-slate-700">
                           {observation.status === 'EN_CORRECCION'
                             ? 'Pendiente de validación individual por Product'
@@ -1384,7 +1564,7 @@ export function SubjectDetailPage() {
                 <span className="flex h-5 w-5 items-center justify-center rounded-full bg-amber-100">
                   <span className="h-2 w-2 rounded-full bg-amber-500" />
                 </span>
-                <p className="text-[10px] font-black uppercase tracking-widest text-amber-600">Observaciones abiertas Â· {subjectObservations.filter((obs) => !activeCorrectionObservations.some((active) => active.id === obs.id)).length}</p>
+                <p className="text-[10px] font-black uppercase tracking-widest text-amber-600">Observaciones abiertas · {subjectObservations.filter((obs) => !activeCorrectionObservations.some((active) => active.id === obs.id)).length}</p>
               </div>
               <div className="space-y-2">
                 {subjectObservations.filter((obs) => !activeCorrectionObservations.some((active) => active.id === obs.id)).map((obs) => {
@@ -1410,7 +1590,7 @@ export function SubjectDetailPage() {
                           </div>
                           <p className="mt-2 text-xs font-medium text-slate-800">{obs.text}</p>
                           <div className="mt-2 flex flex-wrap items-center gap-3 text-[10px] font-medium text-slate-500">
-                            <span>{obs.author} Â· {obs.role}</span>
+                            <span>{obs.author} · {obs.role}</span>
                             <span>{formatDate(obs.createdAt)}</span>
                             <span className="inline-flex items-center gap-1">
                               Responsable: <span className="font-bold text-slate-700">Fábrica</span>
@@ -1444,7 +1624,7 @@ export function SubjectDetailPage() {
                 <span className="flex h-5 w-5 items-center justify-center rounded-full bg-emerald-100">
                   <CheckCircle2 className="h-3 w-3 text-emerald-500" />
                 </span>
-                Resueltas Â· {resolvedObservations.length}
+                Resueltas · {resolvedObservations.length}
                 <span className="ml-auto text-[9px] font-medium text-slate-400 group-open:hidden">Mostrar</span>
                 <span className="ml-auto hidden text-[9px] font-medium text-slate-400 group-open:inline">Ocultar</span>
               </summary>
@@ -1466,7 +1646,7 @@ export function SubjectDetailPage() {
                       </div>
                       <p className="mt-2 text-xs font-medium text-slate-700">{obs.text}</p>
                       <div className="mt-2 flex flex-wrap items-center gap-3 text-[10px] font-medium text-slate-500">
-                        <span>{obs.author} Â· {obs.role}</span>
+                        <span>{obs.author} · {obs.role}</span>
                         <span>Creada: {formatDate(obs.createdAt)}</span>
                       </div>
                     </div>
@@ -1478,6 +1658,21 @@ export function SubjectDetailPage() {
         </div>
       </Card>
       </div>
+
+      <DeliverableObservationsDrawer
+        isOpen={Boolean(observationDrawerItem)}
+        onClose={() => setObservationDrawerItem(null)}
+        deliverableLabel={observationDrawerItem?.label ?? 'Entregable'}
+        observations={drawerObservations}
+        badgeState={getObservationBadgeState(drawerObservations)}
+        role={role ?? 'PRODUCT'}
+        saving={savingObservation || isMutating}
+        onCreateObservation={handleCreateDeliverableObservation}
+        onValidateObservation={async (observation) => {
+          await validateObservationFromApi(observation.id, project?.id);
+          showToast('Observación validada');
+        }}
+      />
 
       <Modal
         isOpen={Boolean(bulkConfirm)}

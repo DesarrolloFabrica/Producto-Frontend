@@ -12,6 +12,7 @@ import {
   type ProjectRadicationReadinessDto,
   type RegisterProjectRadicationBody,
 } from '../../services/projectRadicationApi';
+import { invalidatePlanningDashboard } from '../planning/planningInvalidation';
 
 const projectRadicationKeys = {
   readiness: (projectId: string) => ['project-radication-readiness', projectId] as const,
@@ -87,6 +88,8 @@ export function ProjectRadicationPanel({ projectId }: { projectId: string }) {
       }
       setShowModal(false);
       await queryClient.invalidateQueries({ queryKey: projectRadicationKeys.readiness(projectId) });
+      await invalidatePlanningDashboard(queryClient);
+      await queryClient.invalidateQueries({ queryKey: ['institutional-work'] });
     } catch (e: unknown) {
       showToast(e instanceof Error ? e.message : 'No se pudo registrar el radicado', 'error');
     } finally {

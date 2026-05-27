@@ -49,7 +49,7 @@ export interface CreateProjectFormInput {
   factoryOwnerId?: string;
   semesters: {
     number: number;
-    subjects: { name: string; topics: string[] }[];
+    subjects: { name: string; topics?: string[] }[];
   }[];
 }
 
@@ -412,7 +412,7 @@ export function mapCreateProjectToApi(input: CreateProjectFormInput): ApiCreateP
       semesterNumber: semester.number,
       subjects: semester.subjects.map((subject) => ({
         name: subject.name.trim(),
-        topics: subject.topics.map((t) => t.trim()).filter(Boolean),
+        topics: (subject.topics ?? []).map((t) => t.trim()).filter(Boolean),
       })),
     })),
   };
@@ -467,6 +467,9 @@ export function mapObservationFromApi(api: ApiObservation): OperationalObservati
     role: api.role ?? api.author?.role ?? 'PRODUCT',
     text: api.text,
     status: mapObservationStatusFromApi(api.status),
+    notificationStatus: api.notificationStatus === 'PENDING' ? 'PENDING' : 'SENT',
+    correctionNotificationStatus: api.correctionNotificationStatus ?? null,
+    checklistItemId: api.checklistItemId ?? undefined,
     relatedEntity: mapRelatedEntityLabel(api),
     relatedEntityType: api.relatedEntityType ?? undefined,
     relatedEntityId: api.relatedEntityId ?? undefined,

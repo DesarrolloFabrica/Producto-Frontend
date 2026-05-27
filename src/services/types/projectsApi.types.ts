@@ -188,7 +188,7 @@ export interface ApiCreateProjectPayload {
 
 export interface ApiAddSemesterSubjectPayload {
   name: string;
-  topics: string[];
+  topics?: string[];
 }
 
 export interface ApiAddSemesterPayload {

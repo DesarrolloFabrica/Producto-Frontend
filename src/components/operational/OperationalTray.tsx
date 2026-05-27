@@ -44,7 +44,17 @@ export function OperationalTray({
       </div>
       <p className="mb-3 text-[11px] font-medium text-slate-500">{description}</p>
       {showEmpty ? (
-        <p className="py-1 text-xs font-semibold text-slate-500">{emptyMessage}</p>
+        <div className="space-y-2 py-1">
+          <p className="text-xs font-semibold text-slate-500">{emptyMessage}</p>
+          {viewAllTo ? (
+            <ContextLink
+              to={viewAllTo}
+              className="inline-flex items-center gap-1 text-xs font-bold text-orange-700 hover:text-orange-800"
+            >
+              Ir a la bandeja <ArrowRight className="h-3.5 w-3.5" />
+            </ContextLink>
+          ) : null}
+        </div>
       ) : (
         <div className="space-y-2">
           {visible.map((item) => (

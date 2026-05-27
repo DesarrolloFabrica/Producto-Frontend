@@ -1084,6 +1084,8 @@ interface OperationsContextValue extends OperationsState {
   markObservationCorrectionAppliedFromApi: (observationId: string, projectId?: string) => Promise<void>;
   validateObservationFromApi: (observationId: string, projectId?: string) => Promise<void>;
   reopenObservationFromApi: (observationId: string, reason: string, projectId?: string) => Promise<void>;
+  sendObservationsBatchToFactoryFromApi: (subjectId: string, projectId: string) => Promise<number>;
+  notifyCorrectionsBatchFromApi: (subjectId: string, projectId: string) => Promise<number>;
   submitSubjectFromApi: (subjectId: string, projectId: string) => Promise<void>;
   approveSubjectFromApi: (subjectId: string, projectId: string) => Promise<void>;
   rejectSubjectFromApi: (subjectId: string, projectId: string, reason?: string) => Promise<void>;
@@ -1122,7 +1124,7 @@ interface OperationsContextValue extends OperationsState {
   resolveComment: (commentId: string) => void;
   markRecentlyUpdated: (entityId: string) => void;
   clearRecentlyUpdated: (entityId: string) => void;
-  addSemesterToProject: (projectId: string, payload: { semesterNumber: number; factoryExpectedDate: string; subjects: { name: string; topics: string[] }[]; changeReason?: string }) => Promise<void>;
+  addSemesterToProject: (projectId: string, payload: { semesterNumber: number; factoryExpectedDate: string; subjects: { name: string; topics?: string[] }[]; changeReason?: string }) => Promise<void>;
   startProjectProduction: (projectId: string) => Promise<void>;
   deliverProjectToProduct: (projectId: string) => void;
   updateFactoryChecklistItem: (
@@ -1464,11 +1466,16 @@ export function OperationsProvider({ children }: { children: ReactNode }) {
             ? ['detail', 'projectObservations', 'subjectObservations', 'notifications']
             : ['detail', 'projectObservations', 'notifications'],
         });
+        if (input.subjectId) {
+          await queryClient.invalidateQueries({
+            queryKey: queryKeys.subjectWorkspace(input.subjectId),
+          });
+        }
       } finally {
         dispatch({ type: 'SET_MUTATING', payload: false });
       }
     },
-    [state.backendEnabled, refreshWorkflowContext],
+    [state.backendEnabled, refreshWorkflowContext, queryClient],
   );
 
   const markObservationCorrectionAppliedFromApi = useCallback(
@@ -1536,6 +1543,47 @@ export function OperationsProvider({ children }: { children: ReactNode }) {
       }
     },
     [state.backendEnabled, refreshWorkflowContext],
+  );
+
+  const sendObservationsBatchToFactoryFromApi = useCallback(
+    async (subjectId: string, projectId: string) => {
+      if (!state.backendEnabled) throw new Error('Backend deshabilitado.');
+      dispatch({ type: 'SET_MUTATING', payload: true });
+      try {
+        const response = await observationsApi.sendObservationsToFactory(subjectId);
+        await refreshWorkflowContext({
+          projectId,
+          subjectId,
+          scopes: ['detail', 'projectObservations', 'subjectObservations', 'notifications'],
+        });
+        await queryClient.invalidateQueries({ queryKey: queryKeys.subjectWorkspace(subjectId) });
+        markFactoryQueriesStale(queryClient);
+        return response.observationCount;
+      } finally {
+        dispatch({ type: 'SET_MUTATING', payload: false });
+      }
+    },
+    [state.backendEnabled, refreshWorkflowContext, queryClient],
+  );
+
+  const notifyCorrectionsBatchFromApi = useCallback(
+    async (subjectId: string, projectId: string) => {
+      if (!state.backendEnabled) throw new Error('Backend deshabilitado.');
+      dispatch({ type: 'SET_MUTATING', payload: true });
+      try {
+        const response = await observationsApi.notifyCorrectionsToProduct(subjectId);
+        await refreshWorkflowContext({
+          projectId,
+          subjectId,
+          scopes: ['detail', 'projectObservations', 'subjectObservations', 'notifications'],
+        });
+        markFactoryQueriesStale(queryClient);
+        return response.observationCount;
+      } finally {
+        dispatch({ type: 'SET_MUTATING', payload: false });
+      }
+    },
+    [state.backendEnabled, refreshWorkflowContext, queryClient],
   );
 
   const submitSubjectFromApi = useCallback(
@@ -2058,7 +2106,7 @@ export function OperationsProvider({ children }: { children: ReactNode }) {
   const addSemesterToProject = useCallback(
     async (
       projectId: string,
-      payload: { semesterNumber: number; factoryExpectedDate: string; subjects: { name: string; topics: string[] }[]; changeReason?: string },
+      payload: { semesterNumber: number; factoryExpectedDate: string; subjects: { name: string; topics?: string[] }[]; changeReason?: string },
     ) => {
       const project = state.projects.find((p) => p.id === projectId);
       if (!project) return;
@@ -2100,8 +2148,8 @@ export function OperationsProvider({ children }: { children: ReactNode }) {
         progress: 0,
         checklist: buildSubjectChecklist(),
         generalObservations: '',
-        contentTopics: subject.topics.map((topic) => topic.trim()).filter(Boolean),
-        topicChecklists: subject.topics.map((topic, topicIndex) => ({
+        contentTopics: (subject.topics ?? []).map((topic) => topic.trim()).filter(Boolean),
+        topicChecklists: (subject.topics ?? []).map((topic, topicIndex) => ({
           topicName: topic.trim(),
           topicOrder: topicIndex + 1,
           items: buildTopicChecklist(),
@@ -2295,6 +2343,8 @@ export function OperationsProvider({ children }: { children: ReactNode }) {
       markObservationCorrectionAppliedFromApi,
       validateObservationFromApi,
       reopenObservationFromApi,
+      sendObservationsBatchToFactoryFromApi,
+      notifyCorrectionsBatchFromApi,
       submitSubjectFromApi,
       approveSubjectFromApi,
       rejectSubjectFromApi,
@@ -2346,6 +2396,8 @@ export function OperationsProvider({ children }: { children: ReactNode }) {
       markObservationCorrectionAppliedFromApi,
       validateObservationFromApi,
       reopenObservationFromApi,
+      sendObservationsBatchToFactoryFromApi,
+      notifyCorrectionsBatchFromApi,
       submitSubjectFromApi,
       approveSubjectFromApi,
       rejectSubjectFromApi,

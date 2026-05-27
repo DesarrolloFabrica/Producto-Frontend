@@ -66,7 +66,7 @@ export const projectRadicationApi = {
     return apiClient.post<ProjectRadicationReadinessDto>(`/projects/${projectId}/radication/resubmit`, body);
   },
   validate(projectId: string) {
-    return apiClient.post<ProjectRadicationReadinessDto>(`/projects/${projectId}/radication/validate`);
+    return apiClient.post<ProjectRadicationReadinessDto>(`/projects/${projectId}/radication/validate`, {});
   },
   returnRadication(projectId: string, body: { returnReason: string }) {
     return apiClient.post<ProjectRadicationReadinessDto>(`/projects/${projectId}/radication/return`, body);

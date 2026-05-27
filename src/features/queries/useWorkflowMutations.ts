@@ -1,5 +1,6 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { projectsApi } from '../../services/projectsApi';
+import type { OperationalWorkspaceDto } from '../../services/institutionalWorkflowApi';
 import type { ApiProjectDetail, ApiProjectListItem, ApiSubjectDetail, ApiSubjectSummary } from '../../services/types/projectsApi.types';
 import type { ApiSubjectWorkspace } from '../../services/subjectsApi';
 import { isLightSubjectWorkspace, mapProjectDetailFromApi } from '../operations/apiMappers';
@@ -181,6 +182,20 @@ function optimisticProjectsList(
   });
 }
 
+function optimisticOperationalWorkspace(
+  current: OperationalWorkspaceDto | undefined,
+  status: ProductionStatusInput,
+): OperationalWorkspaceDto | undefined {
+  if (!current?.institutionalFlowActive) return current;
+  if (status === 'COMPLETADA' && current.operationalState === 'IN_FACTORY_PRODUCTION') {
+    return { ...current, operationalState: 'PENDING_PLANNING_PRODUCTION_VALIDATION' };
+  }
+  if (status === 'EN_PRODUCCION' && current.operationalState === 'PENDING_FACTORY') {
+    return { ...current, operationalState: 'IN_FACTORY_PRODUCTION' };
+  }
+  return current;
+}
+
 export function useUpdateSubjectProductionStatusMutation() {
   const queryClient = useQueryClient();
 
@@ -197,10 +212,19 @@ export function useUpdateSubjectProductionStatusMutation() {
       await queryClient.cancelQueries({ queryKey: queryKeys.subjectWorkspace(variables.subjectId) });
       await queryClient.cancelQueries({ queryKey: queryKeys.projects() });
       await queryClient.cancelQueries({ queryKey: queryKeys.project(variables.projectId) });
+      await queryClient.cancelQueries({ queryKey: queryKeys.operationalWorkspace(variables.subjectId) });
 
       const previousWorkspace = queryClient.getQueryData<ApiSubjectWorkspace>(queryKeys.subjectWorkspace(variables.subjectId));
       const previousProjects = queryClient.getQueryData<ApiProjectListItem[]>(queryKeys.projects());
       const previousProject = queryClient.getQueryData<ApiProjectDetail>(queryKeys.project(variables.projectId));
+      const previousOperationalWorkspace = queryClient.getQueryData<OperationalWorkspaceDto>(
+        queryKeys.operationalWorkspace(variables.subjectId),
+      );
+
+      queryClient.setQueryData<OperationalWorkspaceDto>(
+        queryKeys.operationalWorkspace(variables.subjectId),
+        (current) => optimisticOperationalWorkspace(current, variables.status),
+      );
 
       queryClient.setQueryData<ApiSubjectWorkspace>(
         queryKeys.subjectWorkspace(variables.subjectId),
@@ -225,12 +249,16 @@ export function useUpdateSubjectProductionStatusMutation() {
         };
       });
 
-      return { previousWorkspace, previousProjects, previousProject };
+      return { previousWorkspace, previousProjects, previousProject, previousOperationalWorkspace };
     },
     onError: (_error, variables, context) => {
       queryClient.setQueryData(queryKeys.subjectWorkspace(variables.subjectId), context?.previousWorkspace);
       queryClient.setQueryData(queryKeys.projects(), context?.previousProjects);
       queryClient.setQueryData(queryKeys.project(variables.projectId), context?.previousProject);
+      queryClient.setQueryData(
+        queryKeys.operationalWorkspace(variables.subjectId),
+        context?.previousOperationalWorkspace,
+      );
     },
     onSuccess: (project, variables) => {
       queryClient.setQueryData(queryKeys.project(project.id), project);
@@ -243,6 +271,7 @@ export function useUpdateSubjectProductionStatusMutation() {
         (current) => reconcileProjectsList(current, project, variables.subjectId),
       );
       void queryClient.invalidateQueries({ queryKey: queryKeys.notificationsSummary(), refetchType: 'none' });
+      void queryClient.refetchQueries({ queryKey: queryKeys.operationalWorkspace(variables.subjectId) });
       void queryClient.invalidateQueries({ queryKey: queryKeys.operationalWorkspace(variables.subjectId) });
       void queryClient.invalidateQueries({ queryKey: ['institutional-work'] });
       markFactoryQueriesStale(queryClient);

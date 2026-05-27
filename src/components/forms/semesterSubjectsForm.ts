@@ -3,11 +3,10 @@ export const MAX_SUBJECTS_PER_SEMESTER = 30;
 export interface SemesterFormSubject {
   id: string;
   name: string;
-  topics: string[];
 }
 
 export function createEmptySemesterSubject(): SemesterFormSubject {
-  return { id: `subj-${Date.now()}-${Math.random()}`, name: '', topics: [] };
+  return { id: `subj-${Date.now()}-${Math.random()}`, name: '' };
 }
 
 export function createInitialSemesterSubjects(count = 1): SemesterFormSubject[] {
@@ -15,7 +14,7 @@ export function createInitialSemesterSubjects(count = 1): SemesterFormSubject[] 
 }
 
 export function semesterSubjectHasContent(subject: SemesterFormSubject): boolean {
-  return Boolean(subject.name.trim()) || subject.topics.some((topic) => topic.trim());
+  return Boolean(subject.name.trim());
 }
 
 export function resizeSemesterSubjects(current: SemesterFormSubject[], targetCount: number): SemesterFormSubject[] {
@@ -27,4 +26,12 @@ export function resizeSemesterSubjects(current: SemesterFormSubject[], targetCou
     ...current,
     ...Array.from({ length: safeCount - current.length }, () => createEmptySemesterSubject()),
   ];
+}
+
+export function countIncompleteSemesterSubjects(subjects: SemesterFormSubject[]): number {
+  return subjects.filter((subject) => !subject.name.trim()).length;
+}
+
+export function isSemesterSubjectsStepValid(subjects: SemesterFormSubject[]): boolean {
+  return subjects.length >= 1 && subjects.every((subject) => Boolean(subject.name.trim()));
 }

@@ -136,7 +136,7 @@ export function WorkflowPreviewPage() {
         items={myPending}
         isLoading={false}
         error={null}
-        onResetMock={resetMock}
+        onRefresh={resetMock}
         onAction={({ subjectId, action }) => {
           if (action === 'VIEW_DETAIL' || action === 'VIEW_TIMELINE') {
             navigate(`/operations-v2/subjects/${subjectId}`);

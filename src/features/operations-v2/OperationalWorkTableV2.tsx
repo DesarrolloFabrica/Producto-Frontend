@@ -12,7 +12,7 @@ type BaseProps = {
   items: OperationalWorkItemV2[];
   isLoading: boolean;
   error: string | null;
-  onResetMock: () => void;
+  onRefresh: () => void;
   backFallback?: string;
 };
 
@@ -30,7 +30,7 @@ type ActionProps = BaseProps & {
 
 export type OperationalWorkTableV2Props = FlowOnlyProps | ActionProps;
 
-function FlowOpenButton({ onClick }: { onClick: () => void }) {
+function FlowOpenButton({ onClick, label = 'Ver flujo' }: { onClick: () => void; label?: string }) {
   return (
     <Button
       type="button"
@@ -39,14 +39,14 @@ function FlowOpenButton({ onClick }: { onClick: () => void }) {
       className="shrink-0 gap-1.5 border-slate-200/80 bg-white font-semibold text-slate-700 shadow-sm hover:bg-slate-50"
       onClick={onClick}
     >
-      Ir al flujo
+      {label}
       <ArrowRight className="h-3.5 w-3.5" />
     </Button>
   );
 }
 
 export function OperationalWorkTableV2(props: OperationalWorkTableV2Props) {
-  const { role, items, isLoading, error, flowOnly } = props;
+  const { role, items, isLoading, error, flowOnly, onRefresh } = props;
   const showEmpty = !isLoading && !error && items.length === 0;
 
   const handleRowOpen = (subjectId: string) => {
@@ -77,7 +77,12 @@ export function OperationalWorkTableV2(props: OperationalWorkTableV2Props) {
       ) : null}
 
       {showEmpty ? (
-        <div className="p-8 text-center text-sm text-slate-500">No hay asignaturas pendientes en su bandeja.</div>
+        <div className="space-y-3 p-8 text-center">
+          <p className="text-sm text-slate-500">No hay asignaturas pendientes en su bandeja.</p>
+          <Button type="button" size="sm" variant="secondary" onClick={onRefresh}>
+            Actualizar bandeja
+          </Button>
+        </div>
       ) : (
         <>
           <div className="hidden overflow-auto md:block">

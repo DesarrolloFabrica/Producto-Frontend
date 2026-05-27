@@ -41,6 +41,8 @@ export interface OperationalWorkspaceDto {
   academicReviewReady: boolean;
   correctionInFactory: boolean;
   institutionalFlowActive: boolean;
+  academicApprovalReady?: boolean;
+  academicApprovalBlockers?: string[];
   slaStatus: SlaStatus;
   stageDueAt: string | null;
   lastReturnReason: string | null;

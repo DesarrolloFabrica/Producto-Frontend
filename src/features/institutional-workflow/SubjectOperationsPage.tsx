@@ -19,6 +19,8 @@ import { institutionalStateLabel } from './institutionalCopy';
 import type { OperationalCheckKeyV2 } from '../../types/operationalWorkflow';
 import type { SlaStatusV2 } from '../../types/operationalWorkflow';
 import { cn } from '../../components/ui/tokens';
+import { useToast } from '../../components/ui/ToastProvider';
+import { getApiErrorMessage } from '../operations/apiMappers';
 
 function isReturnOrRejectAction(action: InstitutionalOperationalAction): boolean {
   return action.includes('RETURN') || action === 'PRODUCT_REQUEST_CHANGES';
@@ -40,6 +42,7 @@ export function SubjectOperationsPage() {
   const roleHome = homePathForRole(role);
   const [modal, setModal] = useState<ModalRequestV2>(null);
 
+  const { showToast } = useToast();
   const workspaceQuery = useOperationalWorkspaceQuery(subjectId);
   const transitionMutation = useInstitutionalTransitionMutation(subjectId);
 
@@ -68,7 +71,7 @@ export function SubjectOperationsPage() {
         navigate(`/subjects/${subjectId}?review=started`);
       }
     } catch (e: unknown) {
-      console.error(e);
+      showToast(getApiErrorMessage(e), 'error');
     }
   };
 
@@ -130,7 +133,9 @@ export function SubjectOperationsPage() {
   const hasActions = workspace.availableActions.length > 0;
   const stateHint = workspace.academicReviewReady
     ? 'Inicie la revisión académica para habilitar el checklist.'
-    : 'La revisión académica se habilitará cuando Planeación valide la carga LMS.';
+    : workspace.academicApprovalBlockers?.length
+      ? workspace.academicApprovalBlockers.join(' ')
+      : 'La revisión académica se habilitará cuando Planeación valide la carga LMS.';
 
   return (
     <div className="min-h-screen bg-slate-50">
@@ -225,9 +230,18 @@ export function SubjectOperationsPage() {
                 })}
               </div>
             ) : (
-              <p className="mt-4 text-sm text-slate-600">
-                No hay acciones pendientes de su rol en esta etapa.
-              </p>
+              <div className="space-y-3">
+                {workspace.academicApprovalBlockers && workspace.academicApprovalBlockers.length > 0 ? (
+                  <ul className="rounded-lg border border-amber-200 bg-amber-50/80 px-3 py-2 text-xs text-amber-900">
+                    {workspace.academicApprovalBlockers.map((blocker) => (
+                      <li key={blocker}>• {blocker}</li>
+                    ))}
+                  </ul>
+                ) : null}
+                <p className="text-sm text-slate-600">
+                  No hay acciones pendientes de su rol en esta etapa.
+                </p>
+              </div>
             )}
 
             <div className="mt-4 border-t border-amber-200/50 pt-3">

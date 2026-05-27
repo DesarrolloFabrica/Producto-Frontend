@@ -1,4 +1,4 @@
-import type { ChecklistItem, SubjectStatus } from '../../types/domain';
+import type { ChecklistItem, SubjectStatus, SubjectVirtualization } from '../../types/domain';
 
 const SUBJECT_REVIEWABLE_STATUSES: SubjectStatus[] = ['IN_REVIEW', 'CHANGES_REQUESTED', 'SUBMITTED'];
 const SUBJECT_APPROVED_STATUSES: SubjectStatus[] = ['APPROVED', 'DELIVERED'];
@@ -31,6 +31,56 @@ export function countApprovableProductItems(items: ChecklistItem[]) {
 
 export function countApprovableTopicItems(items: ChecklistItem[]) {
   return items.filter((item) => item.status === 'ENTREGADO' || item.status === 'RECHAZADO').length;
+}
+
+export function getAcademicApprovalBlockers(params: {
+  subject: Pick<SubjectVirtualization, 'checklist' | 'topicChecklists'>;
+  unresolvedObservationCount?: number;
+  topicsCount?: number;
+}): string[] {
+  const blockers: string[] = [];
+  const { subject, unresolvedObservationCount = 0, topicsCount } = params;
+
+  const productItems = subject.checklist.filter((item) => item.ownerRole === 'PRODUCT');
+  const topicItems = subject.topicChecklists.flatMap((topic) => topic.items ?? []);
+  const resolvedTopicsCount = topicsCount ?? subject.topicChecklists.length;
+
+  if (resolvedTopicsCount === 0) {
+    blockers.push('Debe definir los gránulos/temas antes de aprobar académicamente.');
+  }
+
+  const pendingProduct = productItems.filter((item) => item.status !== 'APROBADO');
+  if (pendingProduct.length > 0) {
+    blockers.push(
+      `Faltan ${pendingProduct.length} entregable(s) de Product por aprobar en el checklist general.`,
+    );
+  }
+
+  const pendingTopics = topicItems.filter((item) => item.status !== 'APROBADO');
+  if (pendingTopics.length > 0) {
+    const notDelivered = pendingTopics.filter(
+      (item) => item.status === 'PENDIENTE' || item.status === 'EN_PRODUCCION',
+    );
+    if (notDelivered.length > 0) {
+      blockers.push('Fábrica aún no ha entregado todos los materiales de temas/gránulos.');
+    } else {
+      blockers.push(
+        `Faltan ${pendingTopics.length} ítem(s) de temas/gránulos por aprobar.`,
+      );
+    }
+  }
+
+  if (unresolvedObservationCount > 0) {
+    blockers.push(
+      `Hay ${unresolvedObservationCount} observación(es) pendientes de validación.`,
+    );
+  }
+
+  return blockers;
+}
+
+export function isReadyForAcademicApproval(params: Parameters<typeof getAcademicApprovalBlockers>[0]): boolean {
+  return getAcademicApprovalBlockers(params).length === 0;
 }
 
 /** Mensaje cuando la asignatura aún no está en revisión Product. */

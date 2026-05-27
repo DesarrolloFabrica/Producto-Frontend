@@ -29,15 +29,11 @@ import type { VirtualizationProject } from '../../types/domain';
 import { analyzeProductProject } from '../../features/operations/productDashboardState';
 import { FactoryProjectDetail } from './FactoryProjectDetail';
 import { useDismissNotificationsOnVisit } from '../notifications/useDismissNotificationsOnVisit';
-import { SubjectTopicsEditor } from '../../components/forms/SubjectTopicsEditor';
+import { SemesterSubjectsWizard, areAllSemesterSubjectsValid } from '../../components/forms/SemesterSubjectsWizard';
 import {
   createInitialSemesterSubjects,
-  MAX_SUBJECTS_PER_SEMESTER,
-  resizeSemesterSubjects,
-  semesterSubjectHasContent,
   type SemesterFormSubject,
 } from '../../components/forms/semesterSubjectsForm';
-import { isSubjectTopicsFormValid, validateSubjectTopicsList } from '../../utils/subjectTopics';
 import {
   ProjectRadicationPanel,
   ProjectRadicationScopeLockHint,
@@ -469,7 +465,7 @@ interface AddSemesterModalProps {
   isOpen: boolean;
   onClose: () => void;
   project: VirtualizationProject;
-  onAdd: (payload: { semesterNumber: number; factoryExpectedDate: string; subjects: { name: string; topics: string[] }[]; changeReason?: string }) => Promise<void>;
+  onAdd: (payload: { semesterNumber: number; factoryExpectedDate: string; subjects: { name: string; topics?: string[] }[]; changeReason?: string }) => Promise<void>;
   onSuccess: () => void;
   onError: (message: string) => void;
 }
@@ -491,36 +487,8 @@ function AddSemesterModal({ isOpen, onClose, project, onAdd, onSuccess, onError 
     setErrors([]);
   };
 
-  const applySubjectCount = (nextCount: number) => {
-    setSubjects((prev) => resizeSemesterSubjects(prev, nextCount));
-  };
-
-  const changeSubjectCount = (nextCount: number) => {
-    const safeCount = Math.min(MAX_SUBJECTS_PER_SEMESTER, Math.max(1, nextCount));
-    if (safeCount === subjects.length) return;
-
-    if (safeCount < subjects.length) {
-      const removed = subjects.slice(safeCount);
-      const hasData = removed.some(semesterSubjectHasContent);
-      if (hasData) {
-        const confirmed = window.confirm(
-          `Vas a reducir a ${safeCount} asignatura(s). Se eliminarán ${removed.length} asignatura(s) con información ingresada. ¿Continuar?`,
-        );
-        if (!confirmed) return;
-      }
-    }
-
-    applySubjectCount(safeCount);
-  };
-
-  const updateSubjectName = (id: string, name: string) => {
-    setSubjects((prev) => prev.map((s) => (s.id === id ? { ...s, name } : s)));
-  };
-
   const canSubmitSemester =
-    selectedSemester !== null &&
-    subjects.length >= 1 &&
-    subjects.every((subj) => Boolean(subj.name.trim()) && isSubjectTopicsFormValid(subj.topics));
+    selectedSemester !== null && areAllSemesterSubjectsValid([{ number: selectedSemester, subjects }]);
 
   const validate = (): boolean => {
     const newErrors: string[] = [];
@@ -529,7 +497,6 @@ function AddSemesterModal({ isOpen, onClose, project, onAdd, onSuccess, onError 
     if (subjects.length < 1) newErrors.push('Define al menos una asignatura para el nuevo semestre.');
     subjects.forEach((subj) => {
       if (!subj.name.trim()) newErrors.push('Una asignatura no tiene nombre.');
-      newErrors.push(...validateSubjectTopicsList(subj.topics, subj.name));
     });
     setErrors(newErrors);
     return newErrors.length === 0;
@@ -544,7 +511,7 @@ function AddSemesterModal({ isOpen, onClose, project, onAdd, onSuccess, onError 
         factoryExpectedDate: expectedDate,
         subjects: subjects.map((subj) => ({
           name: subj.name.trim(),
-          topics: subj.topics.map((topic) => topic.trim()).filter(Boolean),
+          topics: [],
         })),
         changeReason: changeReason.trim() || undefined,
       });
@@ -634,74 +601,16 @@ function AddSemesterModal({ isOpen, onClose, project, onAdd, onSuccess, onError 
           <>
             <div className="border-t border-slate-100" />
 
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <p className="text-[10px] font-black uppercase tracking-widest text-orange-500">
-                Asignaturas del semestre {selectedSemester}
-              </p>
-              <div className="flex items-center gap-2">
-                <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">
-                  Número de asignaturas
-                </span>
-                <div className="flex items-center rounded-xl border border-slate-200 bg-white">
-                  <button
-                    type="button"
-                    onClick={() => changeSubjectCount(subjects.length - 1)}
-                    disabled={subjects.length <= 1}
-                    className="flex h-9 w-9 items-center justify-center text-slate-500 transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
-                    aria-label="Reducir asignaturas"
-                  >
-                    <Minus className="h-3.5 w-3.5" />
-                  </button>
-                  <input
-                    type="number"
-                    min={1}
-                    max={MAX_SUBJECTS_PER_SEMESTER}
-                    value={subjects.length}
-                    onChange={(e) => {
-                      const parsed = Number(e.target.value);
-                      if (!Number.isFinite(parsed)) return;
-                      changeSubjectCount(parsed);
-                    }}
-                    className="h-9 w-12 border-x border-slate-200 bg-white text-center text-sm font-bold text-slate-900 focus:outline-none"
-                    aria-label="Número de asignaturas"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => changeSubjectCount(subjects.length + 1)}
-                    disabled={subjects.length >= MAX_SUBJECTS_PER_SEMESTER}
-                    className="flex h-9 w-9 items-center justify-center text-slate-500 transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
-                    aria-label="Aumentar asignaturas"
-                  >
-                    <Plus className="h-3.5 w-3.5" />
-                  </button>
-                </div>
-              </div>
-            </div>
-
-            <div className="space-y-3 max-h-64 overflow-y-auto pr-1">
-              {subjects.map((subj, idx) => (
-                <div key={subj.id} className="rounded-xl border border-orange-100/60 bg-orange-50/20 p-4 space-y-3">
-                  <span className="text-[10px] font-black uppercase tracking-widest text-orange-500">
-                    Asignatura {idx + 1}
-                  </span>
-                  <input
-                    className={cn(inputClass, 'bg-white')}
-                    value={subj.name}
-                    onChange={(e) => updateSubjectName(subj.id, e.target.value)}
-                    placeholder="Nombre de la asignatura"
-                  />
-                  <SubjectTopicsEditor
-                    topics={subj.topics}
-                    onChange={(nextTopics) =>
-                      setSubjects((prev) =>
-                        prev.map((s) => (s.id === subj.id ? { ...s, topics: nextTopics } : s)),
-                      )
-                    }
-                    inputClass={inputClass}
-                  />
-                </div>
-              ))}
-            </div>
+            <SemesterSubjectsWizard
+              singleSemester
+              singleSemesterLabel={`Asignaturas del semestre ${selectedSemester}`}
+              semesters={[{ number: selectedSemester, subjects }]}
+              onSemestersChange={(next) => {
+                const row = next[0];
+                if (row) setSubjects(row.subjects);
+              }}
+              inputClass={inputClass}
+            />
           </>
         )}
 

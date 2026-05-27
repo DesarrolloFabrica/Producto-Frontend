@@ -17,6 +17,10 @@ import { Card } from '../../components/ui/Card';
 import { getApiErrorMessage } from '../operations/apiMappers';
 import { calculateSubjectProgress } from '../operations/progress';
 import {
+  countPendingFactoryCorrectionNotifications,
+  filterObservationsVisibleToFactory,
+} from '../observations/observationDeliverableHelpers';
+import {
   getOperationalCta,
   getOperationalStateLabel,
   getProductObservationsForSubject,
@@ -26,11 +30,18 @@ import {
 import { useOperations } from '../../features/operations/OperationsContext';
 import { useToast } from '../../components/ui/ToastProvider';
 import { useUpdateSubjectProductionStatusMutation } from '../queries/useWorkflowMutations';
+import { useOperationalWorkspaceQuery } from '../queries/useOperationalWorkspaceQuery';
 import { formatDate } from '../../utils/formatters';
 import { Button } from '../../components/ui/Button';
 import { cn } from '../../components/ui/tokens';
-import type { OperationalObservation, SubjectVirtualization, VirtualizationProject } from '../../types/domain';
+import type {
+  InstitutionalOperationalState,
+  OperationalObservation,
+  SubjectVirtualization,
+  VirtualizationProject,
+} from '../../types/domain';
 import { ChangeOriginBadge, ChangeOriginHint } from '../../components/change-tracking/ChangeOriginBadge';
+import { FACTORY_COPY, institutionalStateLabel } from '../institutional-workflow/institutionalCopy';
 
 type FlowStepId = 'PENDIENTE' | 'EN_PRODUCCION' | 'EN_REVISION';
 type GeneralProductionState = FlowStepId | 'APROBADA';
@@ -60,12 +71,104 @@ function stepState(current: GeneralProductionState, step: FlowStepId) {
   return 'upcoming';
 }
 
-function flowStepLabel(stepId: FlowStepId, productionState: GeneralProductionState): string {
+function flowStepLabel(
+  stepId: FlowStepId,
+  productionState: GeneralProductionState,
+  institutionalState?: InstitutionalOperationalState,
+): string {
   if (stepId === 'EN_REVISION') {
-    return productionState === 'APROBADA' ? 'Completada' : 'En revisión Product';
+    if (productionState === 'APROBADA') return 'Completada';
+    if (institutionalState === 'PENDING_PLANNING_PRODUCTION_VALIDATION') return 'En validación Planeación';
+    if (institutionalState && productionState === 'EN_REVISION') return 'Entregada a Planeación';
+    return 'En revisión Product';
   }
   if (stepId === 'PENDIENTE') return 'Pendiente';
   return 'En producción';
+}
+
+function mapInstitutionalToFactoryFlowState(
+  state: InstitutionalOperationalState,
+): GeneralProductionState {
+  if (state === 'FINALIZED') return 'APROBADA';
+  if (
+    state === 'PENDING_PLANNING_PRODUCTION_VALIDATION' ||
+    state === 'PENDING_LMS_UPLOAD' ||
+    state === 'IN_LMS_UPLOAD' ||
+    state === 'PENDING_PLANNING_LMS_VALIDATION' ||
+    state === 'RETURNED_TO_LMS_FROM_PLANNING' ||
+    state === 'PENDING_PRODUCT_ACADEMIC_REVIEW' ||
+    state === 'IN_PRODUCT_ACADEMIC_REVIEW' ||
+    state === 'PENDING_PROJECT_RADICATION'
+  ) {
+    return 'EN_REVISION';
+  }
+  if (
+    state === 'IN_FACTORY_PRODUCTION' ||
+    state === 'RETURNED_TO_FACTORY_FROM_PLANNING' ||
+    state === 'CHANGES_REQUESTED_BY_PRODUCT'
+  ) {
+    return 'EN_PRODUCCION';
+  }
+  return 'PENDIENTE';
+}
+
+function getInstitutionalFactoryCta(state: InstitutionalOperationalState): { label: string; passive?: boolean } {
+  switch (state) {
+    case 'PENDING_FACTORY':
+    case 'RETURNED_TO_FACTORY_FROM_PLANNING':
+      return { label: 'Iniciar producción' };
+    case 'IN_FACTORY_PRODUCTION':
+      return { label: 'Finalizar producción' };
+    case 'CHANGES_REQUESTED_BY_PRODUCT':
+      return { label: 'Ver correcciones' };
+    case 'PENDING_PLANNING_PRODUCTION_VALIDATION':
+      return { label: 'Esperando Planeación', passive: true };
+    default:
+      return { label: 'En seguimiento', passive: true };
+  }
+}
+
+function getFactoryRecommendation(params: {
+  displayProductionState: GeneralProductionState;
+  useInstitutionalUi: boolean;
+  institutionalOperationalState?: InstitutionalOperationalState;
+  openCorrections: number;
+  hasCorrectionFlow: boolean;
+  correctionsInReview: number;
+  isApproved: boolean;
+}): string {
+  const {
+    displayProductionState,
+    useInstitutionalUi,
+    institutionalOperationalState,
+    openCorrections,
+    hasCorrectionFlow,
+    correctionsInReview,
+    isApproved,
+  } = params;
+
+  if (openCorrections > 0) {
+    return 'Primero aplica todas las correcciones abiertas. Cada observación debe marcarse individualmente.';
+  }
+  if (hasCorrectionFlow && correctionsInReview > 0) {
+    return 'Todas las correcciones ya fueron aplicadas. Ahora puedes enviar la materia nuevamente a Product.';
+  }
+  if (useInstitutionalUi && institutionalOperationalState === 'PENDING_PLANNING_PRODUCTION_VALIDATION') {
+    return 'Producción entregada. Planeación está validando la entrega antes de continuar hacia LMS.';
+  }
+  if (useInstitutionalUi && displayProductionState === 'EN_REVISION') {
+    return 'La producción de Fábrica ya fue entregada. Sigue el avance operacional desde este panel.';
+  }
+  if (displayProductionState === 'PENDIENTE') {
+    return 'Cuando el equipo inicie el trabajo, marca la materia como En producción.';
+  }
+  if (displayProductionState === 'EN_PRODUCCION') {
+    return 'Cuando el contenido esté listo, finalice la producción para enviarla a validación de Planeación.';
+  }
+  if (isApproved) {
+    return 'Product aprobó esta materia. No hay acciones pendientes de Fábrica.';
+  }
+  return 'La materia ya fue enviada a Product. Espera validación.';
 }
 
 const correctionStatusUi = {
@@ -104,12 +207,15 @@ export function FactorySubjectDetail({ project, subject, observations }: Factory
     projectObservations,
     observationsByProject,
     markObservationCorrectionApplied,
+    notifyCorrectionsBatchFromApi,
     isMutating,
+    backendEnabled,
   } = useOperations();
   const { showToast } = useToast();
   const updateProductionStatusMutation = useUpdateSubjectProductionStatusMutation();
+  const operationalWorkspaceQuery = useOperationalWorkspaceQuery(subject.id, backendEnabled);
 
-  const [submittingAction, setSubmittingAction] = useState<'production' | 'complete' | 'send-corrections' | null>(null);
+  const [submittingAction, setSubmittingAction] = useState<'production' | 'complete' | 'send-corrections' | 'notify-corrections' | null>(null);
   const [submittingObservationId, setSubmittingObservationId] = useState<string | null>(null);
   const actionInFlightRef = useRef(false);
   const correctionsSectionRef = useRef<HTMLDivElement | null>(null);
@@ -136,10 +242,8 @@ export function FactorySubjectDetail({ project, subject, observations }: Factory
     projectObservations.filter((observation) => observation.projectId === project.id);
   const isActionBusy = isMutating || updateProductionStatusMutation.isPending;
 
-  const productCorrections = getProductObservationsForSubject(
-    project,
-    subject.id,
-    scopedProjectObservations,
+  const productCorrections = filterObservationsVisibleToFactory(
+    getProductObservationsForSubject(project, subject.id, scopedProjectObservations),
   ).sort(
     (a, b) => new Date(b.updatedAt ?? b.createdAt).getTime() - new Date(a.updatedAt ?? a.createdAt).getTime(),
   );
@@ -147,20 +251,57 @@ export function FactorySubjectDetail({ project, subject, observations }: Factory
   const openCorrections = productCorrections.filter((observation) => observation.status === 'ABIERTA');
   const correctionsInReview = productCorrections.filter((observation) => observation.status === 'EN_CORRECCION');
   const resolvedCorrections = productCorrections.filter((observation) => observation.status === 'RESUELTA');
+  const hasCorrectionFlow = openCorrections.length > 0 || correctionsInReview.length > 0;
   const productionState = mapSubjectToProductionState(subject.status);
+  const institutionalFlowActive = operationalWorkspaceQuery.data?.institutionalFlowActive === true;
+  const institutionalOperationalState = operationalWorkspaceQuery.data?.operationalState;
+  const useInstitutionalUi = Boolean(
+    backendEnabled && institutionalFlowActive && institutionalOperationalState,
+  );
+  const factoryActionsReady = !backendEnabled || operationalWorkspaceQuery.isFetched;
+  const displayProductionState = useInstitutionalUi
+    ? mapInstitutionalToFactoryFlowState(institutionalOperationalState!)
+    : productionState;
+  const canStartProduction =
+    factoryActionsReady &&
+    !hasCorrectionFlow &&
+    (useInstitutionalUi
+      ? ['PENDING_FACTORY', 'RETURNED_TO_FACTORY_FROM_PLANNING', 'CHANGES_REQUESTED_BY_PRODUCT'].includes(
+          institutionalOperationalState!,
+        )
+      : productionState === 'PENDIENTE');
+  const canFinishProduction =
+    factoryActionsReady &&
+    (useInstitutionalUi
+      ? institutionalOperationalState === 'IN_FACTORY_PRODUCTION'
+      : productionState === 'EN_PRODUCCION');
   const operationalState = normalizeSubjectOperationalState({
     subject,
     observations: productCorrections,
     projectStatus: project.status,
   });
-  const operationalLabel = getOperationalStateLabel(operationalState);
-  const operationalCta = getOperationalCta(operationalState);
+  const operationalLabel = useInstitutionalUi
+    ? institutionalStateLabel(institutionalOperationalState!)
+    : getOperationalStateLabel(operationalState);
+  const operationalCta = useInstitutionalUi
+    ? getInstitutionalFactoryCta(institutionalOperationalState!)
+    : getOperationalCta(operationalState);
   const progress =
     subject.checklist.length > 0 ? calculateSubjectProgress(subject) : mapSubjectToProgress(subject.status);
   const semester = project.semesters.find((item) => item.semesterNumber === subject.semesterNumber);
   const canSendCorrections = openCorrections.length === 0 && correctionsInReview.length > 0;
-  const hasCorrectionFlow = openCorrections.length > 0 || correctionsInReview.length > 0;
-  const isApproved = productionState === 'APROBADA';
+  const isApproved = displayProductionState === 'APROBADA';
+  const factoryProductionDelivered =
+    useInstitutionalUi && displayProductionState === 'EN_REVISION' && !hasCorrectionFlow;
+  const factoryRecommendation = getFactoryRecommendation({
+    displayProductionState,
+    useInstitutionalUi,
+    institutionalOperationalState,
+    openCorrections: openCorrections.length,
+    hasCorrectionFlow,
+    correctionsInReview: correctionsInReview.length,
+    isApproved,
+  });
 
   const handleStartProduction = async () => {
     if (actionInFlightRef.current || isActionBusy || submittingAction) return;
@@ -168,6 +309,7 @@ export function FactorySubjectDetail({ project, subject, observations }: Factory
     setSubmittingAction('production');
     try {
       await updateProductionStatusMutation.mutateAsync({ subjectId: subject.id, projectId: project.id, status: 'EN_PRODUCCION' });
+      await operationalWorkspaceQuery.refetch();
       showToast('Producción iniciada.');
     } catch (updateError) {
       showToast(getApiErrorMessage(updateError), 'error');
@@ -183,6 +325,7 @@ export function FactorySubjectDetail({ project, subject, observations }: Factory
     setSubmittingAction('complete');
     try {
       await updateProductionStatusMutation.mutateAsync({ subjectId: subject.id, projectId: project.id, status: 'COMPLETADA' });
+      await operationalWorkspaceQuery.refetch();
       showToast('Producción finalizada — enviada a validación de Planeación.');
     } catch (updateError) {
       showToast(getApiErrorMessage(updateError), 'error');
@@ -207,11 +350,31 @@ export function FactorySubjectDetail({ project, subject, observations }: Factory
     }
   };
 
+  const pendingCorrectionNotifyCount = countPendingFactoryCorrectionNotifications(
+    productCorrections,
+    subject.id,
+  );
+
+  const handleNotifyCorrectionsToProduct = async () => {
+    if (actionInFlightRef.current || isActionBusy || submittingAction) return;
+    actionInFlightRef.current = true;
+    setSubmittingAction('notify-corrections');
+    try {
+      const count = await notifyCorrectionsBatchFromApi(subject.id, project.id);
+      showToast(`${count} corrección(es) notificadas a Product`);
+    } catch (updateError) {
+      showToast(getApiErrorMessage(updateError), 'error');
+    } finally {
+      actionInFlightRef.current = false;
+      setSubmittingAction(null);
+    }
+  };
+
   const handleMarkCorrectionApplied = async (observation: OperationalObservation) => {
     setSubmittingObservationId(observation.id);
     try {
       await markObservationCorrectionApplied(project.id, observation.id, observation);
-      showToast('Corrección enviada a Product.');
+      showToast('Corrección marcada. Notifica a Product cuando termines el lote.');
     } catch (updateError) {
       showToast(getApiErrorMessage(updateError), 'error');
     } finally {
@@ -276,7 +439,7 @@ export function FactorySubjectDetail({ project, subject, observations }: Factory
               { id: 'EN_PRODUCCION' as const },
               { id: 'EN_REVISION' as const },
             ]).map((step, index, list) => {
-              const state = stepState(productionState, step.id);
+              const state = stepState(displayProductionState, step.id);
               return (
                 <div key={step.id} className="flex items-center gap-3 md:flex-1">
                   <div className={cn('flex h-9 w-9 items-center justify-center rounded-full text-xs font-black transition-all', state === 'done' && 'bg-emerald-500 text-white shadow-sm', state === 'current' && 'bg-orange-500 text-white shadow-[0_12px_24px_-16px_rgba(249,115,22,0.65)]', state === 'upcoming' && 'bg-white text-slate-400 ring-1 ring-slate-200')}>
@@ -284,7 +447,7 @@ export function FactorySubjectDetail({ project, subject, observations }: Factory
                   </div>
                   <div className="min-w-0">
                     <p className={cn('text-xs font-bold transition-colors', state === 'upcoming' ? 'text-slate-400' : state === 'done' ? 'text-emerald-700' : 'text-slate-900')}>
-                      {flowStepLabel(step.id, productionState)}
+                      {flowStepLabel(step.id, displayProductionState, institutionalOperationalState)}
                     </p>
                     <p className={cn('text-[10px] font-medium', state === 'done' ? 'text-emerald-600' : 'text-slate-400')}>
                       {state === 'current' ? 'Estado actual' : state === 'done' ? 'Completado' : 'Pendiente'}
@@ -334,23 +497,19 @@ export function FactorySubjectDetail({ project, subject, observations }: Factory
             {isApproved ? 'Materia completada' : 'Siguiente acción recomendada'}
           </p>
           <p className={cn('mt-1 text-sm font-medium', isApproved ? 'text-emerald-800' : 'text-slate-600')}>
-            {openCorrections.length > 0
-              ? 'Primero aplica todas las correcciones abiertas. Cada observación debe marcarse individualmente.'
-              : hasCorrectionFlow && correctionsInReview.length > 0
-                ? 'Todas las correcciones ya fueron aplicadas. Ahora puedes enviar la materia nuevamente a Product.'
-                : productionState === 'PENDIENTE'
-                  ? 'Cuando el equipo inicie el trabajo, marca la materia como En producción.'
-                  : productionState === 'EN_PRODUCCION'
-                    ? 'Cuando el contenido esté listo, finalice la producción para enviarla a validación de Planeación.'
-                    : isApproved
-                      ? 'Product aprobó esta materia. No hay acciones pendientes de Fábrica.'
-                      : 'La materia ya fue enviada a Product. Espera validación.'}
+            {factoryRecommendation}
           </p>
         </div>
 
+        {factoryProductionDelivered && (
+          <div className="mt-6 rounded-[12px] border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-800">
+            Producción de Fábrica completada y entregada a Planeación. No hay acciones pendientes en esta etapa.
+          </div>
+        )}
+
         {!hasCorrectionFlow && (
           <div className="mt-6">
-            {productionState === 'PENDIENTE' && (
+            {canStartProduction && (
               <Button
                 onClick={() => void handleStartProduction()}
                 disabled={isActionBusy || submittingAction === 'production'}
@@ -361,10 +520,10 @@ export function FactorySubjectDetail({ project, subject, observations }: Factory
               </Button>
             )}
 
-            {productionState === 'EN_PRODUCCION' && (
+            {canFinishProduction && (
               <div className="space-y-3">
                 <div className="rounded-[12px] bg-amber-50 px-4 py-3 text-sm font-medium text-amber-700">
-                  Entrega la producción a validación operacional de Planeación. El flujo continúa hacia LMS antes de la revisión académica de Product.
+                  {FACTORY_COPY.finishProductionHint}
                 </div>
                 <Button
                   onClick={() => void handleMarkCompleted()}
@@ -424,7 +583,9 @@ export function FactorySubjectDetail({ project, subject, observations }: Factory
                       <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
                       <div>
                         <p className="font-bold">Aún existen correcciones pendientes por aplicar.</p>
-                        <p className="mt-1 text-amber-700">Mientras exista al menos una observación `ABIERTA`, no podrás reenviar la materia a Product.</p>
+                        <p className="mt-1 text-amber-700">
+                          Mientras exista al menos una observación abierta, no podrás reentregar la producción.
+                        </p>
                       </div>
                     </div>
                   </div>
@@ -442,6 +603,30 @@ export function FactorySubjectDetail({ project, subject, observations }: Factory
                   ))}
                 </div>
 
+                {pendingCorrectionNotifyCount > 0 && (
+                  <div className="rounded-[22px] border border-sky-200 bg-sky-50/70 p-5 shadow-sm">
+                    <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+                      <div>
+                        <p className="text-[10px] font-black uppercase tracking-widest text-sky-600">Notificación agrupada</p>
+                        <h3 className="mt-1 text-base font-black text-slate-950">
+                          {pendingCorrectionNotifyCount} corrección(es) lista(s) para notificar
+                        </h3>
+                        <p className="mt-1 text-sm text-slate-600">
+                          Product recibirá un solo aviso con todas las correcciones marcadas.
+                        </p>
+                      </div>
+                      <Button
+                        onClick={() => void handleNotifyCorrectionsToProduct()}
+                        disabled={isActionBusy || submittingAction === 'notify-corrections'}
+                        className="min-w-[280px] py-3 text-sm font-bold shadow-[0_14px_28px_-20px_rgba(14,165,233,0.6)]"
+                      >
+                        {submittingAction === 'notify-corrections' ? <Clock3 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+                        Notificar correcciones realizadas
+                      </Button>
+                    </div>
+                  </div>
+                )}
+
                 {canSendCorrections && (
                   <div className="rounded-[22px] border border-sky-200 bg-sky-50/70 p-5 shadow-sm">
                     <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
@@ -449,7 +634,7 @@ export function FactorySubjectDetail({ project, subject, observations }: Factory
                         <p className="text-[10px] font-black uppercase tracking-widest text-sky-600">Revisión final</p>
                         <h3 className="mt-1 text-base font-black text-slate-950">Todas las correcciones ya fueron aplicadas</h3>
                         <p className="mt-1 text-sm text-slate-600">
-                          Ya no quedan observaciones abiertas. Puedes enviar la materia nuevamente a Product para validación individual.
+                          Ya no quedan observaciones abiertas. Reentrega la producción corregida para validación operacional de Planeación.
                         </p>
                       </div>
                       <Button

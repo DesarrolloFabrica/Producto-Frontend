@@ -70,8 +70,8 @@ export function LoginPage() {
               <p className="mt-1 text-[10px] font-black uppercase tracking-widest text-slate-400">Roles MVP</p>
             </Card>
             <Card className="p-5">
-              <p className="text-3xl font-black text-slate-950">Mock</p>
-              <p className="mt-1 text-[10px] font-black uppercase tracking-widest text-slate-400">Sin backend</p>
+              <p className="text-3xl font-black text-slate-950">API</p>
+              <p className="mt-1 text-[10px] font-black uppercase tracking-widest text-slate-400">:3000 + JWT</p>
             </Card>
           </div>
         </motion.section>

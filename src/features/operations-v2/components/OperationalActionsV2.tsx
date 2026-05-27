@@ -8,7 +8,6 @@ import { actionLabelV2 } from '../rules/workflowRulesV2';
 function actionStyle(action: OperationalActionV2): { variant: 'primary' | 'secondary' | 'danger' } {
   if (action.includes('RETURN')) return { variant: 'secondary' };
   if (action === 'PRODUCT_REQUEST_CHANGES') return { variant: 'secondary' };
-  if (action === 'PLANNING_FINALIZE') return { variant: 'primary' };
   return { variant: 'primary' };
 }
 

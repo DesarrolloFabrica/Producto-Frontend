@@ -28,10 +28,16 @@ export async function invalidateInstitutionalWorkflowQueries(
   }
 
   if (options.role === 'PLANEACION' || options.role === 'ADMIN') {
-    tasks.push(queryClient.invalidateQueries({ queryKey: queryKeys.institutionalWork.planning() }));
+    tasks.push(
+      queryClient.invalidateQueries({ queryKey: queryKeys.institutionalWork.planning() }),
+      queryClient.invalidateQueries({ queryKey: queryKeys.planning.dashboardSummary() }),
+    );
   }
   if (options.role === 'LMS') {
-    tasks.push(queryClient.invalidateQueries({ queryKey: queryKeys.institutionalWork.lms() }));
+    tasks.push(
+      queryClient.invalidateQueries({ queryKey: queryKeys.institutionalWork.lms() }),
+      queryClient.invalidateQueries({ queryKey: queryKeys.lms.dashboardSummary() }),
+    );
   }
   if (options.role === 'PRODUCT') {
     tasks.push(queryClient.invalidateQueries({ queryKey: queryKeys.institutionalWork.product() }));

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Plus, Loader2, Check, FileText, X, Calendar, Minus } from 'lucide-react';
+import { Plus, Loader2, Check, FileText, X, Calendar } from 'lucide-react';
 import { useAuth } from '../../features/auth/AuthContext';
 import type { CreateProjectFormInput } from '../../features/operations/apiMappers';
 import { getApiErrorMessage } from '../../features/operations/apiMappers';
@@ -8,7 +8,12 @@ import { useOperations } from '../../features/operations/OperationsContext';
 import { useToast } from '../ui/ToastProvider';
 import { Modal } from '../ui/Modal';
 import { Button } from '../ui/Button';
-import { SubjectTopicsEditor } from './SubjectTopicsEditor';
+import {
+  SemesterSubjectsWizard,
+  areAllSemesterSubjectsValid,
+  type SemesterSubjectsWizardSemester,
+} from './SemesterSubjectsWizard';
+import { createEmptySemesterSubject, type SemesterFormSubject } from './semesterSubjectsForm';
 import type {
   VirtualizationProject,
   ChecklistItem,
@@ -19,10 +24,6 @@ import type {
   SubjectMatterExpertType,
 } from '../../types/domain';
 import { cn } from '../ui/tokens';
-import {
-  isSubjectTopicsFormValid,
-  validateSubjectTopicsList,
-} from '../../utils/subjectTopics';
 import {
   addBusinessDays,
   FACTORY_DELIVERY_BUSINESS_DAYS,
@@ -37,15 +38,9 @@ interface CreateProjectModalProps {
   onClose: () => void;
 }
 
-interface FormSubject {
-  id: string;
-  name: string;
-  topics: string[];
-}
-
-interface FormSemester {
+interface FormSemester extends SemesterSubjectsWizardSemester {
   number: number;
-  subjects: FormSubject[];
+  subjects: SemesterFormSubject[];
 }
 
 const schools = [
@@ -72,35 +67,8 @@ const subjectChecklistLabels = [
   'Seminario Aleman',
 ];
 
-const topicChecklistLabels = [
-  'Material descargable',
-  'Podcast',
-  'Videos',
-  'Infografias interactivas',
-];
-
-const MAX_SUBJECTS_PER_SEMESTER = 30;
-
-function createEmptySubject(): FormSubject {
-  return { id: `subj-${Date.now()}-${Math.random()}`, name: '', topics: [] };
-}
-
 function createInitialSemester(number: number): FormSemester {
-  return { number, subjects: [createEmptySubject()] };
-}
-
-function subjectHasContent(subject: FormSubject): boolean {
-  return Boolean(subject.name.trim()) || subject.topics.some((topic) => topic.trim());
-}
-
-function resizeSubjects(current: FormSubject[], targetCount: number): FormSubject[] {
-  if (targetCount <= current.length) {
-    return current.slice(0, targetCount);
-  }
-  return [
-    ...current,
-    ...Array.from({ length: targetCount - current.length }, () => createEmptySubject()),
-  ];
+  return { number, subjects: [createEmptySemesterSubject()] };
 }
 
 function buildSubjectChecklist(seed: number): ChecklistItem[] {
@@ -111,25 +79,6 @@ function buildSubjectChecklist(seed: number): ChecklistItem[] {
     ownerRole: 'PRODUCT' as Role,
     updatedAt: new Date().toISOString(),
     observations: '',
-  }));
-}
-
-function buildTopicChecklist(seed: number): ChecklistItem[] {
-  return topicChecklistLabels.map((label, index) => ({
-    id: `chk-topic-${seed}-${index}`,
-    label,
-    status: 'PENDIENTE' as ChecklistStatus,
-    ownerRole: 'PRODUCT' as Role,
-    updatedAt: new Date().toISOString(),
-    observations: '',
-  }));
-}
-
-function buildSubjectTopicChecklists(seed: number, topicNames: string[]): TopicChecklist[] {
-  return topicNames.map((name, idx) => ({
-    topicName: name,
-    topicOrder: idx + 1,
-    items: buildTopicChecklist(seed + idx),
   }));
 }
 
@@ -182,75 +131,10 @@ export function CreateProjectModal({ isOpen, onClose }: CreateProjectModalProps)
     });
   };
 
-  const applySubjectCount = (semesterNum: number, nextCount: number) => {
-    const safeCount = Math.min(MAX_SUBJECTS_PER_SEMESTER, Math.max(1, nextCount));
-    setSemesters((prev) =>
-      prev.map((sem) =>
-        sem.number === semesterNum
-          ? { ...sem, subjects: resizeSubjects(sem.subjects, safeCount) }
-          : sem,
-      ),
-    );
-  };
-
-  const changeSubjectCount = (semesterNum: number, nextCount: number) => {
-    const semester = semesters.find((sem) => sem.number === semesterNum);
-    if (!semester) return;
-
-    const safeCount = Math.min(MAX_SUBJECTS_PER_SEMESTER, Math.max(1, nextCount));
-    if (safeCount === semester.subjects.length) return;
-
-    if (safeCount < semester.subjects.length) {
-      const removed = semester.subjects.slice(safeCount);
-      const hasData = removed.some(subjectHasContent);
-      if (hasData) {
-        const confirmed = window.confirm(
-          `Vas a reducir a ${safeCount} asignatura(s) en el semestre ${semesterNum}. Se eliminarán ${removed.length} asignatura(s) con información ingresada. ¿Continuar?`,
-        );
-        if (!confirmed) return;
-      }
-    }
-
-    applySubjectCount(semesterNum, safeCount);
-  };
-
-  const updateSubjectName = (semesterNum: number, subjectId: string, name: string) => {
-    setSemesters((prev) =>
-      prev.map((sem) =>
-        sem.number === semesterNum
-          ? {
-              ...sem,
-              subjects: sem.subjects.map((s) => (s.id === subjectId ? { ...s, name } : s)),
-            }
-          : sem,
-      ),
-    );
-  };
-
-  const updateSubjectTopics = (semesterNum: number, subjectId: string, topics: string[]) => {
-    setSemesters((prev) =>
-      prev.map((sem) =>
-        sem.number === semesterNum
-          ? {
-              ...sem,
-              subjects: sem.subjects.map((s) => (s.id === subjectId ? { ...s, topics } : s)),
-            }
-          : sem,
-      ),
-    );
-  };
-
   const isFormSemestersValid =
     selectedSemesters.length > 0 &&
     semesters.length === selectedSemesters.length &&
-    semesters.every(
-      (sem) =>
-        sem.subjects.length >= 1 &&
-        sem.subjects.every(
-          (subj) =>
-            Boolean(subj.name.trim()) && isSubjectTopicsFormValid(subj.topics),
-        ),
-    );
+    areAllSemesterSubjectsValid(semesters);
 
   const validate = (): boolean => {
     const newErrors: string[] = [];
@@ -269,12 +153,6 @@ export function CreateProjectModal({ isOpen, onClose }: CreateProjectModalProps)
         if (!subj.name.trim()) {
           newErrors.push(`La asignatura ${index + 1} del semestre ${sem.number} no tiene nombre.`);
         }
-        newErrors.push(
-          ...validateSubjectTopicsList(
-            subj.topics,
-            subj.name.trim() || `Asignatura ${index + 1} (semestre ${sem.number})`,
-          ),
-        );
       });
     });
 
@@ -304,7 +182,7 @@ export function CreateProjectModal({ isOpen, onClose }: CreateProjectModalProps)
             number: sem.number,
             subjects: sem.subjects.map((subj) => ({
               name: subj.name.trim(),
-              topics: subj.topics.map((t) => t.trim()).filter(Boolean),
+              topics: [],
             })),
           })),
         };
@@ -335,8 +213,8 @@ export function CreateProjectModal({ isOpen, onClose }: CreateProjectModalProps)
         sem.subjects.forEach((subj) => {
           const subjectId = `subj-${Date.now()}-${sem.number}-${subj.id.slice(-4)}`;
           const checklist = buildSubjectChecklist(Date.now() + linkIndex++);
-          const contentTopics = subj.topics.map((t) => t.trim()).filter(Boolean);
-          const topicChecklists = buildSubjectTopicChecklists(Date.now() + linkIndex, contentTopics);
+          const contentTopics: string[] = [];
+          const topicChecklists: TopicChecklist[] = [];
 
           allSubjects.push({
             id: subjectId,
@@ -421,12 +299,6 @@ export function CreateProjectModal({ isOpen, onClose }: CreateProjectModalProps)
   const inputClass =
     'w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-bold text-slate-900 focus:border-orange-300 focus:ring-2 focus:ring-orange-100 focus:outline-none transition-all';
   const labelClass = 'block mb-2 text-[10px] font-black uppercase tracking-widest text-slate-400';
-
-  const totalSubjects = semesters.reduce((acc, sem) => acc + sem.subjects.length, 0);
-  const totalTopics = semesters.reduce(
-    (acc, sem) => acc + sem.subjects.reduce((a, s) => a + s.topics.filter((t) => t.trim()).length, 0),
-    0,
-  );
 
   return (
     <Modal
@@ -635,7 +507,7 @@ export function CreateProjectModal({ isOpen, onClose }: CreateProjectModalProps)
           <p className="text-[10px] font-black uppercase tracking-widest text-orange-500">Paso 3</p>
           <h3 className="text-sm font-black text-slate-950">Semestres a virtualizar</h3>
           <p className="mt-1 text-[11px] font-medium text-slate-500">
-            Selecciona los semestres, define cuántas asignaturas tiene cada uno y completa nombres y gránulos.
+            Selecciona los semestres, define cuántas asignaturas tiene cada uno y completa el nombre de cada una.
           </p>
         </div>
 
@@ -666,102 +538,14 @@ export function CreateProjectModal({ isOpen, onClose }: CreateProjectModalProps)
               exit={{ opacity: 0, height: 0 }}
               className="overflow-hidden"
             >
-              <div className="space-y-4">
-                {sortedSemesters.map((sem) => (
-                  <div
-                    key={sem.number}
-                    className="rounded-2xl border border-slate-200 bg-white overflow-hidden"
-                  >
-                    <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 bg-slate-50/80 px-4 py-3">
-                      <div className="flex items-center gap-2">
-                        <Calendar className="h-4 w-4 text-orange-500" />
-                        <span className="text-sm font-bold text-slate-900">Semestre {sem.number}</span>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">
-                          Número de asignaturas
-                        </span>
-                        <div className="flex items-center rounded-xl border border-slate-200 bg-white">
-                          <button
-                            type="button"
-                            onClick={() => changeSubjectCount(sem.number, sem.subjects.length - 1)}
-                            disabled={sem.subjects.length <= 1}
-                            className="flex h-9 w-9 items-center justify-center text-slate-500 transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
-                            aria-label="Reducir asignaturas"
-                          >
-                            <Minus className="h-3.5 w-3.5" />
-                          </button>
-                          <input
-                            type="number"
-                            min={1}
-                            max={MAX_SUBJECTS_PER_SEMESTER}
-                            value={sem.subjects.length}
-                            onChange={(e) => {
-                              const parsed = Number(e.target.value);
-                              if (!Number.isFinite(parsed)) return;
-                              changeSubjectCount(sem.number, parsed);
-                            }}
-                            className="h-9 w-12 border-x border-slate-200 bg-white text-center text-sm font-bold text-slate-900 focus:outline-none"
-                            aria-label={`Número de asignaturas del semestre ${sem.number}`}
-                          />
-                          <button
-                            type="button"
-                            onClick={() => changeSubjectCount(sem.number, sem.subjects.length + 1)}
-                            disabled={sem.subjects.length >= MAX_SUBJECTS_PER_SEMESTER}
-                            className="flex h-9 w-9 items-center justify-center text-slate-500 transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
-                            aria-label="Aumentar asignaturas"
-                          >
-                            <Plus className="h-3.5 w-3.5" />
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="space-y-4 p-4">
-                      {sem.subjects.map((subj, subjIdx) => (
-                        <div
-                          key={subj.id}
-                          className="rounded-xl border border-orange-100/60 bg-orange-50/20 p-4 space-y-3"
-                        >
-                          <span className="text-[10px] font-black uppercase tracking-widest text-orange-500">
-                            Asignatura {subjIdx + 1}
-                          </span>
-
-                          <input
-                            className={cn(inputClass, 'bg-white')}
-                            value={subj.name}
-                            onChange={(e) => updateSubjectName(sem.number, subj.id, e.target.value)}
-                            placeholder="Nombre de la asignatura"
-                          />
-
-                          <SubjectTopicsEditor
-                            topics={subj.topics}
-                            onChange={(topics) => updateSubjectTopics(sem.number, subj.id, topics)}
-                            inputClass={cn(inputClass, 'bg-white')}
-                          />
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                ))}
-              </div>
+              <SemesterSubjectsWizard
+                semesters={sortedSemesters}
+                onSemestersChange={setSemesters}
+                inputClass={inputClass}
+              />
             </motion.div>
           )}
         </AnimatePresence>
-
-        {semesters.length > 0 && (
-          <div className="rounded-xl bg-slate-50 px-4 py-3 flex flex-wrap gap-4 text-xs font-medium text-slate-600">
-            <span>
-              {selectedSemesters.length} semestre{selectedSemesters.length !== 1 ? 's' : ''}
-            </span>
-            <span>
-              {totalSubjects} asignatura{totalSubjects !== 1 ? 's' : ''}
-            </span>
-            <span>
-              {totalTopics} tema{totalTopics !== 1 ? 's' : ''}
-            </span>
-          </div>
-        )}
 
         <div className="flex justify-end gap-3 pt-4 border-t border-slate-100">
           <Button type="button" variant="secondary" onClick={onClose}>

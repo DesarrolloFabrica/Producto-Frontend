@@ -77,7 +77,7 @@ export function InstitutionalWorkPage({ title }: { title: string }) {
         isLoading={loading}
         error={error}
         flowOnly
-        onResetMock={() => void workQuery.refetch()}
+        onRefresh={() => void workQuery.refetch()}
         onOpenFlow={openOperationalFlow}
       />
     </div>

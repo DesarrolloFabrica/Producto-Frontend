@@ -51,4 +51,10 @@ export const subjectsApi = {
     subjectId: string,
     status: 'PENDIENTE' | 'EN_PRODUCCION' | 'COMPLETADA',
   ) => apiClient.patch<ApiProjectDetail>(`/subjects/${subjectId}/production-status`, { status }),
+
+  defineTopics: (subjectId: string, topics: string[]) =>
+    apiClient.post<ApiSubjectWorkspace>(`/subjects/${subjectId}/topics`, { topics }),
+
+  updateTopicName: (topicId: string, name: string) =>
+    apiClient.patch<ApiSubjectWorkspace>(`/topics/${topicId}`, { name }),
 };

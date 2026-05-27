@@ -1,5 +1,6 @@
+import { useEffect } from 'react';
 import { Bell, ClipboardCheck, ClipboardList, CloudUpload, Factory, FolderKanban, Home, LogOut, Settings } from 'lucide-react';
-import { NavLink, Outlet, useNavigate } from 'react-router-dom';
+import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { ScrollRestoration } from '../../navigation/ScrollRestoration';
 import { useAuth } from '../../features/auth/AuthContext';
 import { ContextPanelDrawer } from '../../features/context-panel/ContextPanelProvider';
@@ -10,6 +11,7 @@ import { GlobalSearch } from '../search/GlobalSearch';
 import { useOperations } from '../../features/operations/OperationsContext';
 import { isActionableNotification, isVisibleNotification } from '../../features/operations/notificationInbox';
 import { useNotificationSummaryQuery } from '../../features/queries/useNotificationSummaryQuery';
+import { homePathForRole } from '../../navigation/roleNavigation';
 
 const productLinks = [
   { to: '/product/dashboard', label: 'Dashboard', icon: Home },
@@ -25,12 +27,12 @@ const factoryLinks = [
 ];
 
 const planningLinks = [
-  { to: '/planning/dashboard', label: 'Validaciones', icon: ClipboardCheck },
+  { to: '/planning/dashboard', label: 'Centro de validación', icon: ClipboardCheck },
   { to: '/notifications', label: 'Notificaciones', icon: Bell },
 ];
 
 const lmsLinks = [
-  { to: '/lms/dashboard', label: 'Carga LMS', icon: CloudUpload },
+  { to: '/lms/dashboard', label: 'Panel LMS', icon: CloudUpload },
   { to: '/notifications', label: 'Notificaciones', icon: Bell },
 ];
 
@@ -39,6 +41,7 @@ export function AppShell() {
   const { notifications, notificationSummary, projects } = useOperations();
   const summaryQuery = useNotificationSummaryQuery(Boolean(user));
   const navigate = useNavigate();
+  const location = useLocation();
   const links =
     role === 'FABRICA'
       ? factoryLinks
@@ -60,6 +63,19 @@ export function AppShell() {
     logout();
     navigate('/login', { replace: true });
   };
+
+  // Requisito: al entrar (primera carga de la sesión) siempre caer en el dashboard del rol.
+  // Importante: NO debe bloquear la navegación normal dentro de la app (p. ej. "Ir al flujo").
+  useEffect(() => {
+    const key = 'producto_entry_redirect_done';
+    if (sessionStorage.getItem(key) === '1') return;
+    sessionStorage.setItem(key, '1');
+
+    const home = homePathForRole(role);
+    if (location.pathname !== home) {
+      navigate(home, { replace: true });
+    }
+  }, [location.pathname, navigate, role]);
 
   return (
     <div className="min-h-screen text-slate-900">

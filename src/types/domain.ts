@@ -254,6 +254,9 @@ export interface OperationalObservation {
   role: Role;
   text: string;
   status: 'ABIERTA' | 'EN_CORRECCION' | 'RESUELTA';
+  notificationStatus?: 'PENDING' | 'SENT';
+  correctionNotificationStatus?: 'PENDING' | 'SENT' | null;
+  checklistItemId?: string;
   relatedEntity: string;
   relatedEntityType?: string;
   relatedEntityId?: string;
