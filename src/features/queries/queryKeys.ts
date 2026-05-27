@@ -36,4 +36,7 @@ export const queryKeys = {
     subjectsByOrigin: (origin: string, page: number, limit: number) =>
       ['factory', 'subjects', 'byOrigin', origin, page, limit] as const,
   },
+  adminTracking: {
+    programs: () => ['admin', 'institutional-tracking', 'programs'] as const,
+  },
 };

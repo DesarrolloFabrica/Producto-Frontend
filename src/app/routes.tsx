@@ -7,7 +7,7 @@ import { useAuth } from '../features/auth/AuthContext';
 import { LoginPage } from '../features/auth/LoginPage';
 import { FactoryDashboardPage } from '../features/dashboard/FactoryDashboardPage';
 import { FactoryWorkPage } from '../features/factory-work/FactoryWorkPage';
-import { ProductDashboardPage } from '../features/dashboard/ProductDashboardPage';
+import { ProductOrAdminDashboardPage } from '../features/dashboard/ProductOrAdminDashboardPage';
 import { ProductWorkPage } from '../features/product-work/ProductWorkPage';
 import { NotificationsPage } from '../features/notifications/NotificationsPage';
 import { NotificationSettings } from '../components/settings/NotificationSettings';
@@ -70,7 +70,7 @@ export const router = createBrowserRouter([
         element: <RequireAuth />,
         children: [
       { index: true, element: <RoleScopeGuard><HomeRedirect /></RoleScopeGuard> },
-      { path: 'product/dashboard', element: <RoleScopeGuard><RoleRedirect expectedRole="PRODUCT"><ProductDashboardPage /></RoleRedirect></RoleScopeGuard> },
+      { path: 'product/dashboard', element: <RoleScopeGuard><RoleRedirect expectedRole="PRODUCT"><ProductOrAdminDashboardPage /></RoleRedirect></RoleScopeGuard> },
       { path: 'product/work', element: <RoleScopeGuard><RoleRedirect expectedRole="PRODUCT"><ProductWorkPage /></RoleRedirect></RoleScopeGuard> },
       { path: 'factory/dashboard', element: <RoleScopeGuard><RoleRedirect expectedRole="FABRICA"><FactoryDashboardPage /></RoleRedirect></RoleScopeGuard> },
       { path: 'factory/work', element: <RoleScopeGuard><RoleRedirect expectedRole="FABRICA"><FactoryWorkPage /></RoleRedirect></RoleScopeGuard> },
