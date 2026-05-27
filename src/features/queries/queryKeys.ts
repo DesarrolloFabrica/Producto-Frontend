@@ -45,4 +45,7 @@ export const queryKeys = {
     subjectsPrograms: (filters: FactorySubjectsQuery = {}) =>
       ['factory', 'subjects', 'programs', normalizeFactorySubjectsQuery(filters)] as const,
   },
+  adminTracking: {
+    programs: () => ['admin', 'institutional-tracking', 'programs'] as const,
+  },
 };
