@@ -4,8 +4,8 @@ import type { InstitutionalOperationalState } from '../../types/domain';
 export const LMS_STATE_LABELS: Partial<Record<InstitutionalOperationalState, string>> = {
   PENDING_LMS_UPLOAD: 'Pendiente de carga LMS',
   IN_LMS_UPLOAD: 'En carga LMS',
-  PENDING_PLANNING_LMS_VALIDATION: 'Pendiente validación de Planeación',
-  RETURNED_TO_LMS_FROM_PLANNING: 'Devuelta por Planeación',
+  PENDING_PLANNING_LMS_VALIDATION: 'Pendiente validación de carga LMS',
+  RETURNED_TO_LMS_FROM_PLANNING: 'Devuelta para corrección',
 };
 
 export function lmsStateLabel(state: InstitutionalOperationalState): string {

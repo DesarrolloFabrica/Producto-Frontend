@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Navigate, useParams } from 'react-router-dom';
+import { createPortal } from 'react-dom';
+import { Navigate, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { ContextBackLink } from '../../navigation/ContextBackLink';
 import { ArrowLeft, BookOpen, CheckCircle2, MessageSquare, Plus, X, Loader2, AlertCircle, ChevronDown, Check } from 'lucide-react';
 import { Modal } from '../../components/ui/Modal';
@@ -58,6 +59,8 @@ import type { OperationalObservation } from '../../types/domain';
 import { useOperationalWorkspaceQuery } from '../queries/useOperationalWorkspaceQuery';
 import { homePathForRole } from '../../navigation/roleNavigation';
 import { useSubjectWorkspaceQuery } from '../queries/useSubjectWorkspaceQuery';
+import { semesterOperationsPath } from '../institutional-workflow/institutionalNavigation';
+import { CHECKLIST_CATEGORIES, getCategoryForItem } from './checklistCategories';
 
 type ProductReviewStatus = 'pendiente' | 'aprobado' | 'rechazado';
 
@@ -96,41 +99,13 @@ const reviewStatusLabels: Record<ProductReviewStatus, string> = {
   rechazado: 'Rechazado',
 };
 
-const CHECKLIST_CATEGORIES = [
-  {
-    id: 'informacion_base',
-    title: 'Información base',
-    items: ['Presentación de la asignatura', 'Foro de presentación', 'Syllabus', 'Lecturas y bibliografía'],
-  },
-  {
-    id: 'evaluacion_competencias',
-    title: 'Evaluación y competencias',
-    items: ['Resultados de aprendizaje y competencias', 'Evaluación diagnóstica de entrada', 'Evaluaciones', 'Evaluación diagnóstica de salida'],
-  },
-  {
-    id: 'actividades_recursos',
-    title: 'Actividades y recursos',
-    items: ['ACA Actividad de Conocimiento Aplicado', 'Foro Taller', 'Taller RAE', 'Seminario Alemán'],
-  },
-];
-
-function getCategoryForItem(itemLabel: string): string {
-  for (const category of CHECKLIST_CATEGORIES) {
-    if (category.items.some((i) => i.toLowerCase() === itemLabel.toLowerCase())) {
-      return category.id;
-    }
-  }
-  return 'informacion_base';
-}
-
 type FilterStatus = 'todos' | 'pendiente' | 'aprobado' | 'rechazado';
 
 interface ChecklistItemCardProps {
   item: ChecklistItem;
   status: ProductReviewStatus;
   itemObservations: OperationalObservation[];
-  onUpdate: (id: string, newStatus: ProductReviewStatus, label: string) => void | Promise<void>;
-  onCreateObservation: (label: string) => void;
+  onUpdate: (item: ChecklistItem, newStatus: ProductReviewStatus) => void | Promise<void>;
   onOpenObservations: (item: ChecklistItem) => void;
   selectorDisabled?: boolean;
 }
@@ -140,7 +115,6 @@ function ChecklistItemCard({
   status,
   itemObservations,
   onUpdate,
-  onCreateObservation,
   onOpenObservations,
   selectorDisabled = false,
 }: ChecklistItemCardProps) {
@@ -148,38 +122,42 @@ function ChecklistItemCard({
   const observationState = getObservationBadgeState(itemObservations);
 
   return (
-    <div className={cn(
-      'group relative rounded-xl border p-3 transition-all duration-200 hover:shadow-md',
-      'border-slate-100 bg-white hover:border-orange-200'
-    )}>
+    <div
+      className={cn(
+        'group relative overflow-visible rounded-xl border p-3 transition-all duration-200 hover:shadow-md',
+        'border-slate-100 bg-white hover:border-orange-200',
+      )}
+    >
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2">
-            <h4 className="text-[13px] font-bold text-slate-900 truncate">{item.label}</h4>
-          </div>
-          <div className="mt-1.5 flex items-center gap-2">
-            <span className={cn(
-              'inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold ring-1',
-              config.bg, config.text, config.ring
-            )}>
+          <h4 className="text-[13px] font-bold text-slate-900">{item.label}</h4>
+          <div className="mt-1.5 flex flex-wrap items-center gap-2">
+            <span
+              className={cn(
+                'inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold ring-1',
+                config.bg,
+                config.text,
+                config.ring,
+              )}
+            >
               <span className={cn('h-1 w-1 rounded-full', config.dot)} />
               {reviewStatusLabels[status]}
             </span>
             <span className="text-[9px] font-medium text-slate-400">{item.ownerRole}</span>
           </div>
         </div>
-        <div className="flex shrink-0 flex-col items-end gap-2">
-          <ObservationDeliverableButton
-            count={itemObservations.length}
-            state={observationState}
-            onClick={() => onOpenObservations(item)}
-          />
-          <StatusSelector
-            value={status}
-            disabled={selectorDisabled}
-            onChange={(s) => void onUpdate(item.id, s, item.label)}
-          />
-        </div>
+        <ObservationDeliverableButton
+          count={itemObservations.length}
+          state={observationState}
+          onClick={() => onOpenObservations(item)}
+        />
+      </div>
+      <div className="mt-3 flex items-center justify-end border-t border-slate-50 pt-2">
+        <StatusSelector
+          value={status}
+          disabled={selectorDisabled}
+          onChange={(s) => void onUpdate(item, s)}
+        />
       </div>
     </div>
   );
@@ -226,10 +204,59 @@ function StatusSelector({
       top: rect.bottom + 8,
       left,
       width: menuWidth,
-      zIndex: 100,
+      zIndex: 260,
     });
     setIsOpen(!isOpen);
   };
+
+  const dropdownMenu =
+    isOpen && dropdownStyle
+      ? createPortal(
+          <>
+            <div
+              className="fixed inset-0 z-[250]"
+              onClick={() => {
+                setIsOpen(false);
+                setDropdownStyle(null);
+              }}
+            />
+            <div
+              className="flex flex-col gap-1 rounded-xl border border-slate-200 bg-white p-1 shadow-xl"
+              style={dropdownStyle}
+            >
+              <div className="border-b border-slate-100 px-2.5 py-1.5">
+                <span className="text-[9px] font-semibold uppercase tracking-widest text-slate-400">
+                  Cambiar a
+                </span>
+              </div>
+              {allowed.map((status) => {
+                const statusConfig = reviewStatusConfig[status];
+                return (
+                  <button
+                    key={status}
+                    type="button"
+                    onClick={() => {
+                      onChange(status);
+                      setIsOpen(false);
+                      setDropdownStyle(null);
+                    }}
+                    className={cn(
+                      'flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-[11px] font-medium transition-colors',
+                      value === status ? statusConfig.bg : 'hover:bg-slate-50',
+                    )}
+                  >
+                    <span className={cn('h-1.5 w-1.5 rounded-full', statusConfig.dot)} />
+                    <span className={cn(value === status ? statusConfig.text : 'text-slate-600')}>
+                      {reviewStatusLabels[status]}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </>,
+          document.body,
+        )
+      : null;
 
   return (
     <div className="relative">
@@ -238,7 +265,7 @@ function StatusSelector({
         onClick={handleClick}
         disabled={disabled}
         className={cn(
-          'inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[10px] font-bold transition-colors ring-1',
+          'inline-flex min-w-[108px] items-center justify-between gap-1.5 rounded-lg px-2.5 py-1.5 text-[10px] font-bold transition-colors ring-1',
           config.bg,
           config.text,
           config.ring,
@@ -246,44 +273,9 @@ function StatusSelector({
         )}
       >
         {reviewStatusLabels[value]}
-        <ChevronDown className="h-3 w-3" />
+        <ChevronDown className="h-3 w-3 shrink-0" />
       </button>
-      {isOpen && dropdownStyle && (
-        <>
-          <div className="fixed inset-0 z-[99]" onClick={() => { setIsOpen(false); setDropdownStyle(null); }} />
-          <div
-            className="flex flex-col gap-1 rounded-xl border border-slate-200 bg-white p-1 shadow-lg"
-            style={dropdownStyle}
-          >
-            <div className="border-b border-slate-100 px-2.5 py-1.5">
-              <span className="text-[9px] font-semibold uppercase tracking-widest text-slate-400">Cambiar a</span>
-            </div>
-            {allowed.map((status) => {
-              const statusConfig = reviewStatusConfig[status];
-              return (
-                <button
-                  key={status}
-                  type="button"
-                  onClick={() => {
-                    onChange(status);
-                    setIsOpen(false);
-                    setDropdownStyle(null);
-                  }}
-                  className={cn(
-                    'flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-[11px] font-medium transition-colors',
-                    value === status ? statusConfig.bg : 'hover:bg-slate-50'
-                  )}
-                >
-                  <span className={cn('h-1.5 w-1.5 rounded-full', statusConfig.dot)} />
-                  <span className={cn(value === status ? statusConfig.text : 'text-slate-600')}>
-                    {reviewStatusLabels[status]}
-                  </span>
-                </button>
-              );
-            })}
-          </div>
-        </>
-      )}
+      {dropdownMenu}
     </div>
   );
 }
@@ -322,7 +314,6 @@ function CategorySection({
   title,
   checklist,
   onUpdate,
-  onCreateObservation,
   onOpenObservations,
   subjectObservations,
   canBulkApprove,
@@ -335,8 +326,7 @@ function CategorySection({
   categoryId: string;
   title: string;
   checklist: ChecklistItem[];
-  onUpdate: (id: string, newStatus: ProductReviewStatus, label: string) => void | Promise<void>;
-  onCreateObservation: (label: string) => void;
+  onUpdate: (item: ChecklistItem, newStatus: ProductReviewStatus) => void | Promise<void>;
   onOpenObservations: (item: ChecklistItem) => void;
   subjectObservations: OperationalObservation[];
   canBulkApprove: boolean;
@@ -352,8 +342,6 @@ function CategorySection({
   const progress = total > 0 ? Math.round((approved / total) * 100) : 0;
   const bulkDisabled = !canBulkApprove || approvableCount === 0;
   const showBlockHint = bulkDisabled && bulkBlockMessage !== null;
-  const blockHintVariant =
-    bulkBlockMessage?.includes('Fábrica') || bulkBlockMessage?.includes('Esperando') ? 'waiting' : 'info';
 
   if (categoryItems.length === 0) return null;
 
@@ -377,9 +365,9 @@ function CategorySection({
         </div>
       </div>
       {showBlockHint ? (
-        <BulkApproveBlockHint message={bulkBlockMessage} variant={blockHintVariant} className="max-w-none" />
+        <BulkApproveBlockHint message={bulkBlockMessage} variant="info" className="max-w-none" />
       ) : null}
-      <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
         {categoryItems.map((item) => (
           <ChecklistItemCard
             key={item.id}
@@ -387,7 +375,6 @@ function CategorySection({
             status={toProductReviewStatus(item.status)}
             itemObservations={filterObservationsForChecklistItem(subjectObservations, item.id)}
             onUpdate={onUpdate}
-            onCreateObservation={onCreateObservation}
             onOpenObservations={onOpenObservations}
             selectorDisabled={selectorDisabled}
           />
@@ -400,7 +387,9 @@ function CategorySection({
 interface TopicCardProps {
   topic: { id: string; name: string; order: number };
   items: ChecklistItem[];
-  onUpdate: (topicName: string, checklistItemId: string, status: ProductReviewStatus) => void | Promise<void>;
+  subjectObservations: OperationalObservation[];
+  onUpdate: (topicName: string, item: ChecklistItem, status: ProductReviewStatus) => void | Promise<void>;
+  onOpenObservations: (item: ChecklistItem) => void;
   canBulkApprove: boolean;
   approvableCount: number;
   bulkBlockMessage: string | null;
@@ -412,7 +401,9 @@ interface TopicCardProps {
 function TopicCard({
   topic,
   items,
+  subjectObservations,
   onUpdate,
+  onOpenObservations,
   canBulkApprove,
   approvableCount,
   bulkBlockMessage,
@@ -420,16 +411,18 @@ function TopicCard({
   onBulkApprove,
   selectorDisabled = false,
 }: TopicCardProps) {
-  const [expanded, setExpanded] = useState(false);
+  const [expanded, setExpanded] = useState(() => items.length > 0);
   const approved = items.filter((i) => i.status === 'APROBADO').length;
   const total = items.length;
   const bulkDisabled = !canBulkApprove || approvableCount === 0;
   const showBlockHint = bulkDisabled && bulkBlockMessage !== null;
-  const blockHintVariant =
-    bulkBlockMessage?.includes('Fábrica') || bulkBlockMessage?.includes('Esperando') ? 'waiting' : 'info';
+
+  useEffect(() => {
+    if (items.length > 0) setExpanded(true);
+  }, [items.length]);
 
   return (
-    <div className="rounded-2xl border border-slate-100 bg-white overflow-hidden transition-all duration-200 hover:shadow-md">
+    <div className="overflow-visible rounded-2xl border border-slate-100 bg-white transition-all duration-200 hover:shadow-md">
       <div className="flex w-full items-center justify-between gap-2 p-4">
         <button
           type="button"
@@ -466,27 +459,39 @@ function TopicCard({
       {showBlockHint ? (
         <BulkApproveBlockHint
           message={bulkBlockMessage}
-          variant={blockHintVariant}
-          className="border-t border-slate-100 bg-amber-50/40 px-4 py-2.5 max-w-none"
+          variant="info"
+          className="max-w-none border-t border-slate-100 bg-slate-50/80 px-4 py-2.5"
         />
       ) : null}
 
       {expanded && (
         <div className="border-t border-slate-100 bg-slate-50/50 p-4">
           <p className="mb-3 text-[10px] font-medium text-slate-500">
-            Cada tema debe contar con material descargable, podcast, video e infografía.
+            Valida material descargable, podcast, video e infografía de este gránulo.
           </p>
-          <div className="grid gap-2 sm:grid-cols-2">
+          <div className="grid gap-3 sm:grid-cols-2">
             {items.map((item) => {
               const status = toProductReviewStatus(item.status);
+              const itemObservations = filterObservationsForChecklistItem(subjectObservations, item.id);
+              const observationState = getObservationBadgeState(itemObservations);
               return (
-                <div key={item.id} className="rounded-xl border border-slate-100 bg-white p-3">
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="text-[11px] font-bold text-slate-800">{item.label}</span>
+                <div
+                  key={item.id}
+                  className="overflow-visible rounded-xl border border-slate-100 bg-white p-3"
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <span className="block text-[11px] font-bold text-slate-800">{item.label}</span>
+                    <ObservationDeliverableButton
+                      count={itemObservations.length}
+                      state={observationState}
+                      onClick={() => onOpenObservations(item)}
+                    />
+                  </div>
+                  <div className="mt-2 flex justify-end border-t border-slate-50 pt-2">
                     <StatusSelector
                       value={status}
                       disabled={selectorDisabled}
-                      onChange={(newStatus) => void onUpdate(topic.name, item.id, newStatus)}
+                      onChange={(newStatus) => void onUpdate(topic.name, item, newStatus)}
                     />
                   </div>
                 </div>
@@ -501,6 +506,8 @@ function TopicCard({
 
 export function SubjectDetailPage() {
   const { subjectId } = useParams();
+  const [searchParams] = useSearchParams();
+  const navigate = useNavigate();
   const {
     projectObservations,
     updateChecklistItem,
@@ -526,6 +533,23 @@ export function SubjectDetailPage() {
     subjectId,
     backendEnabled && (role === 'PRODUCT' || role === 'ADMIN'),
   );
+  const opWorkspace = operationalQuery.data;
+  const academicChecklistEnabledEarly = opWorkspace?.academicChecklistEnabled === true;
+
+  useEffect(() => {
+    if (searchParams.get('review') !== 'started') return;
+    if (!opWorkspace?.institutionalFlowActive || !opWorkspace.semesterId) return;
+    if (academicChecklistEnabledEarly) return;
+    navigate(semesterOperationsPath(opWorkspace.projectId, opWorkspace.semesterId), { replace: true });
+  }, [
+    searchParams,
+    opWorkspace?.institutionalFlowActive,
+    opWorkspace?.semesterId,
+    opWorkspace?.projectId,
+    academicChecklistEnabledEarly,
+    navigate,
+  ]);
+
   const workspaceProject = useMemo(
     () => (workspaceQuery.data ? mapSubjectWorkspaceProjectFromApi(workspaceQuery.data) : undefined),
     [workspaceQuery.data],
@@ -566,6 +590,8 @@ export function SubjectDetailPage() {
   const [bulkLoadingKey, setBulkLoadingKey] = useState<string | null>(null);
   const [savingTopics, setSavingTopics] = useState(false);
   const [observationDrawerItem, setObservationDrawerItem] = useState<ChecklistItem | null>(null);
+  const [observationDrawerFromReject, setObservationDrawerFromReject] = useState(false);
+  const [observationDrawerTopicName, setObservationDrawerTopicName] = useState<string | null>(null);
   const [sendingObservationBatch, setSendingObservationBatch] = useState(false);
   const observationsSectionRef = useRef<HTMLDivElement | null>(null);
   const correctionActiveRef = useRef<HTMLDivElement | null>(null);
@@ -711,9 +737,8 @@ export function SubjectDetailPage() {
 
   const institutionalGateLoading =
     backendEnabled && (role === 'PRODUCT' || role === 'ADMIN') && operationalQuery.isLoading;
-  const opWorkspace = operationalQuery.data;
   const usesInstitutionalUi = Boolean(opWorkspace?.institutionalFlowActive);
-  const academicChecklistEnabled = opWorkspace?.academicChecklistEnabled === true;
+  const academicChecklistEnabled = academicChecklistEnabledEarly;
 
   if (institutionalGateLoading) {
     return (
@@ -820,6 +845,32 @@ export function SubjectDetailPage() {
     ? filterObservationsForChecklistItem(combinedObservations, observationDrawerItem.id)
     : [];
 
+  const openDeliverableObservations = (
+    item: ChecklistItem,
+    options?: { fromReject?: boolean; topicName?: string },
+  ) => {
+    setObservationDrawerItem(item);
+    setObservationDrawerFromReject(Boolean(options?.fromReject));
+    setObservationDrawerTopicName(options?.topicName ?? null);
+  };
+
+  const closeDeliverableObservations = () => {
+    setObservationDrawerItem(null);
+    setObservationDrawerFromReject(false);
+    setObservationDrawerTopicName(null);
+  };
+
+  const observationDrawerLabel = observationDrawerItem
+    ? observationDrawerTopicName
+      ? `${observationDrawerTopicName} · ${observationDrawerItem.label}`
+      : observationDrawerItem.label
+    : 'Entregable';
+
+  const observationDraftSuggestion =
+    observationDrawerFromReject && observationDrawerItem
+      ? `Revisar «${observationDrawerItem.label}»${observationDrawerTopicName ? ` (${observationDrawerTopicName})` : ''}: fue marcado como rechazado. `
+      : null;
+
   const handleCreateDeliverableObservation = async (text: string) => {
     if (!observationDrawerItem || !project) return;
     setSavingObservation(true);
@@ -872,37 +923,17 @@ export function SubjectDetailPage() {
   const inputClass =
     'w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-bold text-slate-900 focus:border-orange-300 focus:ring-2 focus:ring-orange-100 focus:outline-none transition-all';
 
-  const handleCreateObservation = (itemLabel: string) => {
-    setShowObservationForm(true);
-    setObservationForm({ text: `Revisar "${itemLabel}", fue marcado como rechazado.`, level: 'subject', topicId: '' });
-    setTimeout(() => {
-      const formElement = document.getElementById('observation-form');
-      if (formElement) {
-        formElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        const textarea = formElement.querySelector('textarea');
-        if (textarea) {
-          textarea.focus();
-        }
-      }
-    }, 100);
-  };
-
-  const handleChecklistUpdate = async (
-    checklistItemId: string,
-    newStatus: ProductReviewStatus,
-    itemLabel: string,
-  ) => {
-    const item = productChecklist.find((checklistItem) => checklistItem.id === checklistItemId);
+  const handleChecklistUpdate = async (item: ChecklistItem, newStatus: ProductReviewStatus) => {
     const mappedStatus = mapProductReviewToChecklistStatus(newStatus, {
-      ownerRole: item?.ownerRole,
+      ownerRole: item.ownerRole,
       isTopicItem: false,
     });
 
     try {
-      await updateChecklistItem(project.id, subject.id, checklistItemId, mappedStatus);
+      await updateChecklistItem(project.id, subject.id, item.id, mappedStatus);
       showToast(`Revisión actualizada: ${reviewStatusLabels[newStatus]}`);
       if (newStatus === 'rechazado') {
-        handleCreateObservation(itemLabel);
+        openDeliverableObservations(item, { fromReject: true });
       }
     } catch (error) {
       showToast(getApiErrorMessage(error), 'error');
@@ -944,20 +975,20 @@ export function SubjectDetailPage() {
 
   const handleTopicChecklistUpdate = async (
     topicName: string,
-    checklistItemId: string,
+    item: ChecklistItem,
     status: ProductReviewStatus,
   ) => {
-    const topicItem = subject.topicChecklists
-      .find((topic) => topic.topicName === topicName)
-      ?.items.find((checklistItem) => checklistItem.id === checklistItemId);
     const mappedStatus = mapProductReviewToChecklistStatus(status, {
-      ownerRole: topicItem?.ownerRole ?? 'FABRICA',
+      ownerRole: item.ownerRole ?? 'FABRICA',
       isTopicItem: true,
     });
 
     try {
-      await updateFactoryTopicChecklistItem(project.id, subject.id, topicName, checklistItemId, mappedStatus);
+      await updateFactoryTopicChecklistItem(project.id, subject.id, topicName, item.id, mappedStatus);
       showToast(`Revisión de tema actualizada: ${reviewStatusLabels[status]}`);
+      if (status === 'rechazado') {
+        openDeliverableObservations(item, { fromReject: true, topicName });
+      }
     } catch (error) {
       showToast(getApiErrorMessage(error), 'error');
     }
@@ -1305,8 +1336,7 @@ export function SubjectDetailPage() {
                     title={category.title}
                     checklist={filteredChecklist}
                     onUpdate={handleChecklistUpdate}
-                    onCreateObservation={handleCreateObservation}
-                    onOpenObservations={setObservationDrawerItem}
+                    onOpenObservations={(item) => openDeliverableObservations(item)}
                     subjectObservations={combinedObservations.filter((obs) => obs.subjectId === subject.id)}
                     canBulkApprove={canBulkApprove}
                     approvableCount={countApprovableProductItems(sectionItems)}
@@ -1360,7 +1390,11 @@ export function SubjectDetailPage() {
                     key={`${subject.id}-${tc.topicOrder}-${tc.topicName}`}
                     topic={{ id: tc.id ?? sectionKey, name: tc.topicName, order: tc.topicOrder }}
                     items={tc.items}
+                    subjectObservations={combinedObservations.filter((obs) => obs.subjectId === subject.id)}
                     onUpdate={handleTopicChecklistUpdate}
+                    onOpenObservations={(item) =>
+                      openDeliverableObservations(item, { topicName: tc.topicName })
+                    }
                     canBulkApprove={canBulkApprove && Boolean(tc.id)}
                     approvableCount={countApprovableTopicItems(tc.items)}
                     bulkBlockMessage={getTopicBulkBlockMessage(tc.items, canBulkApprove, Boolean(tc.id))}
@@ -1665,12 +1699,14 @@ export function SubjectDetailPage() {
 
       <DeliverableObservationsDrawer
         isOpen={Boolean(observationDrawerItem)}
-        onClose={() => setObservationDrawerItem(null)}
-        deliverableLabel={observationDrawerItem?.label ?? 'Entregable'}
+        onClose={closeDeliverableObservations}
+        deliverableLabel={observationDrawerLabel}
         observations={drawerObservations}
         badgeState={getObservationBadgeState(drawerObservations)}
         role={role ?? 'PRODUCT'}
         saving={savingObservation || isMutating}
+        draftSuggestion={observationDraftSuggestion}
+        openedFromReject={observationDrawerFromReject}
         onCreateObservation={handleCreateDeliverableObservation}
         onValidateObservation={async (observation) => {
           await validateObservationFromApi(observation.id, project?.id);

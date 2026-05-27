@@ -34,9 +34,9 @@ export const observationsApi = {
       {},
     ),
 
-  notifyCorrectionsToProduct: (subjectId: string) =>
+  notifyCorrectionsToProduct: (subjectId: string, observationIds?: string[]) =>
     apiClient.post<{ id: string; observationCount: number }>(
       `/subjects/${subjectId}/observation-batches/notify-corrections`,
-      {},
+      observationIds?.length ? { observationIds } : {},
     ),
 };

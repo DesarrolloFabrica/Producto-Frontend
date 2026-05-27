@@ -8,14 +8,17 @@ import { queryKeys } from '../queries/queryKeys';
 import { invalidatePlanningDashboard } from './planningInvalidation';
 import type { PlanningDashboardFilter } from './planningTypes';
 import {
+  applyPlanningInboxAdvancedFilters,
   filterPlanningRows,
   mapFinalizedProject,
   mapRadicationWorkItem,
   mapReturnedPreview,
   mapSubjectWorkItem,
+  mapTrackingWorkItem,
 } from './planningTypes';
+import type { InboxAdvancedFilters } from '../operations-v2/operationalInboxFilters';
 
-export function usePlanningDashboard(filter: PlanningDashboardFilter) {
+export function usePlanningDashboard(filter: PlanningDashboardFilter, advanced: InboxAdvancedFilters) {
   const queryClient = useQueryClient();
 
   const workQuery = useQuery({
@@ -36,6 +39,12 @@ export function usePlanningDashboard(filter: PlanningDashboardFilter) {
     staleTime: 15_000,
   });
 
+  const trackingQuery = useQuery({
+    queryKey: queryKeys.planning.tracking(),
+    queryFn: () => institutionalWorkflowApi.planningTracking(),
+    staleTime: 15_000,
+  });
+
   const allRows = useMemo(() => {
     const subjectRows = (workQuery.data ?? []).map((item) => {
       const row = mapSubjectWorkItem(item);
@@ -53,10 +62,31 @@ export function usePlanningDashboard(filter: PlanningDashboardFilter) {
       return row;
     });
     const finalizedRows = (summaryQuery.data?.finalizedProjects ?? []).map(mapFinalizedProject);
-    return [...subjectRows, ...radicationRows, ...returnedRows, ...finalizedRows];
-  }, [workQuery.data, radicationQuery.data, summaryQuery.data]);
+    const trackingRows = (trackingQuery.data ?? []).map((item) => {
+      const row = mapTrackingWorkItem(item);
+      if (row.kind === 'tracking') {
+        row.stageLabel = institutionalStateLabel(row.operationalState);
+      }
+      return row;
+    });
+    const subjectIds = new Set(subjectRows.map((row) => row.id));
+    const dedupedReturned = returnedRows.filter((row) => !subjectIds.has(row.id));
+    const trackingIds = new Set([...subjectIds, ...dedupedReturned.map((row) => row.id)]);
+    const dedupedTracking = trackingRows.filter((row) => !trackingIds.has(row.id));
+    return [
+      ...subjectRows,
+      ...radicationRows,
+      ...dedupedReturned,
+      ...dedupedTracking,
+      ...finalizedRows,
+    ];
+  }, [workQuery.data, radicationQuery.data, summaryQuery.data, trackingQuery.data]);
 
-  const visibleRows = useMemo(() => filterPlanningRows(allRows, filter), [allRows, filter]);
+  const categoryRows = useMemo(() => filterPlanningRows(allRows, filter), [allRows, filter]);
+  const visibleRows = useMemo(
+    () => applyPlanningInboxAdvancedFilters(categoryRows, advanced),
+    [categoryRows, advanced],
+  );
 
   const kpis = useMemo(() => {
     const summary = summaryQuery.data?.kpis;
@@ -77,11 +107,17 @@ export function usePlanningDashboard(filter: PlanningDashboardFilter) {
 
   const pendingSubjectCount = workQuery.data?.length ?? 0;
   const pendingRadicationCount = radicationQuery.data?.length ?? 0;
-  const hasNoPending = pendingSubjectCount === 0 && pendingRadicationCount === 0;
+  const pendingTrackingCount = trackingQuery.data?.length ?? 0;
+  const hasNoPending =
+    pendingSubjectCount === 0 &&
+    pendingRadicationCount === 0 &&
+    pendingTrackingCount === 0 &&
+    (summaryQuery.data?.returnedPreview?.length ?? 0) === 0;
 
-  const isLoading = workQuery.isLoading || radicationQuery.isLoading || summaryQuery.isLoading;
+  const isLoading =
+    workQuery.isLoading || radicationQuery.isLoading || summaryQuery.isLoading || trackingQuery.isLoading;
   const error =
-    workQuery.error || radicationQuery.error || summaryQuery.error
+    workQuery.error || radicationQuery.error || summaryQuery.error || trackingQuery.error
       ? 'No se pudo cargar el panel de Planeación'
       : null;
 
@@ -94,6 +130,7 @@ export function usePlanningDashboard(filter: PlanningDashboardFilter) {
     radicationQuery,
     summaryQuery,
     visibleRows,
+    categoryRows,
     allRows,
     kpis,
     recentActivity: summaryQuery.data?.recentActivity ?? [],

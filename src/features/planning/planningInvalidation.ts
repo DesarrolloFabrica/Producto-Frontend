@@ -6,5 +6,6 @@ export async function invalidatePlanningDashboard(queryClient: QueryClient) {
     queryClient.invalidateQueries({ queryKey: queryKeys.planning.dashboardSummary() }),
     queryClient.invalidateQueries({ queryKey: queryKeys.planning.radicationWork() }),
     queryClient.invalidateQueries({ queryKey: queryKeys.institutionalWork.planning() }),
+    queryClient.invalidateQueries({ queryKey: queryKeys.planning.tracking() }),
   ]);
 }

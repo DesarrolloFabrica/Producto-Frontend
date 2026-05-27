@@ -13,6 +13,7 @@ import type { LmsWorkRow } from '../lmsTypes';
 
 export function LmsWorkTable({
   rows,
+  totalRows,
   isLoading,
   error,
   busySubjectId,
@@ -20,6 +21,7 @@ export function LmsWorkTable({
   onTransition,
 }: {
   rows: LmsWorkRow[];
+  totalRows?: number;
   isLoading: boolean;
   error: string | null;
   busySubjectId: string | null;
@@ -45,7 +47,9 @@ export function LmsWorkTable({
           <h2 className="text-sm font-semibold text-slate-900">Carga y publicación</h2>
         </div>
         <span className="rounded-lg bg-white px-2.5 py-1 text-[11px] font-medium text-slate-500 ring-1 ring-slate-200/70">
-          {rows.length} en vista
+          {totalRows != null && totalRows > rows.length
+            ? `${rows.length} de ${totalRows} en vista`
+            : `${rows.length} en vista`}
         </span>
       </div>
 

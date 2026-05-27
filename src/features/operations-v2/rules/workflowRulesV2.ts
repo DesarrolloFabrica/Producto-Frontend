@@ -107,25 +107,25 @@ export function getAvailableActionsV2(params: {
 export function actionLabelV2(action: OperationalActionV2): string {
   switch (action) {
     case 'PLANNING_VALIDATE_INITIAL':
-      return 'Planeación valida solicitud';
+      return 'Validar solicitud';
     case 'PLANNING_RETURN_INITIAL':
-      return 'Planeación devuelve a Product';
+      return 'Devolver a Product';
     case 'FACTORY_START_PRODUCTION':
       return 'Iniciar producción';
     case 'FACTORY_DELIVER_CONTENT':
-      return 'Entregar producción a Planeación';
+      return 'Confirmar entrega';
     case 'PLANNING_VALIDATE_PRODUCTION':
-      return 'Planeación valida producción';
+      return 'Validar producción';
     case 'PLANNING_RETURN_PRODUCTION':
-      return 'Planeación devuelve a Fábrica';
+      return 'Devolver a Fábrica';
     case 'LMS_START_UPLOAD':
       return 'Iniciar carga LMS';
     case 'LMS_CONFIRM_UPLOAD':
       return 'Confirmar publicación';
     case 'PLANNING_VALIDATE_LMS':
-      return 'Planeación valida LMS';
+      return 'Validar carga LMS';
     case 'PLANNING_RETURN_LMS':
-      return 'Planeación devuelve a LMS';
+      return 'Devolver a LMS';
     case 'PRODUCT_START_ACADEMIC_REVIEW':
       return 'Iniciar revisión';
     case 'PRODUCT_OPEN_ACADEMIC_CHECKLIST':

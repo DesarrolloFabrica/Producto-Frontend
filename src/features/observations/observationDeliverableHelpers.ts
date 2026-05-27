@@ -51,10 +51,28 @@ export function countPendingFactoryCorrectionNotifications(
 ): number {
   return observations.filter(
     (obs) =>
-      obs.subjectId === subjectId &&
-      obs.status === 'EN_CORRECCION' &&
-      obs.correctionNotificationStatus === 'PENDING',
+      obs.subjectId === subjectId && isCorrectionReadyToNotify(obs),
   ).length;
+}
+
+export type FactoryCorrectionPhase = 'open' | 'ready_to_notify' | 'sent_to_product' | 'resolved';
+
+export function getFactoryCorrectionPhase(observation: OperationalObservation): FactoryCorrectionPhase {
+  if (observation.status === 'RESUELTA') return 'resolved';
+  if (observation.status === 'ABIERTA') return 'open';
+  if (observation.status === 'EN_CORRECCION' && observation.correctionNotificationStatus === 'SENT') {
+    return 'sent_to_product';
+  }
+  if (observation.status === 'EN_CORRECCION') return 'ready_to_notify';
+  return 'open';
+}
+
+export function isCorrectionReadyToNotify(observation: OperationalObservation): boolean {
+  return getFactoryCorrectionPhase(observation) === 'ready_to_notify';
+}
+
+export function isCorrectionSentToProduct(observation: OperationalObservation): boolean {
+  return getFactoryCorrectionPhase(observation) === 'sent_to_product';
 }
 
 export const observationBadgeLabels: Record<ObservationDeliverableBadgeState, string> = {

@@ -21,6 +21,7 @@ export const queryKeys = {
   planning: {
     dashboardSummary: () => ['planning', 'dashboard-summary'] as const,
     radicationWork: () => ['planning', 'radication-work'] as const,
+    tracking: () => ['planning', 'tracking'] as const,
   },
   lms: {
     dashboardSummary: () => ['lms', 'dashboard-summary'] as const,

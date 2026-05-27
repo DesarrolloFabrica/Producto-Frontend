@@ -54,6 +54,8 @@ export type ProjectStatus =
   | 'FEEDBACK_PENDING'
   | 'CLOSED';
 
+export type FactoryProductionStatus = 'NOT_STARTED' | 'IN_PROGRESS' | 'COMPLETED';
+
 export type SubjectStatus =
   | 'PENDING'
   | 'IN_PRODUCTION'
@@ -161,6 +163,8 @@ export interface SubjectVirtualization {
   status: SubjectStatus;
   operationalState?: SubjectOperationalState;
   progress: number;
+  factoryProductionStatus?: FactoryProductionStatus;
+  factoryProductionCompletedAt?: string | null;
   createdFromChange?: boolean;
   openObservationsCount?: number;
   correctionSentCount?: number;

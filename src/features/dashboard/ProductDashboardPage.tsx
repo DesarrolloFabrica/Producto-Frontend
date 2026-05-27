@@ -14,6 +14,7 @@ import { useInstitutionalWorkQuery } from '../../features/queries/useInstitution
 import { OperationalWorkTableV2 } from '../../features/operations-v2/OperationalWorkTableV2';
 import type { OperationalWorkItemV2 } from '../../types/operationalWorkflow';
 import { institutionalStateLabel } from '../institutional-workflow/institutionalCopy';
+import { resolveInstitutionalWorkHref } from '../institutional-workflow/institutionalNavigation';
 import {
   buildWorkItemsFromProjects,
   groupNewRequestItemsByProject,
@@ -43,33 +44,46 @@ export function ProductDashboardPage() {
   }, [institutionalWorkQuery.data]);
   const useInstitutionalReviewTray = backendEnabled && institutionalPendingReview.length > 0;
 
-  const openOperationalFlow = (subjectId: string) => {
-    navigate(`/subjects/${subjectId}/operations`, {
+  const openOperationalFlow = (item: OperationalWorkItemV2) => {
+    navigate(resolveInstitutionalWorkHref(item), {
       state: { from: buildFromLocation(location) },
     });
   };
   const institutionalReviewItems: OperationalWorkItemV2[] = useMemo(() => {
-    return institutionalPendingReview.map((item) => ({
-      subjectId: item.subjectId,
-      projectId: item.projectId,
-      subjectName: item.subjectName,
-      program: item.program,
-      school: item.school,
-      semesterNumber: item.semesterNumber,
-      modality: '—',
-      priority: 'MEDIUM',
-      expectedDeliveryDate: item.stageDueAt ?? new Date().toISOString(),
-      operationalState: item.operationalState,
-      currentStageLabel: institutionalStateLabel(item.operationalState),
-      currentResponsibleRole: item.currentResponsibleRole,
-      slaStatus: item.slaStatus,
-      stageDueAt: item.stageDueAt ?? new Date().toISOString(),
-      lastActivityAt: item.stageDueAt ?? new Date().toISOString(),
-      checksCompleted: 0,
-      checksTotal: 7,
-      primaryAction: 'VIEW_DETAIL',
-      actions: ['VIEW_DETAIL'],
-    }));
+    const seen = new Set<string>();
+    return institutionalPendingReview
+      .filter((item) => {
+        const key = item.semesterId ?? item.subjectId;
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      })
+      .map((item) => ({
+        kind: item.kind ?? 'semester',
+        semesterId: item.semesterId,
+        actionUrl: item.actionUrl,
+        subjectId: item.subjectId,
+        projectId: item.projectId,
+        subjectName: item.subjectName,
+        program: item.program,
+        school: item.school,
+        semesterNumber: item.semesterNumber,
+        modality: '—',
+        priority: 'MEDIUM',
+        expectedDeliveryDate: item.stageDueAt ?? new Date().toISOString(),
+        operationalState: item.operationalState,
+        currentStageLabel: institutionalStateLabel(item.operationalState),
+        currentResponsibleRole: item.currentResponsibleRole,
+        slaStatus: item.slaStatus,
+        stageDueAt: item.stageDueAt ?? new Date().toISOString(),
+        lastActivityAt: item.stageDueAt ?? new Date().toISOString(),
+        checksCompleted: 0,
+        checksTotal: 7,
+        subjectsTotal: item.subjectsTotal,
+        subjectsReady: item.subjectsReady,
+        primaryAction: 'VIEW_DETAIL',
+        actions: ['VIEW_DETAIL'],
+      }));
   }, [institutionalPendingReview]);
 
   const workItems = useMemo(
@@ -238,10 +252,11 @@ export function ProductDashboardPage() {
           <PageHeader
             eyebrow="Flujo institucional"
             title="Revisión académica pendiente"
-            description="Estas materias ya están en etapa Product. Entra al centro operacional para iniciar la revisión y abrir el checklist académico."
+            description="Paquetes semestrales en fase Product. Entra al centro operacional del semestre, inicia la revisión y luego abre el checklist de cada asignatura."
           />
           <OperationalWorkTableV2
             role="PRODUCT"
+            semesterFirst
             items={institutionalReviewItems}
             isLoading={institutionalWorkQuery.isLoading}
             error={

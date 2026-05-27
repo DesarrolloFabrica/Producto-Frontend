@@ -5,10 +5,11 @@ import { lmsApi } from '../../services/lmsApi';
 import { lmsStateLabel } from './lmsCopy';
 import { invalidateLmsDashboard } from './lmsInvalidation';
 import type { LmsDashboardFilter } from './lmsTypes';
-import { filterLmsRows, mapPreview, mapWorkItem } from './lmsTypes';
+import { applyLmsInboxAdvancedFilters, filterLmsRows, mapPreview, mapWorkItem } from './lmsTypes';
 import { queryKeys } from '../queries/queryKeys';
+import type { InboxAdvancedFilters } from '../operations-v2/operationalInboxFilters';
 
-export function useLmsDashboard(filter: LmsDashboardFilter) {
+export function useLmsDashboard(filter: LmsDashboardFilter, advanced: InboxAdvancedFilters) {
   const queryClient = useQueryClient();
 
   const workQuery = useQuery({
@@ -47,7 +48,11 @@ export function useLmsDashboard(filter: LmsDashboardFilter) {
     return [...workRows, ...dedupedReturned, ...dedupedCompleted];
   }, [workQuery.data, summaryQuery.data]);
 
-  const visibleRows = useMemo(() => filterLmsRows(allRows, filter), [allRows, filter]);
+  const categoryRows = useMemo(() => filterLmsRows(allRows, filter), [allRows, filter]);
+  const visibleRows = useMemo(
+    () => applyLmsInboxAdvancedFilters(categoryRows, advanced),
+    [categoryRows, advanced],
+  );
 
   const kpis = useMemo(() => {
     const summary = summaryQuery.data?.kpis;
@@ -83,6 +88,8 @@ export function useLmsDashboard(filter: LmsDashboardFilter) {
 
   return {
     visibleRows,
+    categoryRows,
+    allRows,
     kpis,
     recentActivity: summaryQuery.data?.recentActivity ?? [],
     hasNoPending,

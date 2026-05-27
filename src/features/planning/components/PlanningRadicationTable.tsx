@@ -4,6 +4,7 @@ import { PlanningWorkTable } from './PlanningWorkTable';
 /** Vista enfocada en radicaciones; reutiliza la tabla unificada. */
 export function PlanningRadicationTable(props: {
   rows: PlanningWorkRow[];
+  totalRows?: number;
   isLoading: boolean;
   error: string | null;
   onOpenFlow: (row: PlanningWorkRow) => void;

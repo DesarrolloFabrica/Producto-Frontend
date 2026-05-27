@@ -29,7 +29,7 @@ export function AcademicCorrectionInFactoryView({ workspace }: AcademicCorrectio
             </p>
           ) : null}
           <Link
-            to={`/subjects/${workspace.subjectId}/operations`}
+            to={`/projects/${workspace.projectId}/semesters/${workspace.semesterId}/operations`}
             className="mt-4 inline-flex items-center justify-center gap-1.5 rounded-[12px] border border-[#CBD5E1] bg-white px-4 py-2 text-xs font-bold text-[#475569] hover:bg-[#F1F5F9]"
           >
             Ver flujo operacional

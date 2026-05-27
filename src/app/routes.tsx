@@ -21,6 +21,7 @@ import { OperationalWorkflowV2Provider } from '../features/operations-v2/store/O
 import { PlanningDashboardPage } from '../features/planning/PlanningDashboardPage';
 import { LmsDashboardPage } from '../features/lms/LmsDashboardPage';
 import { SubjectOperationsPage } from '../features/institutional-workflow/SubjectOperationsPage';
+import { SemesterOperationsPage } from '../features/institutional-workflow/SemesterOperationsPage';
 import type { Role } from '../types/domain';
 import { homePathForRole, isPathAllowedForRole } from '../navigation/roleNavigation';
 
@@ -76,6 +77,10 @@ export const router = createBrowserRouter([
       { path: 'planning/dashboard', element: <RoleScopeGuard><RoleRedirect expectedRole="PLANEACION"><PlanningDashboardPage /></RoleRedirect></RoleScopeGuard> },
       { path: 'lms/dashboard', element: <RoleScopeGuard><RoleRedirect expectedRole="LMS"><LmsDashboardPage /></RoleRedirect></RoleScopeGuard> },
       { path: 'subjects/:subjectId/operations', element: <RoleScopeGuard><SubjectOperationsPage /></RoleScopeGuard> },
+      {
+        path: 'projects/:projectId/semesters/:semesterId/operations',
+        element: <RoleScopeGuard><SemesterOperationsPage /></RoleScopeGuard>,
+      },
       { path: 'workflow-preview', element: <RoleScopeGuard><OperationalWorkflowV2Provider><WorkflowPreviewPage /></OperationalWorkflowV2Provider></RoleScopeGuard> },
       { path: 'operations-v2/subjects/:subjectId', element: <RoleScopeGuard><OperationalWorkflowV2Provider><OperationalSubjectDetailV2Page /></OperationalWorkflowV2Provider></RoleScopeGuard> },
       { path: 'projects', element: <RoleScopeGuard><ProjectsPage /></RoleScopeGuard> },

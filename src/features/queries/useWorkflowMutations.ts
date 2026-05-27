@@ -5,22 +5,39 @@ import type { ApiProjectDetail, ApiProjectListItem, ApiSubjectDetail, ApiSubject
 import type { ApiSubjectWorkspace } from '../../services/subjectsApi';
 import { isLightSubjectWorkspace, mapProjectDetailFromApi } from '../operations/apiMappers';
 import { markFactoryQueriesStale } from './factoryQueryUtils';
+import { invalidateSemesterWorkflowQueries } from './invalidateSemesterWorkflowQueries';
 import { queryKeys } from './queryKeys';
 
 type ProductionStatusInput = 'PENDIENTE' | 'EN_PRODUCCION' | 'COMPLETADA';
 
-function optimisticSubjectStatus(status: ProductionStatusInput): ApiSubjectDetail['status'] {
+function optimisticSubjectStatus(
+  status: ProductionStatusInput,
+  institutional = false,
+): ApiSubjectDetail['status'] {
   if (status === 'EN_PRODUCCION') return 'IN_PRODUCTION';
-  if (status === 'COMPLETADA') return 'IN_REVIEW';
+  if (status === 'COMPLETADA') return institutional ? 'IN_PRODUCTION' : 'IN_REVIEW';
   return 'PENDING';
 }
 
-function updateSubjectForProductionStatus(subject: ApiSubjectDetail, status: ProductionStatusInput): ApiSubjectDetail {
-  const nextStatus = optimisticSubjectStatus(status);
+function updateSubjectForProductionStatus(
+  subject: ApiSubjectDetail,
+  status: ProductionStatusInput,
+  institutional = false,
+): ApiSubjectDetail {
+  const nextStatus = optimisticSubjectStatus(status, institutional);
+  const completedAt =
+    status === 'COMPLETADA' ? new Date().toISOString() : subject.factoryProductionCompletedAt ?? null;
   return {
     ...subject,
     status: nextStatus,
     progress: status === 'PENDIENTE' ? 0 : status === 'EN_PRODUCCION' ? Math.max(subject.progress, 50) : 100,
+    factoryProductionStatus:
+      status === 'COMPLETADA'
+        ? 'COMPLETED'
+        : status === 'EN_PRODUCCION'
+          ? 'IN_PROGRESS'
+          : subject.factoryProductionStatus ?? 'NOT_STARTED',
+    factoryProductionCompletedAt: completedAt,
     checklist: subject.checklist.map((item) => {
       if (item.ownerRole !== 'FABRICA' || item.status === 'APROBADO') return item;
       if (status === 'EN_PRODUCCION') return { ...item, status: 'EN_PRODUCCION' };
@@ -74,6 +91,8 @@ function subjectToSummary(subject: ApiSubjectDetail, semesterNumber: number): Ap
     semesterNumber,
     expectedDeliveryDate: subject.expectedDeliveryDate,
     progress: subject.progress,
+    factoryProductionStatus: subject.factoryProductionStatus,
+    factoryProductionCompletedAt: subject.factoryProductionCompletedAt,
     openObservationsCount: subject.openObservationsCount ?? 0,
     correctionSentCount: subject.correctionSentCount ?? 0,
     updatedAt: subject.updatedAt,
@@ -135,12 +154,13 @@ function optimisticWorkspace(
   current: ApiSubjectWorkspace | undefined,
   subjectId: string,
   status: ProductionStatusInput,
+  institutional = false,
 ): ApiSubjectWorkspace | undefined {
   if (!current) return current;
   if (isLightSubjectWorkspace(current)) {
     return {
       ...current,
-      subject: updateSubjectForProductionStatus(current.subject, status),
+      subject: updateSubjectForProductionStatus(current.subject, status, institutional),
     };
   }
   return {
@@ -150,7 +170,7 @@ function optimisticWorkspace(
       semesters: current.project.semesters.map((semester) => ({
         ...semester,
         subjects: semester.subjects.map((subject) =>
-          subject.id === subjectId ? updateSubjectForProductionStatus(subject, status) : subject,
+          subject.id === subjectId ? updateSubjectForProductionStatus(subject, status, institutional) : subject,
         ),
       })),
     },
@@ -162,9 +182,10 @@ function optimisticProjectsList(
   projectId: string,
   subjectId: string,
   status: ProductionStatusInput,
+  institutional = false,
 ): ApiProjectListItem[] | undefined {
   if (!current) return current;
-  const nextStatus = optimisticSubjectStatus(status);
+  const nextStatus = optimisticSubjectStatus(status, institutional);
   return current.map((project) => {
     if (project.id !== projectId || !project.subjectsSummary) return project;
     return {
@@ -175,6 +196,14 @@ function optimisticProjectsList(
               ...subject,
               status: nextStatus,
               progress: status === 'PENDIENTE' ? 0 : status === 'EN_PRODUCCION' ? Math.max(subject.progress, 50) : 100,
+              factoryProductionStatus:
+                status === 'COMPLETADA'
+                  ? 'COMPLETED'
+                  : status === 'EN_PRODUCCION'
+                    ? 'IN_PROGRESS'
+                    : subject.factoryProductionStatus,
+              factoryProductionCompletedAt:
+                status === 'COMPLETADA' ? new Date().toISOString() : subject.factoryProductionCompletedAt,
             }
           : subject,
       ),
@@ -184,15 +213,9 @@ function optimisticProjectsList(
 
 function optimisticOperationalWorkspace(
   current: OperationalWorkspaceDto | undefined,
-  status: ProductionStatusInput,
+  _status: ProductionStatusInput,
 ): OperationalWorkspaceDto | undefined {
   if (!current?.institutionalFlowActive) return current;
-  if (status === 'COMPLETADA' && current.operationalState === 'IN_FACTORY_PRODUCTION') {
-    return { ...current, operationalState: 'PENDING_PLANNING_PRODUCTION_VALIDATION' };
-  }
-  if (status === 'EN_PRODUCCION' && current.operationalState === 'PENDING_FACTORY') {
-    return { ...current, operationalState: 'IN_FACTORY_PRODUCTION' };
-  }
   return current;
 }
 
@@ -203,6 +226,7 @@ export function useUpdateSubjectProductionStatusMutation() {
     mutationFn: async (input: {
       subjectId: string;
       projectId: string;
+      semesterId?: string;
       status: ProductionStatusInput;
     }) => {
       const { subjectsApi } = await import('../../services/subjectsApi');
@@ -220,6 +244,7 @@ export function useUpdateSubjectProductionStatusMutation() {
       const previousOperationalWorkspace = queryClient.getQueryData<OperationalWorkspaceDto>(
         queryKeys.operationalWorkspace(variables.subjectId),
       );
+      const institutionalFlow = previousOperationalWorkspace?.institutionalFlowActive === true;
 
       queryClient.setQueryData<OperationalWorkspaceDto>(
         queryKeys.operationalWorkspace(variables.subjectId),
@@ -228,11 +253,18 @@ export function useUpdateSubjectProductionStatusMutation() {
 
       queryClient.setQueryData<ApiSubjectWorkspace>(
         queryKeys.subjectWorkspace(variables.subjectId),
-        (current) => optimisticWorkspace(current, variables.subjectId, variables.status),
+        (current) => optimisticWorkspace(current, variables.subjectId, variables.status, institutionalFlow),
       );
       queryClient.setQueryData<ApiProjectListItem[]>(
         queryKeys.projects(),
-        (current) => optimisticProjectsList(current, variables.projectId, variables.subjectId, variables.status),
+        (current) =>
+          optimisticProjectsList(
+            current,
+            variables.projectId,
+            variables.subjectId,
+            variables.status,
+            institutionalFlow,
+          ),
       );
       queryClient.setQueryData<ApiProjectDetail>(queryKeys.project(variables.projectId), (current) => {
         if (!current) return current;
@@ -242,7 +274,7 @@ export function useUpdateSubjectProductionStatusMutation() {
             ...semester,
             subjects: semester.subjects.map((subject) =>
               subject.id === variables.subjectId
-                ? updateSubjectForProductionStatus(subject, variables.status)
+                ? updateSubjectForProductionStatus(subject, variables.status, institutionalFlow)
                 : subject,
             ),
           })),
@@ -271,9 +303,13 @@ export function useUpdateSubjectProductionStatusMutation() {
         (current) => reconcileProjectsList(current, project, variables.subjectId),
       );
       void queryClient.invalidateQueries({ queryKey: queryKeys.notificationsSummary(), refetchType: 'none' });
-      void queryClient.refetchQueries({ queryKey: queryKeys.operationalWorkspace(variables.subjectId) });
-      void queryClient.invalidateQueries({ queryKey: queryKeys.operationalWorkspace(variables.subjectId) });
-      void queryClient.invalidateQueries({ queryKey: ['institutional-work'] });
+      void queryClient.refetchQueries({ queryKey: queryKeys.subjectWorkspace(variables.subjectId) });
+      invalidateSemesterWorkflowQueries(queryClient, {
+        semesterId: variables.semesterId,
+        projectId: variables.projectId,
+        subjectId: variables.subjectId,
+        role: 'FABRICA',
+      });
       markFactoryQueriesStale(queryClient);
     },
   });

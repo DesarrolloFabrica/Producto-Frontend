@@ -29,8 +29,15 @@ export function countApprovableProductItems(items: ChecklistItem[]) {
   ).length;
 }
 
+/** Materiales por gránulo: Product puede aprobar desde cualquier estado previo a APROBADO. */
 export function countApprovableTopicItems(items: ChecklistItem[]) {
-  return items.filter((item) => item.status === 'ENTREGADO' || item.status === 'RECHAZADO').length;
+  return items.filter(
+    (item) =>
+      item.status === 'PENDIENTE' ||
+      item.status === 'EN_PRODUCCION' ||
+      item.status === 'ENTREGADO' ||
+      item.status === 'RECHAZADO',
+  ).length;
 }
 
 export function getAcademicApprovalBlockers(params: {
@@ -58,16 +65,9 @@ export function getAcademicApprovalBlockers(params: {
 
   const pendingTopics = topicItems.filter((item) => item.status !== 'APROBADO');
   if (pendingTopics.length > 0) {
-    const notDelivered = pendingTopics.filter(
-      (item) => item.status === 'PENDIENTE' || item.status === 'EN_PRODUCCION',
+    blockers.push(
+      `Faltan ${pendingTopics.length} ítem(s) de temas/gránulos por aprobar.`,
     );
-    if (notDelivered.length > 0) {
-      blockers.push('Fábrica aún no ha entregado todos los materiales de temas/gránulos.');
-    } else {
-      blockers.push(
-        `Faltan ${pendingTopics.length} ítem(s) de temas/gránulos por aprobar.`,
-      );
-    }
   }
 
   if (unresolvedObservationCount > 0) {
@@ -142,20 +142,5 @@ export function getTopicBulkBlockMessage(
     return 'Todos los materiales de este tema ya están aprobados.';
   }
 
-  const pendingCount = items.filter((item) => item.status === 'PENDIENTE').length;
-  const inProductionCount = items.filter((item) => item.status === 'EN_PRODUCCION').length;
-
-  if (pendingCount > 0 && inProductionCount === 0) {
-    return 'Esperando que Fábrica entregue los materiales de este tema.';
-  }
-
-  if (inProductionCount > 0 && pendingCount === 0) {
-    return 'Fábrica está produciendo los materiales de este tema.';
-  }
-
-  if (pendingCount > 0 || inProductionCount > 0) {
-    return 'Esperando que Fábrica termine y entregue los materiales de este tema.';
-  }
-
-  return 'No hay materiales listos para aprobar en este tema.';
+  return 'No hay materiales pendientes de revisión en este tema.';
 }

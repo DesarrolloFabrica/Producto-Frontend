@@ -1,6 +1,12 @@
 import type { InstitutionalOperationalAction, InstitutionalOperationalState, Role, SlaStatus } from '../../types/domain';
 import type { OperationalWorkItemDto } from '../../services/institutionalWorkflowApi';
 import type { LmsSubjectPreview } from '../../services/lmsApi';
+import {
+  type InboxAdvancedFilters,
+  matchesInboxQuery,
+  matchesInboxSlaFilter,
+  sortInboxRows,
+} from '../operations-v2/operationalInboxFilters';
 
 export type LmsDashboardFilter =
   | 'all'
@@ -95,3 +101,44 @@ export function filterLmsRows(rows: LmsWorkRow[], filter: LmsDashboardFilter): L
       return rows.filter((r) => r.kind === 'work' || r.kind === 'returned');
   }
 }
+
+export function countLmsRowsByFilter(rows: LmsWorkRow[], filter: LmsDashboardFilter): number {
+  return filterLmsRows(rows, filter).length;
+}
+
+export function applyLmsInboxAdvancedFilters(
+  rows: LmsWorkRow[],
+  advanced: InboxAdvancedFilters,
+): LmsWorkRow[] {
+  const filtered = rows.filter((row) => {
+    const queryOk = matchesInboxQuery(
+      advanced.query,
+      row.school,
+      row.program,
+      row.subjectName,
+      row.stageLabel,
+      row.operationalState,
+    );
+    if (!queryOk) return false;
+    if (row.kind === 'completed') {
+      return advanced.sla === 'all';
+    }
+    return matchesInboxSlaFilter(advanced.sla, row.slaStatus);
+  });
+
+  return sortInboxRows(filtered, advanced.sort, {
+    dueAt: (row) => row.stageDueAt,
+    school: (row) => row.school,
+    program: (row) => row.program,
+    stage: (row) => row.stageLabel || row.operationalState,
+  });
+}
+
+export const LMS_INBOX_CATEGORIES: Array<{ id: LmsDashboardFilter; label: string }> = [
+  { id: 'all', label: 'Todas' },
+  { id: 'pending', label: 'Pendientes de carga' },
+  { id: 'in-upload', label: 'En carga' },
+  { id: 'returned', label: 'Devueltas' },
+  { id: 'completed', label: 'Completadas' },
+  { id: 'history', label: 'Historial' },
+];

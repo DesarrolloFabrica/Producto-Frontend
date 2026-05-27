@@ -14,23 +14,23 @@ export type ModalRequestV2 =
 function actionMeta(action: OperationalActionV2): { icon: React.ComponentType<any>; title: string; description: string; requiresComment: boolean } {
   switch (action) {
     case 'PLANNING_VALIDATE_INITIAL':
-      return { icon: FileCheck2, title: 'Validar solicitud inicial', description: 'Planeación confirma que la solicitud tiene datos correctos para iniciar el pipeline.', requiresComment: false };
+      return { icon: FileCheck2, title: 'Validar solicitud inicial', description: 'Confirme que la solicitud tiene datos correctos para iniciar el pipeline.', requiresComment: false };
     case 'PLANNING_RETURN_INITIAL':
       return { icon: CornerDownLeft, title: 'Devolver solicitud a Product', description: 'La devolución requiere un comentario claro con el motivo y el ajuste esperado.', requiresComment: true };
     case 'FACTORY_START_PRODUCTION':
       return { icon: Factory, title: 'Iniciar producción', description: 'Fábrica inicia producción operacional para esta asignatura.', requiresComment: false };
     case 'FACTORY_DELIVER_CONTENT':
-      return { icon: CheckCircle2, title: 'Entregar contenido', description: 'Marca la producción como lista para validación de Planeación.', requiresComment: false };
+      return { icon: CheckCircle2, title: 'Entregar contenido', description: 'Marca la producción como lista para validación operacional.', requiresComment: false };
     case 'PLANNING_VALIDATE_PRODUCTION':
-      return { icon: FileCheck2, title: 'Validar produccion', description: 'Planeación valida entrega, estructura y evidencias de producción.', requiresComment: false };
+      return { icon: FileCheck2, title: 'Validar producción', description: 'Valida entrega, estructura y evidencias de producción.', requiresComment: false };
     case 'PLANNING_RETURN_PRODUCTION':
       return { icon: CornerDownLeft, title: 'Devolver a Fábrica', description: 'La devolución requiere motivo y el ajuste esperado.', requiresComment: true };
     case 'LMS_START_UPLOAD':
       return { icon: UploadCloud, title: 'Iniciar carga LMS', description: 'LMS inicia carga/publicación por asignatura.', requiresComment: false };
     case 'LMS_CONFIRM_UPLOAD':
-      return { icon: CheckCircle2, title: 'Confirmar publicacion', description: 'Confirma carga/publicación y deja evidencia/referencia si aplica.', requiresComment: false };
+      return { icon: CheckCircle2, title: 'Confirmar publicación', description: 'Confirma carga/publicación y deja evidencia/referencia si aplica.', requiresComment: false };
     case 'PLANNING_VALIDATE_LMS':
-      return { icon: FileCheck2, title: 'Validar LMS y credenciales', description: 'Planeación valida publicación, enlaces y credenciales (si aplica).', requiresComment: false };
+      return { icon: FileCheck2, title: 'Validar carga LMS', description: 'Valida publicación, enlaces y credenciales (si aplica).', requiresComment: false };
     case 'PLANNING_RETURN_LMS':
       return { icon: CornerDownLeft, title: 'Devolver a LMS', description: 'Requiere comentario con hallazgo y corrección requerida.', requiresComment: true };
     case 'PRODUCT_START_ACADEMIC_REVIEW':

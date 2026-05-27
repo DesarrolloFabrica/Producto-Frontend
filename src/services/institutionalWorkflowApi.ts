@@ -33,6 +33,8 @@ export interface OperationalWorkspaceDto {
   subjectId: string;
   subjectName: string;
   projectId: string;
+  semesterId: string;
+  semesterNumber: number;
   program: string;
   school: string;
   operationalState: InstitutionalOperationalState;
@@ -79,7 +81,9 @@ export interface SemesterSubjectOperationalDto {
   status: string;
   operationalState: InstitutionalOperationalState;
   internalState: string;
+  progress: number;
   blockers: string[];
+  openObservationsCount: number;
 }
 
 export interface SemesterOperationalWorkspaceDto {
@@ -128,6 +132,9 @@ export const institutionalWorkflowApi = {
   },
   planningWork() {
     return apiClient.get<OperationalWorkItemDto[]>('/planning/work');
+  },
+  planningTracking() {
+    return apiClient.get<OperationalWorkItemDto[]>('/planning/tracking');
   },
   lmsWork() {
     return apiClient.get<OperationalWorkItemDto[]>('/lms/work');

@@ -2,6 +2,12 @@ import type { InstitutionalOperationalState, Role, SlaStatus } from '../../types
 import type { OperationalWorkItemDto } from '../../services/institutionalWorkflowApi';
 import type { ProjectRadicationWorkItemDto } from '../../services/projectRadicationApi';
 import type { PlanningFinalizedProject, PlanningSubjectPreview } from '../../services/planningApi';
+import {
+  type InboxAdvancedFilters,
+  matchesInboxQuery,
+  matchesInboxSlaFilter,
+  sortInboxRows,
+} from '../operations-v2/operationalInboxFilters';
 
 export type PlanningDashboardFilter =
   | 'all'
@@ -9,6 +15,7 @@ export type PlanningDashboardFilter =
   | 'production'
   | 'lms'
   | 'radication'
+  | 'tracking'
   | 'returned'
   | 'history';
 
@@ -42,6 +49,25 @@ export type PlanningWorkRow =
       scopeSubjectsTotal: number;
       planningRadicationCheckDueAt: string | null;
       lastRadicationReturnReason: string | null;
+    }
+  | {
+      kind: 'tracking';
+      id: string;
+      subjectId: string;
+      projectId: string;
+      subjectName: string;
+      program: string;
+      school: string;
+      semesterNumber: number;
+      operationalState: InstitutionalOperationalState;
+      stageLabel: string;
+      responsibleRole: Role;
+      stageDueAt: string | null;
+      slaStatus: SlaStatus;
+      lastActivity: string | null;
+      actionUrl: string;
+      subjectsTotal: number;
+      subjectsReady: number;
     }
   | {
       kind: 'returned';
@@ -79,6 +105,7 @@ export function parsePlanningFilter(raw: string | null): PlanningDashboardFilter
     'production',
     'lms',
     'radication',
+    'tracking',
     'returned',
     'history',
   ];
@@ -88,10 +115,34 @@ export function parsePlanningFilter(raw: string | null): PlanningDashboardFilter
   return 'all';
 }
 
+export function mapTrackingWorkItem(item: OperationalWorkItemDto): PlanningWorkRow {
+  const isSemester = item.kind === 'semester' && item.semesterId;
+  return {
+    kind: 'tracking',
+    id: isSemester ? item.semesterId! : item.subjectId,
+    subjectId: item.subjectId,
+    projectId: item.projectId,
+    subjectName: item.subjectName,
+    program: item.program,
+    school: item.school,
+    semesterNumber: item.semesterNumber,
+    operationalState: item.operationalState,
+    stageLabel: '',
+    responsibleRole: item.currentResponsibleRole,
+    stageDueAt: item.stageDueAt,
+    slaStatus: item.slaStatus,
+    lastActivity: item.lastReturnReason,
+    actionUrl: item.actionUrl,
+    subjectsTotal: item.subjectsTotal ?? 0,
+    subjectsReady: item.subjectsReady ?? 0,
+  };
+}
+
 export function mapSubjectWorkItem(item: OperationalWorkItemDto): PlanningWorkRow {
+  const isSemester = item.kind === 'semester' && item.semesterId;
   return {
     kind: 'subject',
-    id: item.subjectId,
+    id: isSemester ? item.semesterId! : item.subjectId,
     subjectId: item.subjectId,
     projectId: item.projectId,
     subjectName: item.subjectName,
@@ -178,12 +229,94 @@ export function filterPlanningRows(
       );
     case 'radication':
       return rows.filter((r) => r.kind === 'radication');
+    case 'tracking':
+      return rows.filter((r) => r.kind === 'tracking');
     case 'returned':
       return rows.filter((r) => r.kind === 'returned');
     case 'history':
       return rows.filter((r) => r.kind === 'finalized');
     case 'all':
     default:
-      return rows.filter((r) => r.kind === 'subject' || r.kind === 'radication');
+      return rows.filter(
+        (r) =>
+          r.kind === 'subject' ||
+          r.kind === 'radication' ||
+          r.kind === 'tracking' ||
+          r.kind === 'returned',
+      );
   }
 }
+
+export function countPlanningRowsByFilter(
+  rows: PlanningWorkRow[],
+  filter: PlanningDashboardFilter,
+): number {
+  return filterPlanningRows(rows, filter).length;
+}
+
+function planningRowDueAt(row: PlanningWorkRow): string | null {
+  if (row.kind === 'radication') return row.planningRadicationCheckDueAt;
+  if (row.kind === 'finalized') return row.radicatedAt;
+  if (row.kind === 'subject' || row.kind === 'tracking' || row.kind === 'returned') {
+    return row.stageDueAt;
+  }
+  return null;
+}
+
+function planningRowStage(row: PlanningWorkRow): string {
+  if (row.kind === 'finalized') return 'Finalizada';
+  if (row.kind === 'radication') return 'Radicación';
+  if (row.kind === 'subject' || row.kind === 'tracking' || row.kind === 'returned') {
+    return row.stageLabel || row.operationalState;
+  }
+  return '';
+}
+
+function planningRowSla(row: PlanningWorkRow): SlaStatus | null {
+  if (row.kind === 'subject' || row.kind === 'tracking' || row.kind === 'returned') {
+    return row.slaStatus;
+  }
+  return null;
+}
+
+export function applyPlanningInboxAdvancedFilters(
+  rows: PlanningWorkRow[],
+  advanced: InboxAdvancedFilters,
+): PlanningWorkRow[] {
+  const filtered = rows.filter((row) => {
+    const queryOk = matchesInboxQuery(
+      advanced.query,
+      row.school,
+      row.program,
+      row.kind === 'radication' || row.kind === 'finalized'
+        ? row.radicationNumber
+        : row.kind === 'subject' || row.kind === 'tracking' || row.kind === 'returned'
+          ? row.subjectName
+          : null,
+      planningRowStage(row),
+    );
+    if (!queryOk) return false;
+    if (row.kind === 'radication' || row.kind === 'finalized') {
+      return advanced.sla === 'all';
+    }
+    return matchesInboxSlaFilter(advanced.sla, planningRowSla(row));
+  });
+
+  return sortInboxRows(filtered, advanced.sort, {
+    dueAt: planningRowDueAt,
+    school: (row) => row.school,
+    program: (row) => row.program,
+    stage: planningRowStage,
+  });
+}
+
+export const PLANNING_INBOX_CATEGORIES: Array<{ id: PlanningDashboardFilter; label: string }> = [
+  { id: 'all', label: 'Todas' },
+  { id: 'initial', label: 'Validación inicial' },
+  { id: 'production', label: 'Validación producción' },
+  { id: 'lms', label: 'Validación LMS' },
+  { id: 'radication', label: 'Radicación' },
+  { id: 'tracking', label: 'En seguimiento' },
+  { id: 'returned', label: 'Devueltas' },
+  { id: 'history', label: 'Finalizadas / Historial' },
+];

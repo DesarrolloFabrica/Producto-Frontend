@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { History, RefreshCw, RotateCcw } from 'lucide-react';
 import { useQueryClient } from '@tanstack/react-query';
@@ -11,13 +11,28 @@ import type { InstitutionalOperationalAction } from '../../types/domain';
 import { buildFromLocation } from '../../navigation/contextNavigation';
 import { invalidateInstitutionalWorkflowQueries } from '../institutional-workflow/institutionalQueryUtils';
 import { LmsEmptyState } from './components/LmsEmptyState';
-import { LmsFilterChips } from './components/LmsFilterChips';
 import { LmsKpiCards } from './components/LmsKpiCards';
 import { LmsRecentActivity } from './components/LmsRecentActivity';
 import { LmsWorkTable } from './components/LmsWorkTable';
 import { invalidateLmsDashboard } from './lmsInvalidation';
-import { parseLmsFilter, type LmsDashboardFilter } from './lmsTypes';
+import {
+  countLmsRowsByFilter,
+  LMS_INBOX_CATEGORIES,
+  parseLmsFilter,
+  type LmsDashboardFilter,
+} from './lmsTypes';
 import { useLmsDashboard } from './useLmsDashboard';
+import { OperationalInboxFilterBar } from '../operations-v2/components/OperationalInboxFilterBar';
+import { OperationalInboxPagination } from '../operations-v2/components/OperationalInboxPagination';
+import {
+  DEFAULT_INBOX_ADVANCED_FILTERS,
+  inboxSafePage,
+  inboxTotalPages,
+  paginateInboxRows,
+  parseInboxAdvancedFilters,
+  parseInboxPage,
+  type InboxAdvancedFilters,
+} from '../operations-v2/operationalInboxFilters';
 
 export function LmsDashboardPage() {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -26,20 +41,64 @@ export function LmsDashboardPage() {
   const { showToast } = useToast();
   const queryClient = useQueryClient();
   const filter = parseLmsFilter(searchParams.get('filter'));
+  const advanced = parseInboxAdvancedFilters(searchParams);
+  const pageParam = parseInboxPage(searchParams);
   const [busySubjectId, setBusySubjectId] = useState<string | null>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
 
-  const { visibleRows, kpis, recentActivity, isLoading, error, refetchAll } = useLmsDashboard(filter);
+  const { visibleRows, categoryRows, allRows, kpis, recentActivity, isLoading, error, refetchAll } =
+    useLmsDashboard(filter, advanced);
 
   const setFilter = useCallback(
     (next: LmsDashboardFilter) => {
       const params = new URLSearchParams(searchParams);
       if (next === 'all') params.delete('filter');
       else params.set('filter', next);
+      params.delete('page');
       setSearchParams(params, { replace: true });
     },
     [searchParams, setSearchParams],
   );
+
+  const setAdvanced = useCallback(
+    (next: InboxAdvancedFilters) => {
+      const params = new URLSearchParams(searchParams);
+      if (next.query) params.set('q', next.query);
+      else params.delete('q');
+      if (next.sla !== 'all') params.set('sla', next.sla);
+      else params.delete('sla');
+      if (next.sort !== DEFAULT_INBOX_ADVANCED_FILTERS.sort) params.set('sort', next.sort);
+      else params.delete('sort');
+      params.delete('page');
+      setSearchParams(params, { replace: true });
+    },
+    [searchParams, setSearchParams],
+  );
+
+  const setPage = useCallback(
+    (nextPage: number) => {
+      const params = new URLSearchParams(searchParams);
+      if (nextPage <= 1) params.delete('page');
+      else params.set('page', String(nextPage));
+      setSearchParams(params, { replace: true });
+    },
+    [searchParams, setSearchParams],
+  );
+
+  const safePage = useMemo(
+    () => inboxSafePage(pageParam, visibleRows.length),
+    [pageParam, visibleRows.length],
+  );
+  const paginatedRows = useMemo(
+    () => paginateInboxRows(visibleRows, safePage),
+    [visibleRows, safePage],
+  );
+  const totalPages = inboxTotalPages(visibleRows.length);
+
+  const categoryOptions = LMS_INBOX_CATEGORIES.map((category) => ({
+    ...category,
+    count: countLmsRowsByFilter(allRows, category.id),
+  }));
 
   const handleRefresh = async () => {
     setIsRefreshing(true);
@@ -84,8 +143,10 @@ export function LmsDashboardPage() {
     }
   };
 
-  const showEmpty =
-    !isLoading && !error && visibleRows.length === 0;
+  const showFilteredEmpty =
+    !isLoading && !error && categoryRows.length > 0 && visibleRows.length === 0;
+
+  const showEmpty = !isLoading && !error && visibleRows.length === 0 && !showFilteredEmpty;
 
   return (
     <DashboardShell>
@@ -124,7 +185,33 @@ export function LmsDashboardPage() {
 
       <LmsKpiCards kpis={kpis} activeFilter={filter} onFilterChange={setFilter} />
 
-      <LmsFilterChips active={filter} onChange={setFilter} />
+      <OperationalInboxFilterBar
+        accent="lms"
+        categories={categoryOptions}
+        activeCategory={filter}
+        onCategoryChange={setFilter}
+        advanced={advanced}
+        onAdvancedChange={setAdvanced}
+        totalInCategory={categoryRows.length}
+        visibleCount={visibleRows.length}
+      />
+
+      {showFilteredEmpty ? (
+        <div className="rounded-2xl border border-slate-200 bg-white px-5 py-8 text-center shadow-sm">
+          <p className="text-sm font-semibold text-slate-800">Ningún registro coincide con los filtros aplicados</p>
+          <p className="mt-1 text-xs text-slate-500">
+            Hay {categoryRows.length} asignatura(s) en esta categoría. Ajuste la búsqueda, el plazo SLA o limpie los filtros.
+          </p>
+          <Button
+            type="button"
+            variant="secondary"
+            className="mt-4"
+            onClick={() => setAdvanced(DEFAULT_INBOX_ADVANCED_FILTERS)}
+          >
+            Limpiar filtros avanzados
+          </Button>
+        </div>
+      ) : null}
 
       {showEmpty ? (
         <LmsEmptyState
@@ -137,17 +224,27 @@ export function LmsDashboardPage() {
       ) : null}
 
       {!showEmpty ? (
-        <LmsWorkTable
-          rows={visibleRows}
-          isLoading={isLoading}
-          error={error}
-          busySubjectId={busySubjectId}
-          onOpenFlow={openOperationalFlow}
-          onTransition={(row, action) => void handleTransition(row, action)}
-        />
+        <>
+          <LmsWorkTable
+            rows={paginatedRows}
+            totalRows={visibleRows.length}
+            isLoading={isLoading}
+            error={error}
+            busySubjectId={busySubjectId}
+            onOpenFlow={openOperationalFlow}
+            onTransition={(row, action) => void handleTransition(row, action)}
+          />
+          <OperationalInboxPagination
+            page={safePage}
+            totalPages={totalPages}
+            totalItems={visibleRows.length}
+            itemLabel={{ one: 'asignatura', other: 'asignaturas' }}
+            onPageChange={setPage}
+          />
+        </>
       ) : null}
 
-      <LmsRecentActivity items={recentActivity} />
+      {filter !== 'history' ? <LmsRecentActivity items={recentActivity} /> : null}
     </DashboardShell>
   );
 }

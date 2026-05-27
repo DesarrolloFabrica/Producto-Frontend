@@ -46,6 +46,8 @@ function buildWorkspacePlaceholder(
         status: subjectSummary.status,
         operationalState: subjectSummary.operationalState,
         progress: subjectSummary.progress,
+        factoryProductionStatus: subjectSummary.factoryProductionStatus,
+        factoryProductionCompletedAt: subjectSummary.factoryProductionCompletedAt,
         openObservationsCount: subjectSummary.openObservationsCount,
         correctionSentCount: subjectSummary.correctionSentCount,
         createdFromChange: Boolean(subjectSummary.createdFromChange),
