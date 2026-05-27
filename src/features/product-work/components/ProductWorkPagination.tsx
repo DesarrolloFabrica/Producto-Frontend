@@ -6,24 +6,28 @@ export function ProductWorkPagination({
   totalItems,
   pageSize,
   onPageChange,
+  entityLabel = 'materias',
 }: {
   page: number;
   totalPages: number;
   totalItems: number;
   pageSize: number;
   onPageChange: (page: number) => void;
+  entityLabel?: string;
 }) {
   const canPrev = page > 1;
   const canNext = page < totalPages;
   const start = totalItems === 0 ? 0 : (page - 1) * pageSize + 1;
   const end = totalItems === 0 ? 0 : Math.min(page * pageSize, totalItems);
+  const singular = entityLabel.endsWith('s') ? entityLabel.slice(0, -1) : entityLabel;
+  const plural = entityLabel;
 
   const rangeLabel =
     totalItems === 0
-      ? 'Mostrando 0 de 0 materias'
+      ? `Mostrando 0 de 0 ${plural}`
       : start === end
-        ? `Mostrando ${start} de ${totalItems} materia${totalItems === 1 ? '' : 's'}`
-        : `Mostrando ${start}-${end} de ${totalItems} materias`;
+        ? `Mostrando ${start} de ${totalItems} ${totalItems === 1 ? singular : plural}`
+        : `Mostrando ${start}-${end} de ${totalItems} ${plural}`;
 
   const btnBase =
     'h-9 rounded-[12px] px-3.5 text-xs font-bold ring-1 transition-colors disabled:cursor-not-allowed';

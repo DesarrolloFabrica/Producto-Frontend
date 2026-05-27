@@ -44,14 +44,14 @@ const cards: Array<{
     label: 'Validación LMS',
     key: 'lmsValidations',
     icon: Upload,
-    tone: 'text-slate-600',
+    tone: 'text-orange-500',
   },
   {
     filter: 'radication',
     label: 'Radicaciones por revisar',
     key: 'radicationsPending',
     icon: FileCheck2,
-    tone: 'text-rose-500',
+    tone: 'text-orange-600',
   },
   {
     filter: 'all',
@@ -65,7 +65,7 @@ const cards: Array<{
     label: 'Solicitudes finalizadas',
     key: 'finalized',
     icon: CheckCircle2,
-    tone: 'text-emerald-500',
+    tone: 'text-orange-600',
   },
 ];
 
@@ -79,7 +79,7 @@ export function PlanningKpiCards({
   onFilterChange: (filter: PlanningDashboardFilter) => void;
 }) {
   return (
-    <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+    <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-6">
       {cards.map((card) => (
         <MetricCard
           key={card.key}
@@ -87,6 +87,7 @@ export function PlanningKpiCards({
           value={kpis[card.key]}
           icon={card.icon}
           tone={card.tone}
+          compact
           active={activeFilter === card.filter}
           onClick={() => onFilterChange(card.filter)}
         />

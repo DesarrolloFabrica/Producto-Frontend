@@ -42,6 +42,25 @@ export function institutionalStateLabel(state: InstitutionalOperationalState): s
   return INSTITUTIONAL_STATE_LABELS[state] ?? 'Estado en actualización';
 }
 
+export function formatProgramProgress(params: {
+  completedSemesters: number;
+  totalSemesters: number;
+  completedSubjects: number;
+  totalSubjects: number;
+}): string {
+  return `Semestres: ${params.completedSemesters}/${params.totalSemesters} · Materias: ${params.completedSubjects}/${params.totalSubjects}`;
+}
+
+export function formatActiveStagesSummary(
+  stages: Array<{ label: string; count: number }>,
+): string {
+  const active = stages.filter((s) => s.count > 0);
+  if (active.length === 0) return 'Sin etapas activas';
+  if (active.length === 1) return `${active[0]!.count} en ${active[0]!.label}`;
+  const total = active.reduce((n, s) => n + s.count, 0);
+  return `${active.length} etapas activas (${total} sem.)`;
+}
+
 export const FACTORY_COPY = {
   startProduction: 'Iniciar producción',
   finishProduction: 'Marcar producción completa',

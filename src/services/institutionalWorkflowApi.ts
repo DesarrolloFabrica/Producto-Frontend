@@ -54,6 +54,31 @@ export interface OperationalWorkspaceDto {
   availableActions: InstitutionalOperationalAction[];
 }
 
+export interface ProgramActiveStageSummaryDto {
+  label: string;
+  count: number;
+}
+
+export interface ProgramOperationalWorkItemDto {
+  kind: 'program';
+  projectId: string;
+  program: string;
+  school: string;
+  totalSemesters: number;
+  completedSemesters: number;
+  totalSubjects: number;
+  completedSubjects: number;
+  pendingSubjects: number;
+  academicReviewPendingCount: number;
+  activeStageSummary: ProgramActiveStageSummaryDto[];
+  nearestDueDate: string | null;
+  slaStatus: SlaStatus;
+  currentResponsibleRole: Role;
+  openObservations: number;
+  actionUrl: string;
+  semesters: OperationalWorkItemDto[];
+}
+
 export interface OperationalWorkItemDto {
   kind?: 'subject' | 'semester';
   semesterId?: string;
@@ -136,13 +161,34 @@ export const institutionalWorkflowApi = {
   planningTracking() {
     return apiClient.get<OperationalWorkItemDto[]>('/planning/tracking');
   },
+  planningTrackingPrograms() {
+    return apiClient.get<ProgramOperationalWorkItemDto[]>('/planning/tracking/programs');
+  },
+  planningWorkPrograms() {
+    return apiClient.get<ProgramOperationalWorkItemDto[]>('/planning/work/programs');
+  },
+  getProjectOperationalProgram(projectId: string) {
+    return apiClient.get<ProgramOperationalWorkItemDto>(`/projects/${projectId}/operational-program`);
+  },
   lmsWork() {
     return apiClient.get<OperationalWorkItemDto[]>('/lms/work');
+  },
+  lmsWorkPrograms() {
+    return apiClient.get<ProgramOperationalWorkItemDto[]>('/lms/work/programs');
   },
   productWork() {
     return apiClient.get<OperationalWorkItemDto[]>('/product/operational-work');
   },
+  productProgramsWork() {
+    return apiClient.get<ProgramOperationalWorkItemDto[]>('/product/operational-work/programs');
+  },
+  productTrackingPrograms() {
+    return apiClient.get<ProgramOperationalWorkItemDto[]>('/product/tracking/programs');
+  },
   factoryWork() {
     return apiClient.get<OperationalWorkItemDto[]>('/factory/operational-work');
+  },
+  factoryProgramsWork() {
+    return apiClient.get<ProgramOperationalWorkItemDto[]>('/factory/operational-work/programs');
   },
 };

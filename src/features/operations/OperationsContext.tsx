@@ -36,6 +36,11 @@ import {
   type CreateProjectFormInput,
 } from './apiMappers';
 import type { NotificationSummary } from './notificationInbox';
+import {
+  NOTIFICATION_LOAD_LIMIT,
+  NOTIFICATION_MAX_LOADED,
+  NOTIFICATION_READ_RETENTION_DAYS,
+} from './notificationInbox';
 import { ProjectsBootstrap } from './ProjectsBootstrap';
 import type {
   ActivityEvent,
@@ -361,6 +366,7 @@ type OperationsAction =
   | { type: 'SET_MUTATING'; payload: boolean }
   | { type: 'LOAD_PROJECTS_START' }
   | { type: 'LOAD_PROJECTS_SUCCESS'; payload: VirtualizationProject[] }
+  | { type: 'MERGE_PROJECT_AFTER_CREATE'; payload: VirtualizationProject }
   | { type: 'LOAD_PROJECTS_ERROR'; payload: string }
   | { type: 'LOAD_PROJECT_DETAIL_START' }
   | { type: 'LOAD_PROJECT_DETAIL_SUCCESS'; payload: VirtualizationProject }
@@ -472,6 +478,14 @@ function operationsReducer(state: OperationsState, action: OperationsAction): Op
     }
     case 'LOAD_PROJECTS_ERROR':
       return { ...state, isLoadingProjects: false, projectsError: action.payload };
+    case 'MERGE_PROJECT_AFTER_CREATE': {
+      const detail = recalcProject(action.payload);
+      const withoutDuplicate = state.projects.filter((p) => p.id !== detail.id);
+      return {
+        ...state,
+        projects: [detail, ...withoutDuplicate.map((p) => recalcProject(p))],
+      };
+    }
     case 'LOAD_PROJECT_DETAIL_START':
       return { ...state, isLoadingProjectDetail: true, selectedProjectError: null };
     case 'LOAD_PROJECT_DETAIL_SUCCESS': {
@@ -1386,11 +1400,20 @@ export function OperationsProvider({ children }: { children: ReactNode }) {
     if (!state.backendEnabled) return;
     dispatch({ type: 'LOAD_NOTIFICATIONS_START' });
     const inboxParams = {
-      limit: 40,
+      limit: NOTIFICATION_LOAD_LIMIT,
       offset: options?.offset ?? 0,
-      readDays: 7,
+      readDays: NOTIFICATION_READ_RETENTION_DAYS,
     };
     try {
+      if (options?.append && state.notifications.length >= NOTIFICATION_MAX_LOADED) {
+        dispatch({ type: 'LOAD_NOTIFICATIONS_SUCCESS', payload: {
+          notifications: state.notifications,
+          summary: state.notificationSummary,
+          hasMore: false,
+          append: true,
+        }});
+        return;
+      }
       const inbox = await notificationsApi.getInbox(inboxParams);
       const mapped = mapNotificationsFromApi(inbox.items ?? []);
       dispatch({
@@ -1425,7 +1448,7 @@ export function OperationsProvider({ children }: { children: ReactNode }) {
         });
       }
     }
-  }, [state.backendEnabled]);
+  }, [state.backendEnabled, state.notifications, state.notificationSummary, queryClient]);
 
   const refreshWorkflowContext = useCallback(
     async (options: {
@@ -1477,9 +1500,12 @@ export function OperationsProvider({ children }: { children: ReactNode }) {
       if (!state.backendEnabled) {
         throw new Error('Backend deshabilitado. Activa la API o usa VITE_USE_MOCKS=true.');
       }
-      await projectsApi.createProject(mapCreateProjectToApi(input));
-      await queryClient.invalidateQueries({ queryKey: queryKeys.projects() });
-      await loadProjects();
+      const detail = await projectsApi.createProject(mapCreateProjectToApi(input));
+      const mapped = mapProjectDetailFromApi(detail);
+      queryClient.setQueryData(queryKeys.project(detail.id), detail);
+      dispatch({ type: 'MERGE_PROJECT_AFTER_CREATE', payload: mapped });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.projects() });
+      void loadProjects();
     },
     [state.backendEnabled, loadProjects, queryClient],
   );

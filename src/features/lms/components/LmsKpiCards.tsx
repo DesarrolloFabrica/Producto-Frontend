@@ -33,7 +33,7 @@ const cards: Array<{
     description: 'En gestión de publicación',
     key: 'inUpload',
     icon: CloudUpload,
-    tone: 'text-amber-500',
+    tone: 'text-orange-500',
   },
   {
     filter: 'completed',
@@ -41,7 +41,7 @@ const cards: Array<{
     description: 'Enviadas a validación de Planeación',
     key: 'completedUpload',
     icon: CheckCircle2,
-    tone: 'text-emerald-500',
+    tone: 'text-orange-600',
   },
   {
     filter: 'returned',
@@ -49,7 +49,7 @@ const cards: Array<{
     description: 'Requieren corrección de carga',
     key: 'returnedByPlanning',
     icon: RotateCcw,
-    tone: 'text-rose-500',
+    tone: 'text-orange-600',
   },
   {
     filter: 'all',
@@ -57,7 +57,7 @@ const cards: Array<{
     description: 'Solicitudes activas con etapa LMS',
     key: 'inProgressProjects',
     icon: Layers,
-    tone: 'text-slate-600',
+    tone: 'text-orange-500',
   },
   {
     filter: 'history',
@@ -65,7 +65,7 @@ const cards: Array<{
     description: 'Solicitudes cerradas con participación LMS',
     key: 'finalizedProjects',
     icon: CheckCircle2,
-    tone: 'text-emerald-600',
+    tone: 'text-orange-600',
   },
 ];
 
@@ -79,7 +79,7 @@ export function LmsKpiCards({
   onFilterChange: (filter: LmsDashboardFilter) => void;
 }) {
   return (
-    <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+    <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-6">
       {cards.map((card) => (
         <MetricCard
           key={card.key}
@@ -87,6 +87,7 @@ export function LmsKpiCards({
           value={kpis[card.key]}
           icon={card.icon}
           tone={card.tone}
+          compact
           active={activeFilter === card.filter}
           onClick={() => onFilterChange(card.filter)}
         />

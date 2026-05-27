@@ -7,8 +7,12 @@ export const surface = {
   panel:
     'bg-white/92 backdrop-blur-md border border-slate-200/50 shadow-[0_8px_32px_-8px_rgba(15,23,42,0.12),0_2px_8px_-2px_rgba(15,23,42,0.06)]',
   glass: 'glass-surface',
+  roleGlass: 'role-glass-panel',
+  roleGlassInset: 'role-glass-inset',
+  roleGlassTab: 'role-glass-tab-track',
+  roleGlassTableHead: 'bg-white/35 backdrop-blur-[8px] border-b border-white/45',
   solid: 'bg-white border border-slate-200/60 shadow-sm',
-  table: 'bg-slate-50/95 border border-slate-100',
+  table: 'bg-white/30 backdrop-blur-[8px] border-b border-white/45',
   muted: 'bg-slate-50 border border-slate-100',
   subjectPanel:
     'border border-orange-100/90 bg-white/90 backdrop-blur-[8px] shadow-[0_4px_24px_rgba(15,23,42,0.04),0_12px_32px_-8px_rgba(249,115,22,0.08)]',
@@ -68,21 +72,21 @@ export const roleAccent = {
     bg: 'bg-amber-50',
   },
   planning: {
-    dot: 'bg-indigo-500',
-    eyebrow: 'text-indigo-600',
-    ring: 'ring-indigo-200/60',
-    border: 'border-indigo-100',
-    bg: 'bg-indigo-50',
+    dot: 'bg-orange-500',
+    eyebrow: 'text-orange-500',
+    ring: 'ring-orange-200/60',
+    border: 'border-orange-100',
+    bg: 'bg-orange-50',
   },
   lms: {
-    dot: 'bg-sky-500',
-    eyebrow: 'text-sky-600',
-    ring: 'ring-sky-200/60',
-    border: 'border-sky-100',
-    bg: 'bg-sky-50',
+    dot: 'bg-orange-500',
+    eyebrow: 'text-orange-500',
+    ring: 'ring-orange-200/60',
+    border: 'border-orange-100',
+    bg: 'bg-orange-50',
   },
 } as const;
 
-export const tableRow = 'transition-colors duration-150 hover:bg-slate-50/70';
+export const tableRow = 'transition-colors duration-150 hover:bg-white/45';
 
 export const cn = (...classes: Array<string | false | null | undefined>) => classes.filter(Boolean).join(' ');

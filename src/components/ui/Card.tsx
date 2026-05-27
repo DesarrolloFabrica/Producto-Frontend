@@ -1,7 +1,7 @@
 import type { HTMLAttributes, ReactNode } from 'react';
 import { cn, motion, radius, surface } from './tokens';
 
-export type CardVariant = 'default' | 'elevated' | 'solid' | 'subjectPanel' | 'nested';
+export type CardVariant = 'default' | 'elevated' | 'solid' | 'subjectPanel' | 'nested' | 'roleGlass';
 
 interface CardProps extends HTMLAttributes<HTMLDivElement> {
   children: ReactNode;
@@ -12,10 +12,11 @@ interface CardProps extends HTMLAttributes<HTMLDivElement> {
 
 const variantClasses: Record<CardVariant, string> = {
   default: cn(surface.glassSubtle, radius.card),
-  elevated: cn(surface.elevated, radius.elevated),
+  elevated: cn(surface.elevated, radius.card),
   solid: cn(surface.solid, radius.card),
   subjectPanel: cn(surface.subjectPanel, radius.subjectPanel),
   nested: cn(surface.nested, radius.nested),
+  roleGlass: cn(surface.roleGlass, radius.card),
 };
 
 export function Card({

@@ -1,52 +1,45 @@
-import { ArrowRight, Loader2 } from 'lucide-react';
 import { Card } from '../../../components/ui/Card';
 import { SkeletonTable } from '../../../components/ui/Skeleton';
 import { cn, surface, tableRow, text } from '../../../components/ui/tokens';
-import { Button } from '../../../components/ui/Button';
 import { formatDate } from '../../../utils/formatters';
-import { OperationalStateBadgeV2 } from '../../operations-v2/components/OperationalStateBadgeV2';
+import { formatProgramProgress } from '../../institutional-workflow/institutionalCopy';
+import { ProgramActiveStageBadge } from '../../operations-v2/components/ProgramActiveStageBadge';
 import { SlaBadgeV2 } from '../../operations-v2/components/SlaBadgeV2';
-import type { SlaStatusV2 } from '../../../types/operationalWorkflow';
-import type { InstitutionalOperationalAction } from '../../../types/domain';
+import {
+  OperationalInboxActionCell,
+  OperationalInboxFlowAction,
+  operationalInboxActionHeaderClass,
+} from '../../operations-v2/components/OperationalInboxFlowAction';
+import { roleLabelV2 } from '../../operations-v2/rules/workflowRulesV2';
+import type { OperationalRoleV2, SlaStatusV2 } from '../../../types/operationalWorkflow';
 import { LMS_ACTION_COPY } from '../lmsCopy';
 import type { LmsWorkRow } from '../lmsTypes';
+
+function roleLabel(role: string): string {
+  return roleLabelV2(role as OperationalRoleV2);
+}
 
 export function LmsWorkTable({
   rows,
   totalRows,
   isLoading,
   error,
-  busySubjectId,
   onOpenFlow,
-  onTransition,
 }: {
   rows: LmsWorkRow[];
   totalRows?: number;
   isLoading: boolean;
   error: string | null;
-  busySubjectId: string | null;
-  onOpenFlow: (subjectId: string) => void;
-  onTransition: (row: LmsWorkRow, action: InstitutionalOperationalAction) => void;
+  onOpenFlow: (actionUrl: string) => void;
 }) {
-  const primaryAction = (row: LmsWorkRow): InstitutionalOperationalAction | null => {
-    // Iniciar carga solo en el centro operacional (/subjects/:id/operations).
-    if (row.availableActions.includes('LMS_CONFIRM_UPLOAD')) return 'LMS_CONFIRM_UPLOAD';
-    return null;
-  };
-
-  const actionLabel = (action: InstitutionalOperationalAction) => {
-    if (action === 'LMS_CONFIRM_UPLOAD') return LMS_ACTION_COPY.confirmUpload;
-    return LMS_ACTION_COPY.viewFlow;
-  };
-
   return (
-    <Card variant="solid" className="overflow-hidden p-0">
-      <div className={cn('flex flex-wrap items-center justify-between gap-3 border-b border-slate-200/60 px-5 py-3.5 sm:px-6', surface.table)}>
+    <Card variant="roleGlass" className="overflow-hidden p-0">
+      <div className={cn('flex flex-wrap items-center justify-between gap-3 px-5 py-3.5 sm:px-6', surface.table)}>
         <div>
           <p className={text.label}>Bandeja LMS</p>
-          <h2 className="text-sm font-semibold text-slate-900">Carga y publicación</h2>
+          <h2 className="text-sm font-semibold text-slate-900">Carga y publicación por programa</h2>
         </div>
-        <span className="rounded-lg bg-white px-2.5 py-1 text-[11px] font-medium text-slate-500 ring-1 ring-slate-200/70">
+        <span className="rounded-lg bg-white/50 px-2.5 py-1 text-[11px] font-medium text-slate-500 ring-1 ring-white/55 backdrop-blur-sm">
           {totalRows != null && totalRows > rows.length
             ? `${rows.length} de ${totalRows} en vista`
             : `${rows.length} en vista`}
@@ -67,82 +60,91 @@ export function LmsWorkTable({
         <div className="overflow-x-auto">
           <table className="min-w-full text-left text-sm">
             <thead>
-              <tr className="border-b border-slate-100 bg-slate-50/80 text-[10px] font-bold uppercase tracking-wider text-slate-400">
-                <th className="px-5 py-3 sm:px-6">Solicitud / Proyecto</th>
-                <th className="px-3 py-3">Asignatura</th>
-                <th className="px-3 py-3">Programa</th>
-                <th className="px-3 py-3">Etapa actual</th>
+              <tr className={cn('text-[10px] font-bold uppercase tracking-wider text-slate-400', surface.roleGlassTableHead)}>
+                <th className="px-5 py-3 sm:px-6">Solicitud / Programa</th>
+                <th className="px-3 py-3">Avance</th>
+                <th className="px-3 py-3">Etapa</th>
+                <th className="px-3 py-3">Responsable</th>
                 <th className="px-3 py-3">Plazo</th>
-                <th className="px-3 py-3">Última actividad</th>
-                <th className="px-5 py-3 text-right sm:px-6">Acción</th>
+                <th className={operationalInboxActionHeaderClass}>Acción</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {rows.map((row) => {
-                const action = primaryAction(row);
-                const isBusy = busySubjectId === row.subjectId;
+                if (row.kind === 'program') {
+                  const hasReturn = row.semesters.some(
+                    (semester) => semester.operationalState === 'RETURNED_TO_LMS_FROM_PLANNING',
+                  );
+                  return (
+                    <tr key={row.id} className={tableRow}>
+                      <td className="px-5 py-4 sm:px-6">
+                        <p className="text-[10px] font-bold uppercase text-slate-400">{row.school}</p>
+                        <p className="font-bold text-slate-900">{row.program}</p>
+                        <p className="text-xs text-slate-500">Carga por programa</p>
+                      </td>
+                      <td className="px-3 py-4">
+                        <p className="text-xs font-medium text-slate-700">
+                          {formatProgramProgress({
+                            completedSemesters: row.completedSemesters,
+                            totalSemesters: row.totalSemesters,
+                            completedSubjects: row.completedSubjects,
+                            totalSubjects: row.totalSubjects,
+                          })}
+                        </p>
+                      </td>
+                      <td className="px-3 py-4">
+                        <ProgramActiveStageBadge stages={row.activeStageSummary} />
+                      </td>
+                      <td className="px-3 py-4 text-xs font-semibold text-slate-600">
+                        {roleLabel(row.currentResponsibleRole)}
+                      </td>
+                      <td className="px-3 py-4">
+                        <div className="flex flex-col gap-1">
+                          {row.stageDueAt ? (
+                            <span className="text-xs font-medium text-slate-600">
+                              {formatDate(row.stageDueAt)}
+                            </span>
+                          ) : (
+                            <span className="text-xs text-slate-400">—</span>
+                          )}
+                          <SlaBadgeV2 status={row.slaStatus as SlaStatusV2} />
+                        </div>
+                      </td>
+                      <OperationalInboxActionCell>
+                        <OperationalInboxFlowAction
+                          label={hasReturn ? LMS_ACTION_COPY.attendReturn : LMS_ACTION_COPY.viewFlow}
+                          onClick={() => onOpenFlow(row.actionUrl)}
+                        />
+                      </OperationalInboxActionCell>
+                    </tr>
+                  );
+                }
+
                 return (
                   <tr key={row.id} className={tableRow}>
                     <td className="px-5 py-4 sm:px-6">
                       <p className="text-[10px] font-bold uppercase text-slate-400">{row.school}</p>
                       <p className="font-bold text-slate-900">{row.program}</p>
-                      <p className="text-xs text-slate-500">Sem. {row.semesterNumber}</p>
+                      <p className="text-xs text-slate-500">Carga completada</p>
                     </td>
-                    <td className="px-3 py-4 font-semibold text-slate-800">{row.subjectName}</td>
-                    <td className="px-3 py-4 text-xs text-slate-600">{row.program}</td>
-                    <td className="px-3 py-4">
-                      <OperationalStateBadgeV2 state={row.operationalState} />
+                    <td className="px-3 py-4 text-xs text-slate-600">
+                      {row.subjectsCompleted} materia{row.subjectsCompleted === 1 ? '' : 's'}
                     </td>
                     <td className="px-3 py-4">
-                      <div className="flex flex-col gap-1">
-                        {row.stageDueAt ? (
-                          <span className="text-xs font-medium text-slate-600">
-                            {formatDate(row.stageDueAt)}
-                          </span>
-                        ) : (
-                          <span className="text-xs text-slate-400">—</span>
-                        )}
-                        <SlaBadgeV2 status={row.slaStatus as SlaStatusV2} />
-                      </div>
+                      <span className="inline-flex rounded-full bg-emerald-50 px-2.5 py-1 text-[10px] font-bold text-emerald-700 ring-1 ring-emerald-100">
+                        Completada
+                      </span>
                     </td>
-                    <td className="max-w-[12rem] px-3 py-4 text-xs text-slate-500">
-                      {row.lastActivity ? (
-                        <span className="line-clamp-2">{row.lastActivity}</span>
-                      ) : (
-                        '—'
-                      )}
+                    <td className="px-3 py-4 text-xs text-slate-400">—</td>
+                    <td className="px-3 py-4 text-xs text-slate-500">
+                      {row.stageDueAt ? formatDate(row.stageDueAt) : '—'}
                     </td>
-                    <td className="px-5 py-4 text-right sm:px-6">
-                      <div className="flex flex-wrap justify-end gap-2">
-                        {action ? (
-                          <Button
-                            type="button"
-                            size="sm"
-                            disabled={isBusy}
-                              onClick={() => onTransition(row, action)}
-                          >
-                            {isBusy ? (
-                              <Loader2 className="h-4 w-4 animate-spin" />
-                            ) : (
-                              actionLabel(action)
-                            )}
-                          </Button>
-                        ) : null}
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="secondary"
-                          className="gap-1.5"
-                          disabled={isBusy}
-                          onClick={() => onOpenFlow(row.actionUrl)}
-                        >
-                          {row.operationalState === 'RETURNED_TO_LMS_FROM_PLANNING'
-                            ? LMS_ACTION_COPY.attendReturn
-                            : LMS_ACTION_COPY.viewFlow}
-                          <ArrowRight className="h-3.5 w-3.5" />
-                        </Button>
-                      </div>
-                    </td>
+                    <OperationalInboxActionCell>
+                      <OperationalInboxFlowAction
+                        label={LMS_ACTION_COPY.viewFlow}
+                        onClick={() => onOpenFlow(row.actionUrl)}
+                      />
+                    </OperationalInboxActionCell>
                   </tr>
                 );
               })}

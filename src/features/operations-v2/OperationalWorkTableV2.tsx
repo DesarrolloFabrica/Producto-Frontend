@@ -1,4 +1,5 @@
-import { ArrowRight, CalendarDays, Inbox } from 'lucide-react';
+import { CalendarDays, Inbox } from 'lucide-react';
+import { OperationalInboxFlowAction } from './components/OperationalInboxFlowAction';
 import { Card } from '../../components/ui/Card';
 import { Button } from '../../components/ui/Button';
 import { EmptyState } from '../../components/ui/EmptyState';
@@ -33,18 +34,7 @@ type ActionProps = BaseProps & {
 export type OperationalWorkTableV2Props = FlowOnlyProps | ActionProps;
 
 function FlowOpenButton({ onClick, label = 'Ver flujo' }: { onClick: () => void; label?: string }) {
-  return (
-    <Button
-      type="button"
-      size="sm"
-      variant="secondary"
-      className="shrink-0 gap-1.5 border-slate-200/80 bg-white font-semibold text-slate-700 shadow-sm hover:bg-slate-50"
-      onClick={onClick}
-    >
-      {label}
-      <ArrowRight className="h-3.5 w-3.5" />
-    </Button>
-  );
+  return <OperationalInboxFlowAction label={label} onClick={onClick} />;
 }
 
 export function OperationalWorkTableV2(props: OperationalWorkTableV2Props) {

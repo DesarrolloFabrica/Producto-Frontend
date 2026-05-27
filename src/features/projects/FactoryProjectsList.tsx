@@ -11,7 +11,9 @@ import { formatDate } from '../../utils/formatters';
 import { cn } from '../../components/ui/tokens';
 import { useMemo, useState } from 'react';
 import { ModificationBadge } from '../../components/project/ModificationBadge';
-import { useFactorySubjectsQuery } from '../queries/useFactorySubjectsQuery';
+import { useFactoryProgramsQuery } from '../queries/useFactoryProgramsQuery';
+import { formatProgramProgress } from '../institutional-workflow/institutionalCopy';
+import { ProgramActiveStageBadge } from '../operations-v2/components/ProgramActiveStageBadge';
 import type { SubjectOperationalState } from '../operations/subjectOperationalState';
 
 type FactoryFilter = 'all' | 'ready' | 'production' | 'corrections' | 'waiting' | 'completed';
@@ -38,20 +40,22 @@ export function FactoryProjectsList() {
     useOperations();
   const [activeFilter, setActiveFilter] = useState<FactoryFilter>('all');
 
-  const semesterPackagesQuery = useFactorySubjectsQuery({ page: 1, limit: 100 }, backendEnabled);
+  const factoryProgramsQuery = useFactoryProgramsQuery({ page: 1, limit: 100 }, backendEnabled);
 
   const factoryData = useMemo(
     () => analyzeFactoryProjects(projects, projectObservations),
     [projects, projectObservations],
   );
 
-  const allSemesterPackages = semesterPackagesQuery.data?.items ?? [];
-  const semesterPackages = useMemo(() => {
-    if (activeFilter === 'all') return allSemesterPackages;
+  const allFactoryPrograms = factoryProgramsQuery.data?.items ?? [];
+  const factoryPrograms = useMemo(() => {
+    if (activeFilter === 'all') return allFactoryPrograms;
     const status = FILTER_TO_STATUS[activeFilter];
-    if (!status) return allSemesterPackages;
-    return allSemesterPackages.filter((p) => p.operationalState === status);
-  }, [activeFilter, allSemesterPackages]);
+    if (!status) return allFactoryPrograms;
+    return allFactoryPrograms.filter((program) =>
+      program.semesters.some((semester) => semester.operationalState === status),
+    );
+  }, [activeFilter, allFactoryPrograms]);
 
   const filtered = factoryData.insights.filter((insight) => {
     if (activeFilter === 'all') return insight.bucket !== 'FULLY_APPROVED';
@@ -72,11 +76,21 @@ export function FactoryProjectsList() {
 
   const counts = backendEnabled
     ? {
-        ready: allSemesterPackages.filter((p) => p.operationalState === 'NOT_STARTED').length,
-        production: allSemesterPackages.filter((p) => p.operationalState === 'IN_PRODUCTION').length,
-        corrections: allSemesterPackages.filter((p) => p.operationalState === 'CHANGES_REQUESTED').length,
-        waiting: allSemesterPackages.filter((p) => p.operationalState === 'IN_REVIEW').length,
-        completed: allSemesterPackages.filter((p) => p.operationalState === 'APPROVED').length,
+        ready: allFactoryPrograms.filter((p) =>
+          p.semesters.some((s) => s.operationalState === 'NOT_STARTED'),
+        ).length,
+        production: allFactoryPrograms.filter((p) =>
+          p.semesters.some((s) => s.operationalState === 'IN_PRODUCTION'),
+        ).length,
+        corrections: allFactoryPrograms.filter((p) =>
+          p.semesters.some((s) => s.operationalState === 'CHANGES_REQUESTED'),
+        ).length,
+        waiting: allFactoryPrograms.filter((p) =>
+          p.semesters.some((s) => s.operationalState === 'IN_REVIEW'),
+        ).length,
+        completed: allFactoryPrograms.filter((p) =>
+          p.semesters.every((s) => s.operationalState === 'APPROVED'),
+        ).length,
       }
     : {
         ready: factoryData.needsWork.filter((i) => i.project.status === 'READY_FOR_PRODUCTION').length,
@@ -86,25 +100,24 @@ export function FactoryProjectsList() {
         completed: factoryData.fullyApproved.length,
       };
 
-  const showSemesterPackages = backendEnabled;
+  const showFactoryPrograms = backendEnabled;
 
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold tracking-[-0.02em] text-[#1E293B]">Paquetes semestrales</h1>
+        <h1 className="text-2xl font-bold tracking-[-0.02em] text-[#1E293B]">Programas en producción</h1>
         <p className="mt-1 text-[0.9rem] text-[#64748B]">
-          Trabaja por semestre: revisa el avance de producción interna y entrega el paquete completo a Planeación desde el
-          centro operacional.
+          Trabaja por programa: revisa el avance macro y entra al detalle de cada semestre desde el centro operacional.
         </p>
       </div>
 
       {backendEnabled && (
         <ProjectsLoadNotice
-          isLoading={semesterPackagesQuery.isLoading && semesterPackages.length === 0}
-          error={semesterPackagesQuery.error ? 'No se pudieron cargar los paquetes semestrales.' : null}
-          isEmpty={!semesterPackagesQuery.isLoading && semesterPackages.length === 0}
-          onRefresh={() => void semesterPackagesQuery.refetch()}
-          emptyMessage="No hay paquetes semestrales visibles para Fábrica en este momento."
+          isLoading={factoryProgramsQuery.isLoading && factoryPrograms.length === 0}
+          error={factoryProgramsQuery.error ? 'No se pudieron cargar los programas.' : null}
+          isEmpty={!factoryProgramsQuery.isLoading && factoryPrograms.length === 0}
+          onRefresh={() => void factoryProgramsQuery.refetch()}
+          emptyMessage="No hay programas visibles para Fábrica en este momento."
         />
       )}
 
@@ -148,46 +161,53 @@ export function FactoryProjectsList() {
         })}
       </div>
 
-      {showSemesterPackages ? (
-        semesterPackages.length === 0 ? (
+      {showFactoryPrograms ? (
+        factoryPrograms.length === 0 ? (
           <Card className="flex flex-col items-center justify-center py-12">
             <AlertTriangle className="mb-3 h-8 w-8 text-[#CBD5E1]" />
-            <p className="text-sm font-medium text-[#94A3B8]">No tienes paquetes para este filtro.</p>
+            <p className="text-sm font-medium text-[#94A3B8]">No tienes programas para este filtro.</p>
           </Card>
         ) : (
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-            {semesterPackages.map((pkg) => (
+            {factoryPrograms.map((program) => (
               <div
-                key={pkg.semesterId ?? pkg.subjectId}
+                key={program.projectId}
                 className="rounded-[20px] bg-white p-5 shadow-[0_4px_20px_-5px_rgba(0,0,0,0.05)] transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_12px_30px_-10px_rgba(0,0,0,0.1)]"
               >
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0 flex-1">
-                    <h3 className="truncate text-base font-bold tracking-[-0.02em] text-[#1E293B]">{pkg.program}</h3>
-                    <p className="mt-1 text-[0.85rem] font-medium text-[#64748B]">{pkg.school}</p>
+                    <h3 className="truncate text-base font-bold tracking-[-0.02em] text-[#1E293B]">{program.program}</h3>
+                    <p className="mt-1 text-[0.85rem] font-medium text-[#64748B]">{program.school}</p>
                   </div>
                   <span className="rounded-[10px] bg-orange-50 px-2.5 py-1 text-[10px] font-bold uppercase text-orange-700">
-                    {pkg.operationalLabel}
+                    {program.totalSemesters} sem.
                   </span>
                 </div>
-                <p className="mt-2 text-sm font-bold text-slate-800">{pkg.subjectName}</p>
-                <p className="mt-1 text-xs text-slate-500">
-                  Producción: {pkg.subjectsReady ?? 0}/{pkg.subjectsTotal ?? 0} asignaturas
+                <p className="mt-2 text-xs font-medium text-slate-700">
+                  {formatProgramProgress({
+                    completedSemesters: program.completedSemesters,
+                    totalSemesters: program.totalSemesters,
+                    completedSubjects: program.completedSubjects,
+                    totalSubjects: program.totalSubjects,
+                  })}
                 </p>
+                <div className="mt-3">
+                  <ProgramActiveStageBadge stages={program.activeStageSummary} />
+                </div>
                 <div className="mt-3 flex items-center justify-between">
                   <span className="text-[11px] font-medium text-[#94A3B8]">
-                    {pkg.expectedDeliveryDate ? formatDate(pkg.expectedDeliveryDate) : '—'}
+                    {program.nearestDueDate ? formatDate(program.nearestDueDate) : '—'}
                   </span>
                   <span className="rounded-[12px] bg-slate-50 px-2.5 py-1 text-[11px] font-medium text-slate-500">
-                    {pkg.priority}
+                    {program.openObservations} obs.
                   </span>
                 </div>
                 <div className="mt-4 flex justify-end">
                   <Link
-                    to={pkg.actionUrl}
+                    to={program.actionUrl}
                     className="inline-flex items-center gap-1.5 rounded-[12px] bg-[#FF6B00] px-3 py-2 text-xs font-bold text-white shadow-lg shadow-[#FF6B00]/20 transition-all duration-200 hover:scale-105 hover:bg-[#E66000]"
                   >
-                    Trabajar semestre <ArrowRight className="h-3.5 w-3.5" />
+                    Ver programa <ArrowRight className="h-3.5 w-3.5" />
                   </Link>
                 </div>
               </div>

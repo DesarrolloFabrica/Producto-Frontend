@@ -41,6 +41,30 @@ export interface ApiFactoryDashboardSummary {
   overdueOrDueSoonCount: number;
 }
 
+export interface ApiFactoryProgramsPage {
+  items: ApiFactoryProgramWorkItem[];
+  total: number;
+  page: number;
+  limit: number;
+}
+
+export interface ApiFactoryProgramWorkItem {
+  kind: 'program';
+  projectId: string;
+  program: string;
+  school: string;
+  totalSemesters: number;
+  completedSemesters: number;
+  totalSubjects: number;
+  completedSubjects: number;
+  pendingSubjects: number;
+  activeStageSummary: Array<{ label: string; count: number }>;
+  nearestDueDate: string | null;
+  openObservations: number;
+  actionUrl: string;
+  semesters: ApiFactorySubjectWorkItem[];
+}
+
 export interface ApiFactorySubjectsPage {
   items: ApiFactorySubjectWorkItem[];
   total: number;
@@ -81,6 +105,21 @@ export const factoryApi = {
     const qs = params.toString();
     return apiClient.get<ApiFactorySubjectsPage>(
       `/factory/subjects${qs ? `?${qs}` : ''}`,
+    );
+  },
+
+  getPrograms: (query?: FactorySubjectsQuery) => {
+    const params = new URLSearchParams();
+    if (query) {
+      Object.entries(query).forEach(([key, value]) => {
+        if (value !== undefined && value !== '') {
+          params.set(key, String(value));
+        }
+      });
+    }
+    const qs = params.toString();
+    return apiClient.get<ApiFactoryProgramsPage>(
+      `/factory/subjects/programs${qs ? `?${qs}` : ''}`,
     );
   },
 

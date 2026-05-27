@@ -32,7 +32,7 @@ export function LmsEmptyState({
       : 'Puedes revisar historial, devoluciones o solicitudes ya completadas.';
 
   return (
-    <Card className="border-dashed border-slate-200 bg-slate-50/50 p-8 text-center">
+    <Card variant="roleGlass" className="border-dashed border-orange-200/50 p-8 text-center">
       <p className="text-base font-bold text-slate-900">{title}</p>
       <p className="mx-auto mt-2 max-w-lg text-sm font-medium text-slate-500">{description}</p>
       <div className="mt-6 flex flex-wrap items-center justify-center gap-2">

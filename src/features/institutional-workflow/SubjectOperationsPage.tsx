@@ -23,6 +23,10 @@ import { cn, surface } from '../../components/ui/tokens';
 import { useToast } from '../../components/ui/ToastProvider';
 import { getApiErrorMessage } from '../operations/apiMappers';
 import { semesterOperationsPath, semesterSubjectsPanelPath } from './institutionalNavigation';
+import {
+  filterSubjectOperationalActions,
+  isSemesterScopedOperationalState,
+} from './subjectOperationalActions';
 
 function isReturnOrRejectAction(action: InstitutionalOperationalAction): boolean {
   return action.includes('RETURN') || action === 'PRODUCT_REQUEST_CHANGES';
@@ -151,7 +155,13 @@ export function SubjectOperationsPage() {
   }));
 
   const showChecklistLink = workspace.academicChecklistEnabled;
-  const hasActions = workspace.availableActions.length > 0;
+  const displayActions = filterSubjectOperationalActions(
+    workspace.availableActions,
+    workspace.institutionalFlowActive,
+  );
+  const hasActions = displayActions.length > 0;
+  const semesterScopedPhase =
+    workspace.institutionalFlowActive && isSemesterScopedOperationalState(workspace.operationalState);
   const backFallback =
     workspace.semesterId && workspace.projectId && (role === 'PLANEACION' || role === 'LMS')
       ? semesterOperationsPath(workspace.projectId, workspace.semesterId)
@@ -227,7 +237,7 @@ export function SubjectOperationsPage() {
 
             {hasActions ? (
               <div className="mt-4 flex flex-col gap-2.5">
-                {sortActionsForDisplay(workspace.availableActions).map((action) => {
+                {sortActionsForDisplay(displayActions).map((action) => {
                   const isReturn = isReturnOrRejectAction(action);
                   return (
                     <Button
@@ -268,8 +278,18 @@ export function SubjectOperationsPage() {
                   </ul>
                 ) : null}
                 <p className="text-sm text-slate-600">
-                  No hay acciones pendientes de su rol en esta etapa.
+                  {semesterScopedPhase
+                    ? 'Las validaciones y entregas de las fases 2 a 6 se gestionan por semestre, no por asignatura.'
+                    : 'No hay acciones pendientes de su rol en esta etapa.'}
                 </p>
+                {semesterScopedPhase && workspace.semesterId ? (
+                  <Link
+                    to={semesterOperationsPath(workspace.projectId, workspace.semesterId)}
+                    className="inline-flex text-sm font-semibold text-orange-600 hover:text-orange-700 hover:underline"
+                  >
+                    Ir al centro operacional del semestre →
+                  </Link>
+                ) : null}
               </div>
             )}
 

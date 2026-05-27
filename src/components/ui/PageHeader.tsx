@@ -24,8 +24,8 @@ export function PageHeader({
       <div>
         <div
           className={cn(
-            'mb-3 inline-flex items-center gap-2 rounded-full border px-4 py-1.5',
-            accentTokens ? cn(accentTokens.border, accentTokens.bg) : 'border-orange-100/80 bg-white/80',
+            'mb-3 inline-flex items-center gap-2 rounded-full border px-4 py-1.5 backdrop-blur-md',
+            accentTokens ? cn(accentTokens.border, accentTokens.bg, 'bg-white/50') : 'border-orange-100/80 bg-white/55',
             prominentEyebrow && 'shadow-sm',
           )}
         >

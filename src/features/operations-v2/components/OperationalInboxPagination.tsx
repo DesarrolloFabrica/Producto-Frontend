@@ -1,4 +1,4 @@
-import { cn } from '../../../components/ui/tokens';
+import { cn, radius, surface } from '../../../components/ui/tokens';
 import { INBOX_PAGE_SIZE } from '../operationalInboxFilters';
 
 export function OperationalInboxPagination({
@@ -30,10 +30,10 @@ export function OperationalInboxPagination({
       : `Mostrando ${start}-${end} de ${totalItems} ${label}`;
 
   const btnBase =
-    'h-9 rounded-xl px-3.5 text-xs font-bold ring-1 transition-colors disabled:cursor-not-allowed';
+    'h-9 rounded-xl px-3.5 text-xs font-bold ring-1 transition-colors disabled:cursor-not-allowed backdrop-blur-sm';
 
   return (
-    <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200/80 bg-white/90 px-4 py-3 shadow-sm ring-1 ring-slate-100">
+    <div className={cn('flex flex-wrap items-center justify-between gap-3 px-4 py-3', surface.roleGlass, radius.control)}>
       <p className="text-xs font-semibold text-slate-500">{rangeLabel}</p>
       <div className="flex flex-wrap items-center gap-2">
         <PaginationButton label="Primero" disabled={!canPrev} onClick={() => onPageChange(1)} className={btnBase} />
@@ -82,8 +82,8 @@ function PaginationButton({
       className={cn(
         className,
         disabled
-          ? 'bg-slate-50/80 text-slate-300 ring-slate-100'
-          : 'bg-white text-slate-600 ring-slate-200/70 hover:bg-slate-50 hover:text-slate-900',
+          ? 'bg-white/25 text-slate-300 ring-white/40'
+          : 'bg-white/55 text-slate-600 ring-white/55 hover:bg-white/75 hover:text-slate-900',
       )}
     >
       {label}

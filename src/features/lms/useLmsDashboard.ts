@@ -2,19 +2,24 @@ import { useMemo } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { institutionalWorkflowApi } from '../../services/institutionalWorkflowApi';
 import { lmsApi } from '../../services/lmsApi';
-import { lmsStateLabel } from './lmsCopy';
 import { invalidateLmsDashboard } from './lmsInvalidation';
 import type { LmsDashboardFilter } from './lmsTypes';
-import { applyLmsInboxAdvancedFilters, filterLmsRows, mapPreview, mapWorkItem } from './lmsTypes';
+import {
+  applyLmsInboxAdvancedFilters,
+  countLmsProgramsWithState,
+  filterLmsRows,
+  mapCompletedPrograms,
+  mapLmsProgramWorkItem,
+} from './lmsTypes';
 import { queryKeys } from '../queries/queryKeys';
 import type { InboxAdvancedFilters } from '../operations-v2/operationalInboxFilters';
 
 export function useLmsDashboard(filter: LmsDashboardFilter, advanced: InboxAdvancedFilters) {
   const queryClient = useQueryClient();
 
-  const workQuery = useQuery({
-    queryKey: queryKeys.institutionalWork.lms(),
-    queryFn: () => institutionalWorkflowApi.lmsWork(),
+  const workProgramsQuery = useQuery({
+    queryKey: queryKeys.institutionalWork.lmsPrograms(),
+    queryFn: () => institutionalWorkflowApi.lmsWorkPrograms(),
     staleTime: 15_000,
   });
 
@@ -25,28 +30,12 @@ export function useLmsDashboard(filter: LmsDashboardFilter, advanced: InboxAdvan
   });
 
   const allRows = useMemo(() => {
-    const workRows = (workQuery.data ?? []).map((item) => {
-      const row = mapWorkItem(item);
-      row.stageLabel = lmsStateLabel(row.operationalState);
-      return row;
-    });
-    const returnedRows = (summaryQuery.data?.returnedPreview ?? []).map((item) => {
-      const row = mapPreview(item, 'returned');
-      row.stageLabel = lmsStateLabel(row.operationalState);
-      return row;
-    });
-    const completedRows = (summaryQuery.data?.completedPreview ?? []).map((item) => {
-      const row = mapPreview(item, 'completed');
-      row.stageLabel = lmsStateLabel(row.operationalState);
-      return row;
-    });
-    const workIds = new Set(workRows.map((r) => r.subjectId));
-    const dedupedReturned = returnedRows.filter((r) => !workIds.has(r.subjectId));
-    const dedupedCompleted = completedRows.filter(
-      (r) => !workIds.has(r.subjectId) && !dedupedReturned.some((d) => d.subjectId === r.subjectId),
-    );
-    return [...workRows, ...dedupedReturned, ...dedupedCompleted];
-  }, [workQuery.data, summaryQuery.data]);
+    const workRows = (workProgramsQuery.data ?? []).map(mapLmsProgramWorkItem);
+    const completedRows = mapCompletedPrograms(summaryQuery.data?.completedPreview ?? []);
+    const workProjectIds = new Set(workRows.map((row) => row.projectId));
+    const dedupedCompleted = completedRows.filter((row) => !workProjectIds.has(row.projectId));
+    return [...workRows, ...dedupedCompleted];
+  }, [workProgramsQuery.data, summaryQuery.data]);
 
   const categoryRows = useMemo(() => filterLmsRows(allRows, filter), [allRows, filter]);
   const visibleRows = useMemo(
@@ -56,31 +45,26 @@ export function useLmsDashboard(filter: LmsDashboardFilter, advanced: InboxAdvan
 
   const kpis = useMemo(() => {
     const summary = summaryQuery.data?.kpis;
-    const work = workQuery.data ?? [];
-    const countState = (state: string) => work.filter((w) => w.operationalState === state).length;
+    const programs = workProgramsQuery.data ?? [];
     return {
-      pendingUpload: summary?.pendingUpload ?? countState('PENDING_LMS_UPLOAD'),
-      inUpload: summary?.inUpload ?? countState('IN_LMS_UPLOAD'),
+      pendingUpload:
+        summary?.pendingUpload ?? countLmsProgramsWithState(programs, 'PENDING_LMS_UPLOAD'),
+      inUpload: summary?.inUpload ?? countLmsProgramsWithState(programs, 'IN_LMS_UPLOAD'),
       completedUpload: summary?.completedUpload ?? 0,
       returnedByPlanning:
-        summary?.returnedByPlanning ?? countState('RETURNED_TO_LMS_FROM_PLANNING'),
+        summary?.returnedByPlanning ??
+        countLmsProgramsWithState(programs, 'RETURNED_TO_LMS_FROM_PLANNING'),
       inProgressProjects: summary?.inProgressProjects ?? 0,
       finalizedProjects: summary?.finalizedProjects ?? 0,
     };
-  }, [workQuery.data, summaryQuery.data]);
+  }, [workProgramsQuery.data, summaryQuery.data]);
 
-  const pendingCount =
-    (workQuery.data ?? []).filter((w) =>
-      ['PENDING_LMS_UPLOAD', 'IN_LMS_UPLOAD', 'RETURNED_TO_LMS_FROM_PLANNING'].includes(
-        w.operationalState,
-      ),
-    ).length ?? 0;
-
+  const pendingCount = workProgramsQuery.data?.length ?? 0;
   const hasNoPending = pendingCount === 0;
 
-  const isLoading = workQuery.isLoading || summaryQuery.isLoading;
+  const isLoading = workProgramsQuery.isLoading || summaryQuery.isLoading;
   const error =
-    workQuery.error || summaryQuery.error ? 'No se pudo cargar el panel de LMS' : null;
+    workProgramsQuery.error || summaryQuery.error ? 'No se pudo cargar el panel de LMS' : null;
 
   const refetchAll = async () => {
     await invalidateLmsDashboard(queryClient);

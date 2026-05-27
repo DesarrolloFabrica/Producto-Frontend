@@ -22,9 +22,14 @@ export function invalidateSemesterWorkflowQueries(
   void queryClient.invalidateQueries({ queryKey: queryKeys.projects() });
   void queryClient.invalidateQueries({ queryKey: ['institutional-work'] });
   void queryClient.invalidateQueries({ queryKey: queryKeys.factory.all() });
+  void queryClient.invalidateQueries({ queryKey: ['factory', 'subjects', 'programs'] });
   void queryClient.invalidateQueries({ queryKey: queryKeys.planning.dashboardSummary() });
   void queryClient.invalidateQueries({ queryKey: queryKeys.institutionalWork.planning() });
   void queryClient.invalidateQueries({ queryKey: queryKeys.planning.tracking() });
+  void queryClient.invalidateQueries({ queryKey: queryKeys.planning.trackingPrograms() });
+  void queryClient.invalidateQueries({ queryKey: queryKeys.institutionalWork.productPrograms() });
+  void queryClient.invalidateQueries({ queryKey: queryKeys.institutionalWork.planningPrograms() });
+  void queryClient.invalidateQueries({ queryKey: queryKeys.institutionalWork.factoryPrograms() });
   void queryClient.invalidateQueries({ queryKey: queryKeys.institutionalWork.factory() });
   void queryClient.invalidateQueries({ queryKey: queryKeys.institutionalWork.lms() });
   void queryClient.invalidateQueries({ queryKey: queryKeys.lms.dashboardSummary() });

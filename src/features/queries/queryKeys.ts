@@ -10,9 +10,15 @@ export const queryKeys = {
   operationalWorkspace: (subjectId: string) => ['operational-workspace', subjectId] as const,
   institutionalWork: {
     planning: () => ['institutional-work', 'planning'] as const,
+    planningPrograms: () => ['institutional-work', 'planning', 'programs'] as const,
+    projectProgram: (projectId: string) => ['institutional-work', 'project-program', projectId] as const,
     lms: () => ['institutional-work', 'lms'] as const,
+    lmsPrograms: () => ['institutional-work', 'lms', 'programs'] as const,
     product: () => ['institutional-work', 'product'] as const,
+    productPrograms: () => ['institutional-work', 'product', 'programs'] as const,
+    productTrackingPrograms: () => ['institutional-work', 'product', 'tracking', 'programs'] as const,
     factory: () => ['institutional-work', 'factory'] as const,
+    factoryPrograms: () => ['institutional-work', 'factory', 'programs'] as const,
     forRole: (role: string) => ['institutional-work', role] as const,
   },
   notificationsInbox: (filters?: { limit?: number; offset?: number; readDays?: number }) =>
@@ -22,6 +28,7 @@ export const queryKeys = {
     dashboardSummary: () => ['planning', 'dashboard-summary'] as const,
     radicationWork: () => ['planning', 'radication-work'] as const,
     tracking: () => ['planning', 'tracking'] as const,
+    trackingPrograms: () => ['planning', 'tracking', 'programs'] as const,
   },
   lms: {
     dashboardSummary: () => ['lms', 'dashboard-summary'] as const,
@@ -35,5 +42,7 @@ export const queryKeys = {
       ['factory', 'subjects', 'byStatus', status, page, limit] as const,
     subjectsByOrigin: (origin: string, page: number, limit: number) =>
       ['factory', 'subjects', 'byOrigin', origin, page, limit] as const,
+    subjectsPrograms: (filters: FactorySubjectsQuery = {}) =>
+      ['factory', 'subjects', 'programs', normalizeFactorySubjectsQuery(filters)] as const,
   },
 };

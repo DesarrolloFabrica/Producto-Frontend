@@ -1,143 +1,72 @@
-import { useMemo, useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useMemo } from 'react';
+import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { LayoutDashboard } from 'lucide-react';
 import { ContextBackLink } from '../../navigation/ContextBackLink';
+import { buildFromLocation } from '../../navigation/contextNavigation';
 import { PageHeader } from '../../components/ui/PageHeader';
 import { useOperations } from '../operations/OperationsContext';
-import { buildWorkItemsFromProjects } from '../operations/subjectOperationalState';
-import type { SubjectOperationalState, SubjectWorkItem } from '../operations/subjectOperationalState';
-import { getApiErrorMessage } from '../operations/apiMappers';
-import { ProductWorkFilters, type ProductWorkQuery } from './components/ProductWorkFilters';
-import { ProductWorkTable } from './components/ProductWorkTable';
+import { useProductProgramsTrackingQuery } from '../queries/useInstitutionalProgramsWorkQuery';
+import { ProgramOperationalWorkTable } from '../operations-v2/ProgramOperationalWorkTable';
+import type { ProgramOperationalWorkItemDto } from '../../services/institutionalWorkflowApi';
+import { ProductProgramWorkFilters } from './components/ProductProgramWorkFilters';
+import { ProductProgramWorkSummary } from './components/ProductProgramWorkSummary';
 import { ProductWorkPagination } from './components/ProductWorkPagination';
-import { ProductWorkSummary } from './components/ProductWorkSummary';
-
-type SortKey = NonNullable<ProductWorkQuery['sort']>;
+import {
+  buildLegacyProgramWorkItems,
+  filterProductPrograms,
+  mergeProductProgramSources,
+  parseProductProgramTrayFilter,
+  uniqueProgramSchools,
+  type ProductProgramWorkQuery,
+} from './productProgramWork';
 
 function parseIntOr(value: string | null, fallback: number) {
   const n = value ? Number(value) : NaN;
   return Number.isFinite(n) && n > 0 ? Math.floor(n) : fallback;
 }
 
-function pickStatus(value: string | null): SubjectOperationalState | undefined {
+function pickSort(value: string | null): ProductProgramWorkQuery['sort'] | undefined {
   if (!value) return undefined;
-  const allowed: SubjectOperationalState[] = [
-    'NOT_STARTED',
-    'IN_PRODUCTION',
-    'IN_REVIEW',
-    'CHANGES_REQUESTED',
-    'CORRECTION_SENT',
-    'APPROVED',
-  ];
-  return (allowed as string[]).includes(value) ? (value as SubjectOperationalState) : undefined;
-}
-
-function pickOrigin(value: string | null): ProductWorkQuery['origin'] | undefined {
-  if (value === 'new' || value === 'original' || value === 'all') return value;
-  return undefined;
-}
-
-function pickSort(value: string | null): SortKey | undefined {
-  if (!value) return undefined;
-  const allowed: SortKey[] = ['dueDate', 'updatedAt', 'priority'];
-  return (allowed as string[]).includes(value) ? (value as SortKey) : undefined;
-}
-
-function toTs(value?: string | null) {
-  if (!value) return 0;
-  const d = new Date(value);
-  const ts = d.getTime();
-  return Number.isFinite(ts) ? ts : 0;
+  const allowed: NonNullable<ProductProgramWorkQuery['sort']>[] = ['dueDate', 'updatedAt', 'priority'];
+  return (allowed as string[]).includes(value) ? (value as ProductProgramWorkQuery['sort']) : undefined;
 }
 
 export function ProductWorkPage() {
-  const { projects, projectObservations } = useOperations();
+  const navigate = useNavigate();
+  const location = useLocation();
+  const { projects, projectObservations, backendEnabled } = useOperations();
   const [searchParams, setSearchParams] = useSearchParams();
+  const trackingQuery = useProductProgramsTrackingQuery(backendEnabled);
 
-  const query = useMemo(() => {
-    const status = pickStatus(searchParams.get('status'));
-    const search = searchParams.get('search') || undefined;
-    const program = searchParams.get('program') || undefined;
-    const priority = searchParams.get('priority') || undefined;
-    const dueFrom = searchParams.get('dueFrom') || undefined;
-    const dueTo = searchParams.get('dueTo') || undefined;
-    const sort = pickSort(searchParams.get('sort'));
-    const semesterRaw = searchParams.get('semester');
-    const semester = semesterRaw ? Number(semesterRaw) : undefined;
+  const query = useMemo((): ProductProgramWorkQuery => {
     const page = parseIntOr(searchParams.get('page'), 1);
     const limit = parseIntOr(searchParams.get('limit'), 20);
-
-    const origin = pickOrigin(searchParams.get('origin'));
-
-    const q: ProductWorkQuery = {
-      origin,
-      status,
-      search,
-      program,
-      semester: Number.isFinite(semester) ? semester : undefined,
-      priority,
-      dueFrom,
-      dueTo,
-      sort,
+    return {
+      status: parseProductProgramTrayFilter(searchParams.get('status')),
+      search: searchParams.get('search') || undefined,
+      program: searchParams.get('program') || undefined,
+      school: searchParams.get('school') || undefined,
+      dueFrom: searchParams.get('dueFrom') || undefined,
+      dueTo: searchParams.get('dueTo') || undefined,
+      sort: pickSort(searchParams.get('sort')),
       page,
       limit,
     };
-    return q;
   }, [searchParams]);
 
-  const [error, setError] = useState<string | null>(null);
+  const legacyPrograms = useMemo(
+    () => buildLegacyProgramWorkItems(projects, projectObservations),
+    [projects, projectObservations],
+  );
 
-  const allItems = useMemo(() => buildWorkItemsFromProjects(projects, projectObservations), [projects, projectObservations]);
+  const allPrograms = useMemo(() => {
+    if (!backendEnabled) return legacyPrograms;
+    return mergeProductProgramSources(trackingQuery.data ?? [], legacyPrograms);
+  }, [backendEnabled, trackingQuery.data, legacyPrograms]);
 
-  const filtered = useMemo(() => {
-    try {
-      setError(null);
-      let items: SubjectWorkItem[] = allItems;
+  const schools = useMemo(() => uniqueProgramSchools(allPrograms), [allPrograms]);
 
-      if (query.origin === 'new') items = items.filter((i) => Boolean(i.createdFromChange));
-      else if (query.origin === 'original') items = items.filter((i) => !i.createdFromChange);
-
-      if (query.status) items = items.filter((i) => i.operationalState === query.status);
-      if (query.program) {
-        const p = query.program.toLowerCase();
-        items = items.filter((i) => i.program.toLowerCase().includes(p));
-      }
-      if (query.semester !== undefined) items = items.filter((i) => i.semesterNumber === Number(query.semester));
-      if (query.priority) items = items.filter((i) => i.priority === query.priority);
-      if (query.search) {
-        const q = query.search.toLowerCase();
-        items = items.filter(
-          (i) =>
-            i.subjectName.toLowerCase().includes(q) ||
-            i.program.toLowerCase().includes(q) ||
-            i.school.toLowerCase().includes(q),
-        );
-      }
-      if (query.dueFrom) {
-        const from = new Date(query.dueFrom).getTime();
-        items = items.filter((i) => toTs(i.expectedDeliveryDate) >= from);
-      }
-      if (query.dueTo) {
-        const to = new Date(query.dueTo).getTime();
-        items = items.filter((i) => toTs(i.expectedDeliveryDate) <= to);
-      }
-
-      const sort = query.sort ?? 'updatedAt';
-      items = [...items].sort((a, b) => {
-        if (sort === 'dueDate') return toTs(a.expectedDeliveryDate) - toTs(b.expectedDeliveryDate);
-        if (sort === 'priority') {
-          const rank: Record<string, number> = { CRITICAL: 0, HIGH: 1, MEDIUM: 2, LOW: 3 };
-          return (rank[a.priority] ?? 9) - (rank[b.priority] ?? 9);
-        }
-        return toTs(b.lastActivity ?? '') - toTs(a.lastActivity ?? '');
-      });
-
-      return items;
-    } catch (err) {
-      setError(getApiErrorMessage(err));
-      return [];
-    }
-  }, [allItems, query]);
+  const filtered = useMemo(() => filterProductPrograms(allPrograms, query), [allPrograms, query]);
 
   const page = query.page ?? 1;
   const limit = query.limit ?? 20;
@@ -166,14 +95,25 @@ export function ProductWorkPage() {
     updateParams({ [param]: undefined }, { resetPage: true });
   };
 
-  const showPagination = total > 0;
+  const openProgram = (item: ProgramOperationalWorkItemDto) => {
+    navigate(item.actionUrl, {
+      state: { from: buildFromLocation(location), programWorkItem: item },
+    });
+  };
+
+  const error =
+    trackingQuery.error instanceof Error
+      ? trackingQuery.error.message
+      : trackingQuery.error
+        ? 'No se pudo cargar la bandeja'
+        : null;
 
   return (
     <div className="space-y-6">
       <PageHeader
         eyebrow="Bandeja de trabajo"
-        title="Bandeja de revisión"
-        description="Gestiona materias por estado, prioridad, fecha de entrega y cambios recientes."
+        title="Bandeja de programas"
+        description="Gestiona solicitudes por programa, semestre y etapa operacional."
         action={
           <ContextBackLink
             fallback="/product/dashboard"
@@ -185,19 +125,27 @@ export function ProductWorkPage() {
         }
       />
 
-      <ProductWorkFilters query={query} onChange={(patch) => updateParams(patch, { resetPage: true })} onClear={clearFilters} />
-
-      <ProductWorkSummary total={total} query={query} onRemoveFilter={removeFilter} onClearAll={clearFilters} />
-
-      <ProductWorkTable
-        items={paged}
-        isLoading={false}
-        error={error}
-        onClearFilters={clearFilters}
-        backToDashboardFallback="/product/dashboard"
+      <ProductProgramWorkFilters
+        query={query}
+        schools={schools}
+        onChange={(patch) => updateParams(patch, { resetPage: true })}
+        onClear={clearFilters}
       />
 
-      {showPagination && (
+      <ProductProgramWorkSummary total={total} query={query} onRemoveFilter={removeFilter} onClearAll={clearFilters} />
+
+      <ProgramOperationalWorkTable
+        items={paged}
+        isLoading={backendEnabled && trackingQuery.isLoading}
+        error={error}
+        onRefresh={() => void trackingQuery.refetch()}
+        onOpenProgram={openProgram}
+        sectionTitle="Programas"
+        actionLabel="Ver programa"
+        queueLabel="Centro operacional del programa"
+      />
+
+      {total > 0 && (
         <ProductWorkPagination
           page={page}
           totalPages={totalPages}

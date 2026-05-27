@@ -1,5 +1,5 @@
 import type { InstitutionalOperationalState, Role, SlaStatus } from '../../types/domain';
-import type { OperationalWorkItemDto } from '../../services/institutionalWorkflowApi';
+import type { OperationalWorkItemDto, ProgramOperationalWorkItemDto } from '../../services/institutionalWorkflowApi';
 import type { ProjectRadicationWorkItemDto } from '../../services/projectRadicationApi';
 import type { PlanningFinalizedProject, PlanningSubjectPreview } from '../../services/planningApi';
 import {
@@ -19,24 +19,33 @@ export type PlanningDashboardFilter =
   | 'returned'
   | 'history';
 
+const PLANNING_VALIDATION_STATES = {
+  initial: 'PENDING_PLANNING_INITIAL_VALIDATION',
+  production: 'PENDING_PLANNING_PRODUCTION_VALIDATION',
+  lms: 'PENDING_PLANNING_LMS_VALIDATION',
+} as const satisfies Record<string, InstitutionalOperationalState>;
+
+export type PlanningProgramRow = {
+  kind: 'program';
+  variant: 'pending' | 'tracking';
+  id: string;
+  projectId: string;
+  program: string;
+  school: string;
+  stageDueAt: string | null;
+  slaStatus: SlaStatus;
+  actionUrl: string;
+  totalSemesters: number;
+  completedSemesters: number;
+  totalSubjects: number;
+  completedSubjects: number;
+  activeStageSummary: Array<{ label: string; count: number }>;
+  currentResponsibleRole: Role;
+  semesters: OperationalWorkItemDto[];
+};
+
 export type PlanningWorkRow =
-  | {
-      kind: 'subject';
-      id: string;
-      subjectId: string;
-      projectId: string;
-      subjectName: string;
-      program: string;
-      school: string;
-      semesterNumber: number;
-      operationalState: InstitutionalOperationalState;
-      stageLabel: string;
-      responsibleRole: Role;
-      stageDueAt: string | null;
-      slaStatus: SlaStatus;
-      lastActivity: string | null;
-      actionUrl: string;
-    }
+  | PlanningProgramRow
   | {
       kind: 'radication';
       id: string;
@@ -51,35 +60,12 @@ export type PlanningWorkRow =
       lastRadicationReturnReason: string | null;
     }
   | {
-      kind: 'tracking';
+      kind: 'returned-program';
       id: string;
-      subjectId: string;
       projectId: string;
-      subjectName: string;
       program: string;
       school: string;
-      semesterNumber: number;
-      operationalState: InstitutionalOperationalState;
-      stageLabel: string;
-      responsibleRole: Role;
-      stageDueAt: string | null;
-      slaStatus: SlaStatus;
-      lastActivity: string | null;
-      actionUrl: string;
-      subjectsTotal: number;
-      subjectsReady: number;
-    }
-  | {
-      kind: 'returned';
-      id: string;
-      subjectId: string;
-      projectId: string;
-      subjectName: string;
-      program: string;
-      school: string;
-      operationalState: InstitutionalOperationalState;
-      stageLabel: string;
-      responsibleRole: Role;
+      subjectsAffected: number;
       stageDueAt: string | null;
       slaStatus: SlaStatus;
       lastActivity: string | null;
@@ -115,48 +101,39 @@ export function parsePlanningFilter(raw: string | null): PlanningDashboardFilter
   return 'all';
 }
 
-export function mapTrackingWorkItem(item: OperationalWorkItemDto): PlanningWorkRow {
-  const isSemester = item.kind === 'semester' && item.semesterId;
+function programHasSemesterState(
+  row: PlanningProgramRow,
+  state: InstitutionalOperationalState,
+): boolean {
+  return row.semesters.some((semester) => semester.operationalState === state);
+}
+
+export function mapProgramWorkItem(
+  item: ProgramOperationalWorkItemDto,
+  variant: 'pending' | 'tracking',
+): PlanningProgramRow {
   return {
-    kind: 'tracking',
-    id: isSemester ? item.semesterId! : item.subjectId,
-    subjectId: item.subjectId,
+    kind: 'program',
+    variant,
+    id: item.projectId,
     projectId: item.projectId,
-    subjectName: item.subjectName,
     program: item.program,
     school: item.school,
-    semesterNumber: item.semesterNumber,
-    operationalState: item.operationalState,
-    stageLabel: '',
-    responsibleRole: item.currentResponsibleRole,
-    stageDueAt: item.stageDueAt,
+    stageDueAt: item.nearestDueDate,
     slaStatus: item.slaStatus,
-    lastActivity: item.lastReturnReason,
     actionUrl: item.actionUrl,
-    subjectsTotal: item.subjectsTotal ?? 0,
-    subjectsReady: item.subjectsReady ?? 0,
+    totalSemesters: item.totalSemesters,
+    completedSemesters: item.completedSemesters,
+    totalSubjects: item.totalSubjects,
+    completedSubjects: item.completedSubjects,
+    activeStageSummary: item.activeStageSummary,
+    currentResponsibleRole: item.currentResponsibleRole,
+    semesters: item.semesters,
   };
 }
 
-export function mapSubjectWorkItem(item: OperationalWorkItemDto): PlanningWorkRow {
-  const isSemester = item.kind === 'semester' && item.semesterId;
-  return {
-    kind: 'subject',
-    id: isSemester ? item.semesterId! : item.subjectId,
-    subjectId: item.subjectId,
-    projectId: item.projectId,
-    subjectName: item.subjectName,
-    program: item.program,
-    school: item.school,
-    semesterNumber: item.semesterNumber,
-    operationalState: item.operationalState,
-    stageLabel: '',
-    responsibleRole: item.currentResponsibleRole,
-    stageDueAt: item.stageDueAt,
-    slaStatus: item.slaStatus,
-    lastActivity: item.lastReturnReason,
-    actionUrl: item.actionUrl,
-  };
+export function mapProgramTrackingWorkItem(item: ProgramOperationalWorkItemDto): PlanningWorkRow {
+  return mapProgramWorkItem(item, 'tracking');
 }
 
 export function mapRadicationWorkItem(item: ProjectRadicationWorkItemDto): PlanningWorkRow {
@@ -175,23 +152,39 @@ export function mapRadicationWorkItem(item: ProjectRadicationWorkItemDto): Plann
   };
 }
 
-export function mapReturnedPreview(item: PlanningSubjectPreview): PlanningWorkRow {
-  return {
-    kind: 'returned',
-    id: item.subjectId,
-    subjectId: item.subjectId,
-    projectId: item.projectId,
-    subjectName: item.subjectName,
-    program: item.program,
-    school: item.school,
-    operationalState: item.operationalState,
-    stageLabel: '',
-    responsibleRole: item.currentResponsibleRole,
-    stageDueAt: item.stageDueAt,
-    slaStatus: item.slaStatus,
-    lastActivity: item.lastReturnReason,
-    actionUrl: `/subjects/${item.subjectId}/operations`,
-  };
+export function mapReturnedPrograms(previews: PlanningSubjectPreview[]): PlanningWorkRow[] {
+  const byProject = new Map<string, PlanningSubjectPreview[]>();
+  for (const item of previews) {
+    const list = byProject.get(item.projectId) ?? [];
+    list.push(item);
+    byProject.set(item.projectId, list);
+  }
+
+  return [...byProject.entries()].map(([projectId, items]) => {
+    const first = items[0]!;
+    const lastActivity =
+      items
+        .map((item) => item.lastReturnReason)
+        .filter(Boolean)
+        .join(' · ') || null;
+    const nearestDue = items
+      .map((item) => item.stageDueAt)
+      .filter((due): due is string => Boolean(due))
+      .sort()[0] ?? null;
+
+    return {
+      kind: 'returned-program',
+      id: projectId,
+      projectId,
+      program: first.program,
+      school: first.school,
+      subjectsAffected: items.length,
+      stageDueAt: nearestDue,
+      slaStatus: first.slaStatus,
+      lastActivity,
+      actionUrl: `/projects/${projectId}/operations`,
+    };
+  });
 }
 
 export function mapFinalizedProject(item: PlanningFinalizedProject): PlanningWorkRow {
@@ -216,33 +209,37 @@ export function filterPlanningRows(
   switch (filter) {
     case 'initial':
       return rows.filter(
-        (r) => r.kind === 'subject' && r.operationalState === 'PENDING_PLANNING_INITIAL_VALIDATION',
+        (row) =>
+          row.kind === 'program' &&
+          programHasSemesterState(row, PLANNING_VALIDATION_STATES.initial),
       );
     case 'production':
       return rows.filter(
-        (r) =>
-          r.kind === 'subject' && r.operationalState === 'PENDING_PLANNING_PRODUCTION_VALIDATION',
+        (row) =>
+          row.kind === 'program' &&
+          programHasSemesterState(row, PLANNING_VALIDATION_STATES.production),
       );
     case 'lms':
       return rows.filter(
-        (r) => r.kind === 'subject' && r.operationalState === 'PENDING_PLANNING_LMS_VALIDATION',
+        (row) =>
+          row.kind === 'program' &&
+          programHasSemesterState(row, PLANNING_VALIDATION_STATES.lms),
       );
     case 'radication':
-      return rows.filter((r) => r.kind === 'radication');
+      return rows.filter((row) => row.kind === 'radication');
     case 'tracking':
-      return rows.filter((r) => r.kind === 'tracking');
+      return rows.filter((row) => row.kind === 'program' && row.variant === 'tracking');
     case 'returned':
-      return rows.filter((r) => r.kind === 'returned');
+      return rows.filter((row) => row.kind === 'returned-program');
     case 'history':
-      return rows.filter((r) => r.kind === 'finalized');
+      return rows.filter((row) => row.kind === 'finalized');
     case 'all':
     default:
       return rows.filter(
-        (r) =>
-          r.kind === 'subject' ||
-          r.kind === 'radication' ||
-          r.kind === 'tracking' ||
-          r.kind === 'returned',
+        (row) =>
+          row.kind === 'program' ||
+          row.kind === 'radication' ||
+          row.kind === 'returned-program',
       );
   }
 }
@@ -254,28 +251,34 @@ export function countPlanningRowsByFilter(
   return filterPlanningRows(rows, filter).length;
 }
 
+export function countPlanningProgramsWithState(
+  programs: ProgramOperationalWorkItemDto[],
+  state: InstitutionalOperationalState,
+): number {
+  return programs.filter((program) =>
+    program.semesters.some((semester) => semester.operationalState === state),
+  ).length;
+}
+
 function planningRowDueAt(row: PlanningWorkRow): string | null {
   if (row.kind === 'radication') return row.planningRadicationCheckDueAt;
   if (row.kind === 'finalized') return row.radicatedAt;
-  if (row.kind === 'subject' || row.kind === 'tracking' || row.kind === 'returned') {
-    return row.stageDueAt;
-  }
+  if (row.kind === 'program' || row.kind === 'returned-program') return row.stageDueAt;
   return null;
 }
 
 function planningRowStage(row: PlanningWorkRow): string {
   if (row.kind === 'finalized') return 'Finalizada';
   if (row.kind === 'radication') return 'Radicación';
-  if (row.kind === 'subject' || row.kind === 'tracking' || row.kind === 'returned') {
-    return row.stageLabel || row.operationalState;
+  if (row.kind === 'program') {
+    return row.variant === 'tracking' ? 'Seguimiento' : 'Validación';
   }
+  if (row.kind === 'returned-program') return 'Devuelta';
   return '';
 }
 
 function planningRowSla(row: PlanningWorkRow): SlaStatus | null {
-  if (row.kind === 'subject' || row.kind === 'tracking' || row.kind === 'returned') {
-    return row.slaStatus;
-  }
+  if (row.kind === 'program' || row.kind === 'returned-program') return row.slaStatus;
   return null;
 }
 
@@ -290,9 +293,7 @@ export function applyPlanningInboxAdvancedFilters(
       row.program,
       row.kind === 'radication' || row.kind === 'finalized'
         ? row.radicationNumber
-        : row.kind === 'subject' || row.kind === 'tracking' || row.kind === 'returned'
-          ? row.subjectName
-          : null,
+        : row.program,
       planningRowStage(row),
     );
     if (!queryOk) return false;

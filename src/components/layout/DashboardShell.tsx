@@ -30,10 +30,10 @@ export function DashboardKpiGrid({
 }) {
   const gridClass =
     columns === 6
-      ? 'grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6'
+      ? 'grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6'
       : columns === 3
-        ? 'grid gap-4 sm:grid-cols-2 lg:grid-cols-3'
-        : 'grid gap-4 sm:grid-cols-2 lg:grid-cols-4';
+        ? 'grid gap-3 sm:grid-cols-2 lg:grid-cols-3'
+        : 'grid gap-3 sm:grid-cols-2 lg:grid-cols-4';
 
   return <div className={gridClass}>{children}</div>;
 }

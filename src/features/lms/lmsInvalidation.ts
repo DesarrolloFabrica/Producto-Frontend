@@ -5,6 +5,7 @@ export async function invalidateLmsDashboard(queryClient: QueryClient) {
   await Promise.all([
     queryClient.invalidateQueries({ queryKey: queryKeys.lms.dashboardSummary() }),
     queryClient.invalidateQueries({ queryKey: queryKeys.institutionalWork.lms() }),
+    queryClient.invalidateQueries({ queryKey: queryKeys.institutionalWork.lmsPrograms() }),
     queryClient.invalidateQueries({ queryKey: queryKeys.institutionalWork.planning() }),
     queryClient.invalidateQueries({ queryKey: queryKeys.notificationsSummary() }),
   ]);

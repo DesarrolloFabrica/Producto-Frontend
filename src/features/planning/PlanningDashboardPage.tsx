@@ -5,13 +5,13 @@ import { useQueryClient } from '@tanstack/react-query';
 import { DashboardShell } from '../../components/layout/DashboardShell';
 import { PageHeader } from '../../components/ui/PageHeader';
 import { Button } from '../../components/ui/Button';
+import { Card } from '../../components/ui/Card';
 import { useToast } from '../../components/ui/ToastProvider';
 import { projectRadicationApi } from '../../services/projectRadicationApi';
 import { buildFromLocation } from '../../navigation/contextNavigation';
 import { PlanningEmptyState } from './components/PlanningEmptyState';
 import { PlanningKpiCards } from './components/PlanningKpiCards';
 import { PlanningRadicationTable } from './components/PlanningRadicationTable';
-import { PlanningRecentActivity } from './components/PlanningRecentActivity';
 import { PlanningWorkTable } from './components/PlanningWorkTable';
 import { invalidatePlanningDashboard } from './planningInvalidation';
 import {
@@ -22,9 +22,12 @@ import {
 } from './planningTypes';
 import { usePlanningDashboard } from './usePlanningDashboard';
 import { OperationalInboxFilterBar } from '../operations-v2/components/OperationalInboxFilterBar';
+import { OperationalInboxContextBar } from '../operations-v2/components/OperationalInboxContextBar';
+import { OperationalInboxViewTabs } from '../operations-v2/components/OperationalInboxViewTabs';
 import { OperationalInboxPagination } from '../operations-v2/components/OperationalInboxPagination';
 import {
   DEFAULT_INBOX_ADVANCED_FILTERS,
+  hasActiveInboxAdvancedFilters,
   inboxSafePage,
   inboxTotalPages,
   paginateInboxRows,
@@ -32,6 +35,9 @@ import {
   parseInboxPage,
   type InboxAdvancedFilters,
 } from '../operations-v2/operationalInboxFilters';
+import { useOperationalInboxPanelState } from '../operations-v2/useOperationalInboxPanelState';
+
+const PLANNING_SECONDARY_FILTERS: PlanningDashboardFilter[] = ['tracking', 'returned'];
 
 export function PlanningDashboardPage() {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -39,7 +45,23 @@ export function PlanningDashboardPage() {
   const location = useLocation();
   const { showToast } = useToast();
   const queryClient = useQueryClient();
-  const filter = parsePlanningFilter(searchParams.get('filter'));
+  const {
+    panel,
+    inboxFilter,
+    exploreFilter,
+    activeFilter: filter,
+    hasExploreCategoryFilter,
+    setInboxFilter,
+    setExploreFilter,
+    clearExploreFilter,
+    clearInboxFilter,
+    setPanel,
+  } = useOperationalInboxPanelState({
+    searchParams,
+    setSearchParams,
+    parseFilter: parsePlanningFilter,
+    defaultFilter: 'all' as PlanningDashboardFilter,
+  });
   const advanced = parseInboxAdvancedFilters(searchParams);
   const pageParam = parseInboxPage(searchParams);
   const [busyProjectId, setBusyProjectId] = useState<string | null>(null);
@@ -50,23 +72,13 @@ export function PlanningDashboardPage() {
     categoryRows,
     allRows,
     kpis,
-    recentActivity,
     hasNoPending,
     isLoading,
     error,
     refetchAll,
   } = usePlanningDashboard(filter, advanced);
 
-  const setFilter = useCallback(
-    (next: PlanningDashboardFilter) => {
-      const params = new URLSearchParams(searchParams);
-      if (next === 'all') params.delete('filter');
-      else params.set('filter', next);
-      params.delete('page');
-      setSearchParams(params, { replace: true });
-    },
-    [searchParams, setSearchParams],
-  );
+  const setFilter = setInboxFilter;
 
   const setAdvanced = useCallback(
     (next: InboxAdvancedFilters) => {
@@ -106,6 +118,15 @@ export function PlanningDashboardPage() {
   const categoryOptions = PLANNING_INBOX_CATEGORIES.map((category) => ({
     ...category,
     count: countPlanningRowsByFilter(allRows, category.id),
+  }));
+
+  const activeCategoryLabel =
+    PLANNING_INBOX_CATEGORIES.find((category) => category.id === inboxFilter)?.label ?? 'Bandeja';
+
+  const secondaryLinks = PLANNING_SECONDARY_FILTERS.map((id) => ({
+    id,
+    label: PLANNING_INBOX_CATEGORIES.find((category) => category.id === id)?.label ?? id,
+    count: countPlanningRowsByFilter(allRows, id),
   }));
 
   const handleRefresh = async () => {
@@ -200,21 +221,46 @@ export function PlanningDashboardPage() {
         }
       />
 
-      <PlanningKpiCards kpis={kpis} activeFilter={filter} onFilterChange={setFilter} />
+      <PlanningKpiCards kpis={kpis} activeFilter={inboxFilter} onFilterChange={setInboxFilter} />
 
-      <OperationalInboxFilterBar
-        accent="planning"
-        categories={categoryOptions}
-        activeCategory={filter}
-        onCategoryChange={setFilter}
-        advanced={advanced}
-        onAdvancedChange={setAdvanced}
-        totalInCategory={categoryRows.length}
-        visibleCount={visibleRows.length}
-      />
+      <div className="space-y-4">
+        <OperationalInboxViewTabs
+          mode={panel}
+          onChange={setPanel}
+          hasActiveAdvancedFilters={hasActiveInboxAdvancedFilters(advanced)}
+          hasExploreCategoryFilter={hasExploreCategoryFilter}
+        />
+
+        {panel === 'inbox' ? (
+          <OperationalInboxContextBar
+            categoryLabel={activeCategoryLabel}
+            activeCategory={inboxFilter}
+            defaultCategory="all"
+            secondaryLinks={secondaryLinks}
+            onSecondarySelect={setInboxFilter}
+            onClearCategory={clearInboxFilter}
+            advanced={advanced}
+            onAdvancedChange={setAdvanced}
+            totalInCategory={categoryRows.length}
+            visibleCount={visibleRows.length}
+          />
+        ) : (
+          <OperationalInboxFilterBar
+            categories={categoryOptions}
+            activeCategory={exploreFilter}
+            defaultCategory="all"
+            onCategoryChange={setExploreFilter}
+            onClearCategory={clearExploreFilter}
+            advanced={advanced}
+            onAdvancedChange={setAdvanced}
+            totalInCategory={categoryRows.length}
+            visibleCount={visibleRows.length}
+          />
+        )}
+      </div>
 
       {showFilteredEmpty ? (
-        <div className="rounded-2xl border border-slate-200 bg-white px-5 py-8 text-center shadow-sm">
+        <Card variant="roleGlass" className="px-5 py-8 text-center">
           <p className="text-sm font-semibold text-slate-800">Ningún registro coincide con los filtros aplicados</p>
           <p className="mt-1 text-xs text-slate-500">
             Hay {categoryRows.length} solicitud(es) en esta categoría. Ajuste la búsqueda, el plazo SLA o limpie los filtros.
@@ -227,7 +273,7 @@ export function PlanningDashboardPage() {
           >
             Limpiar filtros avanzados
           </Button>
-        </div>
+        </Card>
       ) : null}
 
       {showEmpty || showEmptyAll ? (
@@ -255,10 +301,6 @@ export function PlanningDashboardPage() {
             onPageChange={setPage}
           />
         </>
-      ) : null}
-
-      {filter !== 'history' && filter !== 'radication' ? (
-        <PlanningRecentActivity items={recentActivity} />
       ) : null}
     </DashboardShell>
   );

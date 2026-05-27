@@ -1,14 +1,20 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { ArrowRight, Loader2 } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
 import { Card } from '../../../components/ui/Card';
 import { SkeletonTable } from '../../../components/ui/Skeleton';
 import { cn, surface, tableRow, text } from '../../../components/ui/tokens';
 import { Button } from '../../../components/ui/Button';
 import { Modal } from '../../../components/ui/Modal';
 import { formatDate } from '../../../utils/formatters';
-import { OperationalStateBadgeV2 } from '../../operations-v2/components/OperationalStateBadgeV2';
+import { formatProgramProgress } from '../../institutional-workflow/institutionalCopy';
+import { ProgramActiveStageBadge } from '../../operations-v2/components/ProgramActiveStageBadge';
 import { SlaBadgeV2 } from '../../operations-v2/components/SlaBadgeV2';
+import {
+  OperationalInboxActionCell,
+  OperationalInboxFlowAction,
+  operationalInboxActionHeaderClass,
+} from '../../operations-v2/components/OperationalInboxFlowAction';
 import { roleLabelV2 } from '../../operations-v2/rules/workflowRulesV2';
 import type { OperationalRoleV2, SlaStatusV2 } from '../../../types/operationalWorkflow';
 import type { PlanningWorkRow } from '../planningTypes';
@@ -48,13 +54,13 @@ export function PlanningWorkTable({
 
   return (
     <>
-      <Card variant="solid" className="overflow-hidden p-0">
-        <div className={cn('flex flex-wrap items-center justify-between gap-3 border-b border-slate-200/60 px-5 py-3.5 sm:px-6', surface.table)}>
+      <Card variant="roleGlass" className="overflow-hidden p-0">
+        <div className={cn('flex flex-wrap items-center justify-between gap-3 px-5 py-3.5 sm:px-6', surface.table)}>
           <div>
             <p className={text.label}>Mis pendientes</p>
             <h2 className="text-sm font-semibold text-slate-900">Bandeja operacional</h2>
           </div>
-          <span className="rounded-lg bg-white px-2.5 py-1 text-[11px] font-medium text-slate-500 ring-1 ring-slate-200/70">
+          <span className="rounded-lg bg-white/50 px-2.5 py-1 text-[11px] font-medium text-slate-500 ring-1 ring-white/55 backdrop-blur-sm">
             {totalRows != null && totalRows > rows.length
               ? `${rows.length} de ${totalRows} en vista`
               : `${rows.length} en vista`}
@@ -75,37 +81,45 @@ export function PlanningWorkTable({
           <div className="overflow-x-auto">
             <table className="min-w-full text-left text-sm">
               <thead>
-                <tr className="border-b border-slate-100 bg-slate-50/80 text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                <tr className={cn('text-[10px] font-bold uppercase tracking-wider text-slate-400', surface.roleGlassTableHead)}>
                   <th className="px-5 py-3 sm:px-6">Solicitud</th>
-                  <th className="px-3 py-3">Semestres</th>
+                  <th className="px-3 py-3">Avance</th>
                   <th className="px-3 py-3">Etapa</th>
                   <th className="px-3 py-3">Responsable</th>
                   <th className="px-3 py-3">Plazo</th>
                   <th className="px-3 py-3">Última actividad</th>
-                  <th className="px-5 py-3 text-right sm:px-6">Acción</th>
+                  <th className={operationalInboxActionHeaderClass}>Acción</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {rows.map((row) => {
-                  if (row.kind === 'tracking') {
+                  if (row.kind === 'program') {
                     return (
                       <tr key={row.id} className={tableRow}>
                         <td className="px-5 py-4 sm:px-6">
                           <p className="text-[10px] font-bold uppercase text-slate-400">{row.school}</p>
                           <p className="font-bold text-slate-900">{row.program}</p>
-                          <p className="text-xs text-slate-500">Sem. {row.semesterNumber}</p>
-                        </td>
-                        <td className="px-3 py-4">
-                          <p className="font-semibold text-slate-800">{row.subjectName}</p>
                           <p className="text-xs text-slate-500">
-                            {row.subjectsReady}/{row.subjectsTotal} producidas
+                            {row.variant === 'tracking'
+                              ? 'Programa en seguimiento'
+                              : 'Validación por programa'}
                           </p>
                         </td>
                         <td className="px-3 py-4">
-                          <OperationalStateBadgeV2 state={row.operationalState} />
+                          <p className="text-xs font-medium text-slate-700">
+                            {formatProgramProgress({
+                              completedSemesters: row.completedSemesters,
+                              totalSemesters: row.totalSemesters,
+                              completedSubjects: row.completedSubjects,
+                              totalSubjects: row.totalSubjects,
+                            })}
+                          </p>
+                        </td>
+                        <td className="px-3 py-4">
+                          <ProgramActiveStageBadge stages={row.activeStageSummary} />
                         </td>
                         <td className="px-3 py-4 text-xs font-semibold text-slate-600">
-                          {roleLabel(row.responsibleRole)}
+                          {roleLabel(row.currentResponsibleRole)}
                         </td>
                         <td className="px-3 py-4">
                           <div className="flex flex-col gap-1">
@@ -120,34 +134,34 @@ export function PlanningWorkTable({
                           </div>
                         </td>
                         <td className="max-w-[12rem] px-3 py-4 text-xs text-slate-500">—</td>
-                        <td className="px-5 py-4 text-right sm:px-6">
-                          <Link
-                            to={row.actionUrl}
-                            className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 px-3 py-1.5 text-xs font-bold text-slate-700 hover:bg-slate-50"
-                          >
-                            Ver seguimiento
-                            <ArrowRight className="h-3.5 w-3.5" />
-                          </Link>
-                        </td>
+                        <OperationalInboxActionCell>
+                          <OperationalInboxFlowAction
+                            label={row.variant === 'tracking' ? 'Ver seguimiento' : 'Ver flujo'}
+                            onClick={() => onOpenFlow(row)}
+                          />
+                        </OperationalInboxActionCell>
                       </tr>
                     );
                   }
 
-                  if (row.kind === 'subject' || row.kind === 'returned') {
+                  if (row.kind === 'returned-program') {
                     return (
                       <tr key={row.id} className={tableRow}>
                         <td className="px-5 py-4 sm:px-6">
                           <p className="text-[10px] font-bold uppercase text-slate-400">{row.school}</p>
                           <p className="font-bold text-slate-900">{row.program}</p>
-                          <p className="text-xs text-slate-500">Sem. {row.kind === 'subject' ? row.semesterNumber : '—'}</p>
+                          <p className="text-xs text-slate-500">Devolución por programa</p>
                         </td>
-                        <td className="px-3 py-4 font-semibold text-slate-800">{row.subjectName}</td>
+                        <td className="px-3 py-4 text-xs text-slate-600">
+                          {row.subjectsAffected} materia{row.subjectsAffected === 1 ? '' : 's'} devuelta
+                          {row.subjectsAffected === 1 ? '' : 's'}
+                        </td>
                         <td className="px-3 py-4">
-                          <OperationalStateBadgeV2 state={row.operationalState} />
+                          <span className="inline-flex rounded-full bg-rose-50 px-2.5 py-1 text-[10px] font-bold text-rose-700 ring-1 ring-rose-100">
+                            Devuelta
+                          </span>
                         </td>
-                        <td className="px-3 py-4 text-xs font-semibold text-slate-600">
-                          {roleLabel(row.responsibleRole)}
-                        </td>
+                        <td className="px-3 py-4 text-xs font-semibold text-slate-600">—</td>
                         <td className="px-3 py-4">
                           <div className="flex flex-col gap-1">
                             {row.stageDueAt ? (
@@ -167,18 +181,9 @@ export function PlanningWorkTable({
                             '—'
                           )}
                         </td>
-                        <td className="px-5 py-4 text-right sm:px-6">
-                          <Button
-                            type="button"
-                            size="sm"
-                            variant="secondary"
-                            className="gap-1.5"
-                            onClick={() => onOpenFlow(row)}
-                          >
-                            Ver flujo
-                            <ArrowRight className="h-3.5 w-3.5" />
-                          </Button>
-                        </td>
+                        <OperationalInboxActionCell>
+                          <OperationalInboxFlowAction label="Ver flujo" onClick={() => onOpenFlow(row)} />
+                        </OperationalInboxActionCell>
                       </tr>
                     );
                   }

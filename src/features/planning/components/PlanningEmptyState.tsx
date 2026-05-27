@@ -26,7 +26,7 @@ export function PlanningEmptyState({
     : isRadication
       ? 'No hay radicaciones pendientes de revisión'
       : isTracking
-        ? 'No hay paquetes en seguimiento activo'
+        ? 'No hay programas en seguimiento activo'
         : isReturned
           ? 'No hay devoluciones activas en seguimiento'
           : 'No tienes validaciones pendientes en este momento';
@@ -36,13 +36,13 @@ export function PlanningEmptyState({
     : isRadication
       ? 'Product registrará el radicado cuando todas las materias estén listas. Puede revisar historial o solicitudes en curso.'
       : isTracking
-        ? 'Los semestres que ya validaste y siguen en Fábrica, LMS o revisión académica aparecerán aquí.'
+        ? 'Los programas que ya validaste y siguen en Fábrica, LMS o revisión académica aparecerán aquí agrupados por solicitud.'
         : isReturned
           ? 'Las devoluciones recientes a Product, Fábrica o LMS se listan aquí cuando existan.'
           : 'Puedes revisar radicaciones, historial reciente o paquetes en seguimiento.';
 
   return (
-    <Card className="border-dashed border-slate-200 bg-slate-50/50 p-8 text-center">
+    <Card variant="roleGlass" className="border-dashed border-orange-200/50 p-8 text-center">
       <p className="text-base font-bold text-slate-900">{title}</p>
       <p className="mx-auto mt-2 max-w-lg text-sm font-medium text-slate-500">{description}</p>
       <div className="mt-6 flex flex-wrap items-center justify-center gap-2">

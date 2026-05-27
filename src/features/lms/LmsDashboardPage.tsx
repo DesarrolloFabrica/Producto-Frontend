@@ -1,18 +1,13 @@
 import { useCallback, useMemo, useState } from 'react';
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { History, RefreshCw, RotateCcw } from 'lucide-react';
-import { useQueryClient } from '@tanstack/react-query';
 import { DashboardShell } from '../../components/layout/DashboardShell';
 import { PageHeader } from '../../components/ui/PageHeader';
 import { Button } from '../../components/ui/Button';
-import { useToast } from '../../components/ui/ToastProvider';
-import { institutionalWorkflowApi } from '../../services/institutionalWorkflowApi';
-import type { InstitutionalOperationalAction } from '../../types/domain';
+import { Card } from '../../components/ui/Card';
 import { buildFromLocation } from '../../navigation/contextNavigation';
-import { invalidateInstitutionalWorkflowQueries } from '../institutional-workflow/institutionalQueryUtils';
 import { LmsEmptyState } from './components/LmsEmptyState';
 import { LmsKpiCards } from './components/LmsKpiCards';
-import { LmsRecentActivity } from './components/LmsRecentActivity';
 import { LmsWorkTable } from './components/LmsWorkTable';
 import { invalidateLmsDashboard } from './lmsInvalidation';
 import {
@@ -23,9 +18,12 @@ import {
 } from './lmsTypes';
 import { useLmsDashboard } from './useLmsDashboard';
 import { OperationalInboxFilterBar } from '../operations-v2/components/OperationalInboxFilterBar';
+import { OperationalInboxContextBar } from '../operations-v2/components/OperationalInboxContextBar';
+import { OperationalInboxViewTabs } from '../operations-v2/components/OperationalInboxViewTabs';
 import { OperationalInboxPagination } from '../operations-v2/components/OperationalInboxPagination';
 import {
   DEFAULT_INBOX_ADVANCED_FILTERS,
+  hasActiveInboxAdvancedFilters,
   inboxSafePage,
   inboxTotalPages,
   paginateInboxRows,
@@ -33,32 +31,37 @@ import {
   parseInboxPage,
   type InboxAdvancedFilters,
 } from '../operations-v2/operationalInboxFilters';
+import { useOperationalInboxPanelState } from '../operations-v2/useOperationalInboxPanelState';
 
 export function LmsDashboardPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
   const location = useLocation();
-  const { showToast } = useToast();
-  const queryClient = useQueryClient();
-  const filter = parseLmsFilter(searchParams.get('filter'));
+  const {
+    panel,
+    inboxFilter,
+    exploreFilter,
+    activeFilter: filter,
+    hasExploreCategoryFilter,
+    setInboxFilter,
+    setExploreFilter,
+    clearExploreFilter,
+    clearInboxFilter,
+    setPanel,
+  } = useOperationalInboxPanelState({
+    searchParams,
+    setSearchParams,
+    parseFilter: parseLmsFilter,
+    defaultFilter: 'all' as LmsDashboardFilter,
+  });
   const advanced = parseInboxAdvancedFilters(searchParams);
   const pageParam = parseInboxPage(searchParams);
-  const [busySubjectId, setBusySubjectId] = useState<string | null>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
 
-  const { visibleRows, categoryRows, allRows, kpis, recentActivity, isLoading, error, refetchAll } =
+  const { visibleRows, categoryRows, allRows, kpis, isLoading, error, refetchAll } =
     useLmsDashboard(filter, advanced);
 
-  const setFilter = useCallback(
-    (next: LmsDashboardFilter) => {
-      const params = new URLSearchParams(searchParams);
-      if (next === 'all') params.delete('filter');
-      else params.set('filter', next);
-      params.delete('page');
-      setSearchParams(params, { replace: true });
-    },
-    [searchParams, setSearchParams],
-  );
+  const setFilter = setInboxFilter;
 
   const setAdvanced = useCallback(
     (next: InboxAdvancedFilters) => {
@@ -100,6 +103,9 @@ export function LmsDashboardPage() {
     count: countLmsRowsByFilter(allRows, category.id),
   }));
 
+  const activeCategoryLabel =
+    LMS_INBOX_CATEGORIES.find((category) => category.id === inboxFilter)?.label ?? 'Bandeja';
+
   const handleRefresh = async () => {
     setIsRefreshing(true);
     try {
@@ -113,34 +119,6 @@ export function LmsDashboardPage() {
     navigate(actionUrl, {
       state: { from: buildFromLocation(location) },
     });
-  };
-
-  const handleTransition = async (
-    row: (typeof visibleRows)[number],
-    action: InstitutionalOperationalAction,
-  ) => {
-    const subjectId = row.subjectId;
-    setBusySubjectId(subjectId);
-    try {
-      const result = row.semesterId
-        ? await institutionalWorkflowApi.transitionSemester(row.semesterId, { action })
-        : await institutionalWorkflowApi.transition(subjectId, { action });
-      if (action === 'LMS_START_UPLOAD') {
-        showToast('Carga LMS iniciada');
-      } else if (action === 'LMS_CONFIRM_UPLOAD') {
-        showToast('Carga/publicación confirmada — enviada a Planeación');
-      }
-      await invalidateLmsDashboard(queryClient);
-      await invalidateInstitutionalWorkflowQueries(queryClient, {
-        subjectId,
-        projectId: result.projectId,
-        role: 'LMS',
-      });
-    } catch (e: unknown) {
-      showToast(e instanceof Error ? e.message : 'No se pudo ejecutar la acción', 'error');
-    } finally {
-      setBusySubjectId(null);
-    }
   };
 
   const showFilteredEmpty =
@@ -183,24 +161,48 @@ export function LmsDashboardPage() {
         }
       />
 
-      <LmsKpiCards kpis={kpis} activeFilter={filter} onFilterChange={setFilter} />
+      <LmsKpiCards kpis={kpis} activeFilter={inboxFilter} onFilterChange={setInboxFilter} />
 
-      <OperationalInboxFilterBar
-        accent="lms"
-        categories={categoryOptions}
-        activeCategory={filter}
-        onCategoryChange={setFilter}
-        advanced={advanced}
-        onAdvancedChange={setAdvanced}
-        totalInCategory={categoryRows.length}
-        visibleCount={visibleRows.length}
-      />
+      <div className="space-y-4">
+        <OperationalInboxViewTabs
+          mode={panel}
+          onChange={setPanel}
+          hasActiveAdvancedFilters={hasActiveInboxAdvancedFilters(advanced)}
+          hasExploreCategoryFilter={hasExploreCategoryFilter}
+        />
+
+        {panel === 'inbox' ? (
+          <OperationalInboxContextBar
+            categoryLabel={activeCategoryLabel}
+            activeCategory={inboxFilter}
+            defaultCategory="all"
+            onSecondarySelect={setInboxFilter}
+            onClearCategory={clearInboxFilter}
+            advanced={advanced}
+            onAdvancedChange={setAdvanced}
+            totalInCategory={categoryRows.length}
+            visibleCount={visibleRows.length}
+          />
+        ) : (
+          <OperationalInboxFilterBar
+            categories={categoryOptions}
+            activeCategory={exploreFilter}
+            defaultCategory="all"
+            onCategoryChange={setExploreFilter}
+            onClearCategory={clearExploreFilter}
+            advanced={advanced}
+            onAdvancedChange={setAdvanced}
+            totalInCategory={categoryRows.length}
+            visibleCount={visibleRows.length}
+          />
+        )}
+      </div>
 
       {showFilteredEmpty ? (
-        <div className="rounded-2xl border border-slate-200 bg-white px-5 py-8 text-center shadow-sm">
+        <Card variant="roleGlass" className="px-5 py-8 text-center">
           <p className="text-sm font-semibold text-slate-800">Ningún registro coincide con los filtros aplicados</p>
           <p className="mt-1 text-xs text-slate-500">
-            Hay {categoryRows.length} asignatura(s) en esta categoría. Ajuste la búsqueda, el plazo SLA o limpie los filtros.
+            Hay {categoryRows.length} programa(s) en esta categoría. Ajuste la búsqueda, el plazo SLA o limpie los filtros.
           </p>
           <Button
             type="button"
@@ -210,7 +212,7 @@ export function LmsDashboardPage() {
           >
             Limpiar filtros avanzados
           </Button>
-        </div>
+        </Card>
       ) : null}
 
       {showEmpty ? (
@@ -230,21 +232,17 @@ export function LmsDashboardPage() {
             totalRows={visibleRows.length}
             isLoading={isLoading}
             error={error}
-            busySubjectId={busySubjectId}
             onOpenFlow={openOperationalFlow}
-            onTransition={(row, action) => void handleTransition(row, action)}
           />
           <OperationalInboxPagination
             page={safePage}
             totalPages={totalPages}
             totalItems={visibleRows.length}
-            itemLabel={{ one: 'asignatura', other: 'asignaturas' }}
+            itemLabel={{ one: 'programa', other: 'programas' }}
             onPageChange={setPage}
           />
         </>
       ) : null}
-
-      {filter !== 'history' ? <LmsRecentActivity items={recentActivity} /> : null}
     </DashboardShell>
   );
 }

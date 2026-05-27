@@ -1,146 +1,272 @@
 import { useMemo } from 'react';
+
 import { useQuery, useQueryClient } from '@tanstack/react-query';
+
 import { institutionalWorkflowApi } from '../../services/institutionalWorkflowApi';
+
 import { planningApi } from '../../services/planningApi';
+
 import { projectRadicationApi } from '../../services/projectRadicationApi';
-import { institutionalStateLabel } from '../institutional-workflow/institutionalCopy';
+
+import { usePlanningTrackingProgramsQuery } from '../queries/useInstitutionalProgramsWorkQuery';
+
 import { queryKeys } from '../queries/queryKeys';
+
 import { invalidatePlanningDashboard } from './planningInvalidation';
+
 import type { PlanningDashboardFilter } from './planningTypes';
+
 import {
+
   applyPlanningInboxAdvancedFilters,
+
+  countPlanningProgramsWithState,
+
   filterPlanningRows,
+
   mapFinalizedProject,
+
+  mapProgramTrackingWorkItem,
+
+  mapProgramWorkItem,
+
   mapRadicationWorkItem,
-  mapReturnedPreview,
-  mapSubjectWorkItem,
-  mapTrackingWorkItem,
+
+  mapReturnedPrograms,
+
 } from './planningTypes';
+
 import type { InboxAdvancedFilters } from '../operations-v2/operationalInboxFilters';
 
+
+
 export function usePlanningDashboard(filter: PlanningDashboardFilter, advanced: InboxAdvancedFilters) {
+
   const queryClient = useQueryClient();
 
-  const workQuery = useQuery({
-    queryKey: queryKeys.institutionalWork.planning(),
-    queryFn: () => institutionalWorkflowApi.planningWork(),
+
+
+  const workProgramsQuery = useQuery({
+
+    queryKey: queryKeys.institutionalWork.planningPrograms(),
+
+    queryFn: () => institutionalWorkflowApi.planningWorkPrograms(),
+
     staleTime: 15_000,
+
   });
+
+
 
   const radicationQuery = useQuery({
+
     queryKey: queryKeys.planning.radicationWork(),
+
     queryFn: () => projectRadicationApi.planningWork(),
+
     staleTime: 15_000,
+
   });
+
+
 
   const summaryQuery = useQuery({
+
     queryKey: queryKeys.planning.dashboardSummary(),
+
     queryFn: () => planningApi.dashboardSummary(),
+
     staleTime: 15_000,
+
   });
 
-  const trackingQuery = useQuery({
-    queryKey: queryKeys.planning.tracking(),
-    queryFn: () => institutionalWorkflowApi.planningTracking(),
-    staleTime: 15_000,
-  });
+
+
+  const trackingProgramsQuery = usePlanningTrackingProgramsQuery();
+
+
 
   const allRows = useMemo(() => {
-    const subjectRows = (workQuery.data ?? []).map((item) => {
-      const row = mapSubjectWorkItem(item);
-      if (row.kind === 'subject') {
-        row.stageLabel = institutionalStateLabel(row.operationalState);
-      }
-      return row;
-    });
+
+    const pendingProgramRows = (workProgramsQuery.data ?? []).map((item) =>
+
+      mapProgramWorkItem(item, 'pending'),
+
+    );
+
     const radicationRows = (radicationQuery.data ?? []).map(mapRadicationWorkItem);
-    const returnedRows = (summaryQuery.data?.returnedPreview ?? []).map((item) => {
-      const row = mapReturnedPreview(item);
-      if (row.kind === 'returned') {
-        row.stageLabel = institutionalStateLabel(row.operationalState);
-      }
-      return row;
-    });
+
+    const returnedRows = mapReturnedPrograms(summaryQuery.data?.returnedPreview ?? []);
+
     const finalizedRows = (summaryQuery.data?.finalizedProjects ?? []).map(mapFinalizedProject);
-    const trackingRows = (trackingQuery.data ?? []).map((item) => {
-      const row = mapTrackingWorkItem(item);
-      if (row.kind === 'tracking') {
-        row.stageLabel = institutionalStateLabel(row.operationalState);
-      }
-      return row;
-    });
-    const subjectIds = new Set(subjectRows.map((row) => row.id));
-    const dedupedReturned = returnedRows.filter((row) => !subjectIds.has(row.id));
-    const trackingIds = new Set([...subjectIds, ...dedupedReturned.map((row) => row.id)]);
-    const dedupedTracking = trackingRows.filter((row) => !trackingIds.has(row.id));
+
+    const trackingRows = (trackingProgramsQuery.data ?? [])
+      .map(mapProgramTrackingWorkItem)
+      .filter((row) => !pendingProgramRows.some((pending) => pending.projectId === row.projectId));
+
+
+
+    const pendingProjectIds = new Set(pendingProgramRows.map((row) => row.projectId));
+
+    const dedupedReturned = returnedRows.filter((row) => !pendingProjectIds.has(row.projectId));
+
+
+
     return [
-      ...subjectRows,
+
+      ...pendingProgramRows,
+
       ...radicationRows,
+
       ...dedupedReturned,
-      ...dedupedTracking,
+
+      ...trackingRows,
+
       ...finalizedRows,
+
     ];
-  }, [workQuery.data, radicationQuery.data, summaryQuery.data, trackingQuery.data]);
+
+  }, [workProgramsQuery.data, radicationQuery.data, summaryQuery.data, trackingProgramsQuery.data]);
+
+
 
   const categoryRows = useMemo(() => filterPlanningRows(allRows, filter), [allRows, filter]);
+
   const visibleRows = useMemo(
+
     () => applyPlanningInboxAdvancedFilters(categoryRows, advanced),
+
     [categoryRows, advanced],
+
   );
 
-  const kpis = useMemo(() => {
-    const summary = summaryQuery.data?.kpis;
-    const work = workQuery.data ?? [];
-    const countState = (state: string) =>
-      work.filter((w) => w.operationalState === state).length;
-    return {
-      initialValidations:
-        summary?.initialValidations ?? countState('PENDING_PLANNING_INITIAL_VALIDATION'),
-      productionValidations:
-        summary?.productionValidations ?? countState('PENDING_PLANNING_PRODUCTION_VALIDATION'),
-      lmsValidations: summary?.lmsValidations ?? countState('PENDING_PLANNING_LMS_VALIDATION'),
-      radicationsPending: summary?.radicationsPending ?? (radicationQuery.data?.length ?? 0),
-      inProgress: summary?.inProgress ?? 0,
-      finalized: summary?.finalized ?? 0,
-    };
-  }, [workQuery.data, radicationQuery.data, summaryQuery.data]);
 
-  const pendingSubjectCount = workQuery.data?.length ?? 0;
+
+  const kpis = useMemo(() => {
+
+    const summary = summaryQuery.data?.kpis;
+
+    const programs = workProgramsQuery.data ?? [];
+
+    return {
+
+      initialValidations:
+
+        summary?.initialValidations ??
+
+        countPlanningProgramsWithState(programs, 'PENDING_PLANNING_INITIAL_VALIDATION'),
+
+      productionValidations:
+
+        summary?.productionValidations ??
+
+        countPlanningProgramsWithState(programs, 'PENDING_PLANNING_PRODUCTION_VALIDATION'),
+
+      lmsValidations:
+
+        summary?.lmsValidations ??
+
+        countPlanningProgramsWithState(programs, 'PENDING_PLANNING_LMS_VALIDATION'),
+
+      radicationsPending: summary?.radicationsPending ?? (radicationQuery.data?.length ?? 0),
+
+      inProgress: summary?.inProgress ?? 0,
+
+      finalized: summary?.finalized ?? 0,
+
+    };
+
+  }, [workProgramsQuery.data, radicationQuery.data, summaryQuery.data]);
+
+
+
+  const pendingProgramCount = workProgramsQuery.data?.length ?? 0;
+
   const pendingRadicationCount = radicationQuery.data?.length ?? 0;
-  const pendingTrackingCount = trackingQuery.data?.length ?? 0;
+
+  const pendingTrackingCount = trackingProgramsQuery.data?.length ?? 0;
+
   const hasNoPending =
-    pendingSubjectCount === 0 &&
+
+    pendingProgramCount === 0 &&
+
     pendingRadicationCount === 0 &&
+
     pendingTrackingCount === 0 &&
+
     (summaryQuery.data?.returnedPreview?.length ?? 0) === 0;
 
+
+
   const isLoading =
-    workQuery.isLoading || radicationQuery.isLoading || summaryQuery.isLoading || trackingQuery.isLoading;
+
+    workProgramsQuery.isLoading ||
+
+    radicationQuery.isLoading ||
+
+    summaryQuery.isLoading ||
+
+    trackingProgramsQuery.isLoading;
+
   const error =
-    workQuery.error || radicationQuery.error || summaryQuery.error || trackingQuery.error
+
+    workProgramsQuery.error ||
+
+    radicationQuery.error ||
+
+    summaryQuery.error ||
+
+    trackingProgramsQuery.error
+
       ? 'No se pudo cargar el panel de Planeación'
+
       : null;
 
+
+
   const refetchAll = async () => {
+
     await invalidatePlanningDashboard(queryClient);
+
   };
 
+
+
   return {
-    workQuery,
+
+    workProgramsQuery,
+
     radicationQuery,
+
     summaryQuery,
+
     visibleRows,
+
     categoryRows,
+
     allRows,
+
     kpis,
+
     recentActivity: summaryQuery.data?.recentActivity ?? [],
+
     returnedPreview: summaryQuery.data?.returnedPreview ?? [],
+
     finalizedProjects: summaryQuery.data?.finalizedProjects ?? [],
+
     hasNoPending,
-    pendingSubjectCount,
+
+    pendingProgramCount,
+
     pendingRadicationCount,
+
     isLoading,
+
     error,
+
     refetchAll,
+
   };
+
 }
+
