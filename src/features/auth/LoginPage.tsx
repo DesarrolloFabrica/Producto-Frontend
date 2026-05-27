@@ -1,7 +1,7 @@
-import { useMemo, useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { ArrowRight, BookOpenCheck, Factory, Lock, Shield, Sparkles, AlertTriangle, ClipboardCheck, CloudUpload } from 'lucide-react';
 import { motion } from 'motion/react';
-import { useLocation, useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { Button } from '../../components/ui/Button';
 import { Card } from '../../components/ui/Card';
 import { cn } from '../../components/ui/tokens';
@@ -10,18 +10,12 @@ import { useAuth } from './AuthContext';
 export function LoginPage() {
   const { login, isLoading, isAuthenticated } = useAuth();
   const navigate = useNavigate();
-  const location = useLocation();
-
-  const savedPath = useMemo(() => {
-    const from = (location.state as { from?: { pathname?: string } } | null)?.from?.pathname;
-    return from && from !== '/login' && from !== '/' ? from : null;
-  }, [location.state]);
 
   useEffect(() => {
     if (!isLoading && isAuthenticated) {
-      navigate(savedPath ?? '/', { replace: true });
+      navigate('/', { replace: true });
     }
-  }, [isAuthenticated, isLoading, navigate, savedPath]);
+  }, [isAuthenticated, isLoading, navigate]);
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -45,7 +39,7 @@ export function LoginPage() {
     setSubmitting(true);
     try {
       await login(email, password);
-      navigate(savedPath ?? '/', { replace: true });
+      navigate('/', { replace: true });
     } catch (e: any) {
       setError(e?.message ? String(e.message) : 'No se pudo iniciar sesión');
     } finally {

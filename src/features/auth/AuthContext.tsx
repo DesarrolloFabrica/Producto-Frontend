@@ -8,6 +8,8 @@ import { queryClient } from '../queries/queryClient';
 
 const TOKEN_KEY = 'producto_access_token';
 const USER_KEY = 'producto_auth_user';
+const ENTRY_REDIRECT_KEY = 'producto_entry_redirect_done';
+const OPS_V2_STORAGE_KEY = 'producto_ops_v2_state_v1';
 
 interface AuthContextValue {
   user: AuthUser | null;
@@ -37,6 +39,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       localStorage.removeItem(TOKEN_KEY);
       localStorage.removeItem(USER_KEY);
+      localStorage.removeItem(OPS_V2_STORAGE_KEY);
+      sessionStorage.removeItem(ENTRY_REDIRECT_KEY);
     } catch {
       // ignore
     }
@@ -106,6 +110,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       try {
         localStorage.setItem(TOKEN_KEY, accessToken);
         localStorage.setItem(USER_KEY, JSON.stringify(nextUser));
+        sessionStorage.removeItem(ENTRY_REDIRECT_KEY);
       } catch {
         // ignore
       }

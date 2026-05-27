@@ -16,6 +16,10 @@ export interface CorrectionSentPreview {
 
 export function useFactoryDashboard(backendEnabled: boolean) {
   const summaryQuery = useFactoryDashboardSummaryQuery(backendEnabled);
+  const allSubjectsQuery = useFactorySubjectsQuery(
+    { origin: 'all', page: 1, limit: 100, sort: 'updatedAt' },
+    backendEnabled,
+  );
   const newlyAddedQuery = useFactorySubjectsQuery({ origin: 'new', page: 1, limit: 5 }, backendEnabled);
   const correctionSentQuery = useFactorySubjectsQuery(
     { status: 'CORRECTION_SENT', page: 1, limit: 5 },
@@ -43,20 +47,36 @@ export function useFactoryDashboard(backendEnabled: boolean) {
   const isLoading = summaryQuery.isLoading && !summaryQuery.data;
   const isBackgroundRefreshing =
     (summaryQuery.isFetching && Boolean(summaryQuery.data)) ||
+    allSubjectsQuery.isBackgroundFetching ||
     newlyAddedQuery.isBackgroundFetching ||
     correctionSentQuery.isBackgroundFetching;
 
   const error = useMemo(() => {
-    const err = summaryQuery.error ?? newlyAddedQuery.error ?? correctionSentQuery.error;
+    const err =
+      summaryQuery.error ??
+      allSubjectsQuery.error ??
+      newlyAddedQuery.error ??
+      correctionSentQuery.error;
     return err ? getApiErrorMessage(err) : null;
-  }, [summaryQuery.error, newlyAddedQuery.error, correctionSentQuery.error]);
+  }, [
+    summaryQuery.error,
+    allSubjectsQuery.error,
+    newlyAddedQuery.error,
+    correctionSentQuery.error,
+  ]);
 
   const loadSummary = useCallback(async () => {
-    await Promise.all([summaryQuery.refetch(), newlyAddedQuery.refetch(), correctionSentQuery.refetch()]);
-  }, [summaryQuery, newlyAddedQuery, correctionSentQuery]);
+    await Promise.all([
+      summaryQuery.refetch(),
+      allSubjectsQuery.refetch(),
+      newlyAddedQuery.refetch(),
+      correctionSentQuery.refetch(),
+    ]);
+  }, [summaryQuery, allSubjectsQuery, newlyAddedQuery, correctionSentQuery]);
 
   return {
     summary,
+    allSubjects: allSubjectsQuery.data?.items ?? [],
     newlyAddedPreview,
     correctionSentPreview,
     isLoading,

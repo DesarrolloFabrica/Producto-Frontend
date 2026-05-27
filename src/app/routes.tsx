@@ -20,8 +20,8 @@ import { OperationalWorkflowV2Provider } from '../features/operations-v2/store/O
 import { PlanningDashboardPage } from '../features/planning/PlanningDashboardPage';
 import { LmsDashboardPage } from '../features/lms/LmsDashboardPage';
 import { SubjectOperationsPage } from '../features/institutional-workflow/SubjectOperationsPage';
-import { SemesterOperationsPage } from '../features/institutional-workflow/SemesterOperationsPage';
 import type { Role } from '../types/domain';
+import { homePathForRole, isPathAllowedForRole } from '../navigation/roleNavigation';
 
 function RequireAuth() {
   const { isAuthenticated, isLoading } = useAuth();
@@ -31,18 +31,23 @@ function RequireAuth() {
   return <AppShell />;
 }
 
-function homePathForRole(role: Role | null): string {
-  if (role === 'FABRICA') return '/factory/dashboard';
-  if (role === 'PLANEACION') return '/planning/dashboard';
-  if (role === 'LMS') return '/lms/dashboard';
-  return '/product/dashboard';
-}
-
 function HomeRedirect() {
   const { role, isAuthenticated, isLoading } = useAuth();
   if (isLoading) return <RouteLoadingScreen message="Validando sesión..." />;
   if (!isAuthenticated) return <Navigate to="/login" replace />;
   return <Navigate to={homePathForRole(role)} replace />;
+}
+
+function RoleScopeGuard({ children }: { children: React.ReactNode }) {
+  const { role, isAuthenticated, isLoading } = useAuth();
+  const location = useLocation();
+  if (isLoading) return <RouteLoadingScreen message="Validando sesión..." />;
+  if (!isAuthenticated) return <Navigate to="/login" replace />;
+  const currentPath = `${location.pathname}${location.search ?? ''}`;
+  if (!isPathAllowedForRole(currentPath, role)) {
+    return <Navigate to={homePathForRole(role)} replace />;
+  }
+  return <>{children}</>;
 }
 
 function RoleRedirect({ expectedRole, children }: { expectedRole: Role; children: React.ReactNode }) {
@@ -59,24 +64,23 @@ export const router = createBrowserRouter([
     path: '/',
     element: <RequireAuth />,
     children: [
-      { index: true, element: <HomeRedirect /> },
-      { path: 'product/dashboard', element: <RoleRedirect expectedRole="PRODUCT"><ProductDashboardPage /></RoleRedirect> },
-      { path: 'product/work', element: <RoleRedirect expectedRole="PRODUCT"><ProductWorkPage /></RoleRedirect> },
-      { path: 'factory/dashboard', element: <RoleRedirect expectedRole="FABRICA"><FactoryDashboardPage /></RoleRedirect> },
-      { path: 'factory/work', element: <RoleRedirect expectedRole="FABRICA"><FactoryWorkPage /></RoleRedirect> },
-      { path: 'planning/dashboard', element: <RoleRedirect expectedRole="PLANEACION"><PlanningDashboardPage /></RoleRedirect> },
-      { path: 'lms/dashboard', element: <RoleRedirect expectedRole="LMS"><LmsDashboardPage /></RoleRedirect> },
-      { path: 'subjects/:subjectId/operations', element: <SubjectOperationsPage /> },
-      { path: 'projects/:projectId/semesters/:semesterId/operations', element: <SemesterOperationsPage /> },
-      { path: 'workflow-preview', element: <OperationalWorkflowV2Provider><WorkflowPreviewPage /></OperationalWorkflowV2Provider> },
-      { path: 'operations-v2/subjects/:subjectId', element: <OperationalWorkflowV2Provider><OperationalSubjectDetailV2Page /></OperationalWorkflowV2Provider> },
-      { path: 'projects', element: <ProjectsPage /> },
-      { path: 'projects/:projectId', element: <ProjectDetailPage /> },
-      { path: 'projects/:projectId/semesters/:semesterNumber', element: <ProjectSemesterSubjectsPage /> },
-      { path: 'subjects/:subjectId', element: <SubjectDetailPage /> },
-      { path: 'notifications', element: <NotificationsPage /> },
-      { path: 'notifications/settings', element: <NotificationSettings /> },
-      { path: 'audit', element: <AuditPage /> },
+      { index: true, element: <RoleScopeGuard><HomeRedirect /></RoleScopeGuard> },
+      { path: 'product/dashboard', element: <RoleScopeGuard><RoleRedirect expectedRole="PRODUCT"><ProductDashboardPage /></RoleRedirect></RoleScopeGuard> },
+      { path: 'product/work', element: <RoleScopeGuard><RoleRedirect expectedRole="PRODUCT"><ProductWorkPage /></RoleRedirect></RoleScopeGuard> },
+      { path: 'factory/dashboard', element: <RoleScopeGuard><RoleRedirect expectedRole="FABRICA"><FactoryDashboardPage /></RoleRedirect></RoleScopeGuard> },
+      { path: 'factory/work', element: <RoleScopeGuard><RoleRedirect expectedRole="FABRICA"><FactoryWorkPage /></RoleRedirect></RoleScopeGuard> },
+      { path: 'planning/dashboard', element: <RoleScopeGuard><RoleRedirect expectedRole="PLANEACION"><PlanningDashboardPage /></RoleRedirect></RoleScopeGuard> },
+      { path: 'lms/dashboard', element: <RoleScopeGuard><RoleRedirect expectedRole="LMS"><LmsDashboardPage /></RoleRedirect></RoleScopeGuard> },
+      { path: 'subjects/:subjectId/operations', element: <RoleScopeGuard><SubjectOperationsPage /></RoleScopeGuard> },
+      { path: 'workflow-preview', element: <RoleScopeGuard><OperationalWorkflowV2Provider><WorkflowPreviewPage /></OperationalWorkflowV2Provider></RoleScopeGuard> },
+      { path: 'operations-v2/subjects/:subjectId', element: <RoleScopeGuard><OperationalWorkflowV2Provider><OperationalSubjectDetailV2Page /></OperationalWorkflowV2Provider></RoleScopeGuard> },
+      { path: 'projects', element: <RoleScopeGuard><ProjectsPage /></RoleScopeGuard> },
+      { path: 'projects/:projectId', element: <RoleScopeGuard><ProjectDetailPage /></RoleScopeGuard> },
+      { path: 'projects/:projectId/semesters/:semesterNumber', element: <RoleScopeGuard><ProjectSemesterSubjectsPage /></RoleScopeGuard> },
+      { path: 'subjects/:subjectId', element: <RoleScopeGuard><SubjectDetailPage /></RoleScopeGuard> },
+      { path: 'notifications', element: <RoleScopeGuard><NotificationsPage /></RoleScopeGuard> },
+      { path: 'notifications/settings', element: <RoleScopeGuard><NotificationSettings /></RoleScopeGuard> },
+      { path: 'audit', element: <RoleScopeGuard><AuditPage /></RoleScopeGuard> },
     ],
   },
   { path: '*', element: <Navigate to="/" replace /> },
