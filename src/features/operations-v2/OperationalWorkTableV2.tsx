@@ -1,6 +1,7 @@
-import { ArrowRight, CalendarDays } from 'lucide-react';
+import { ArrowRight, CalendarDays, Inbox } from 'lucide-react';
 import { Card } from '../../components/ui/Card';
 import { Button } from '../../components/ui/Button';
+import { EmptyState } from '../../components/ui/EmptyState';
 import { formatDate } from '../../utils/formatters';
 import type { OperationalActionV2, OperationalRoleV2, OperationalWorkItemV2 } from '../../types/operationalWorkflow';
 import { OperationalActionsV2 } from './components/OperationalActionsV2';
@@ -77,12 +78,17 @@ export function OperationalWorkTableV2(props: OperationalWorkTableV2Props) {
       ) : null}
 
       {showEmpty ? (
-        <div className="space-y-3 p-8 text-center">
-          <p className="text-sm text-slate-500">No hay asignaturas pendientes en su bandeja.</p>
-          <Button type="button" size="sm" variant="secondary" onClick={onRefresh}>
-            Actualizar bandeja
-          </Button>
-        </div>
+        <EmptyState
+          icon={Inbox}
+          title="Bandeja al día"
+          description="No hay asignaturas pendientes en su bandeja operacional."
+          variant="operational"
+          action={
+            <Button type="button" size="sm" variant="secondary" onClick={onRefresh}>
+              Actualizar bandeja
+            </Button>
+          }
+        />
       ) : (
         <>
           <div className="hidden overflow-auto md:block">

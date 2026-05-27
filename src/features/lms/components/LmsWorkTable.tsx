@@ -1,5 +1,7 @@
 import { ArrowRight, Loader2 } from 'lucide-react';
 import { Card } from '../../../components/ui/Card';
+import { SkeletonTable } from '../../../components/ui/Skeleton';
+import { cn, surface, tableRow, text } from '../../../components/ui/tokens';
 import { Button } from '../../../components/ui/Button';
 import { formatDate } from '../../../utils/formatters';
 import { OperationalStateBadgeV2 } from '../../operations-v2/components/OperationalStateBadgeV2';
@@ -36,13 +38,13 @@ export function LmsWorkTable({
   };
 
   return (
-    <Card className="overflow-hidden p-0">
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200/60 bg-white px-5 py-3.5 sm:px-6">
+    <Card variant="solid" className="overflow-hidden p-0">
+      <div className={cn('flex flex-wrap items-center justify-between gap-3 border-b border-slate-200/60 px-5 py-3.5 sm:px-6', surface.table)}>
         <div>
-          <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Bandeja LMS</p>
+          <p className={text.label}>Bandeja LMS</p>
           <h2 className="text-sm font-semibold text-slate-900">Carga y publicación</h2>
         </div>
-        <span className="rounded-md bg-slate-50 px-2.5 py-1 text-[10px] font-medium text-slate-500 ring-1 ring-slate-200/70">
+        <span className="rounded-lg bg-white px-2.5 py-1 text-[11px] font-medium text-slate-500 ring-1 ring-slate-200/70">
           {rows.length} en vista
         </span>
       </div>
@@ -54,8 +56,8 @@ export function LmsWorkTable({
       ) : null}
 
       {isLoading ? (
-        <div className="flex justify-center p-10">
-          <Loader2 className="h-6 w-6 animate-spin text-orange-500" />
+        <div className="p-5 sm:p-6">
+          <SkeletonTable rows={6} />
         </div>
       ) : rows.length === 0 ? null : (
         <div className="overflow-x-auto">
@@ -76,7 +78,7 @@ export function LmsWorkTable({
                 const action = primaryAction(row);
                 const isBusy = busySubjectId === row.subjectId;
                 return (
-                  <tr key={row.id} className="hover:bg-slate-50/60">
+                  <tr key={row.id} className={tableRow}>
                     <td className="px-5 py-4 sm:px-6">
                       <p className="text-[10px] font-bold uppercase text-slate-400">{row.school}</p>
                       <p className="font-bold text-slate-900">{row.program}</p>

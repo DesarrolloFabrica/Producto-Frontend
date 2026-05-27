@@ -28,8 +28,8 @@ export function PlanningFilterChips({
           className={cn(
             'rounded-full px-3.5 py-1.5 text-xs font-bold transition-all',
             active === f.id
-              ? 'bg-orange-500 text-white shadow-sm'
-              : 'bg-white text-slate-600 ring-1 ring-slate-200 hover:bg-slate-50',
+              ? 'bg-indigo-500 text-white shadow-sm'
+              : 'bg-white/70 text-slate-500 ring-1 ring-slate-200/70 hover:bg-white hover:text-slate-700',
           )}
         >
           {f.label}

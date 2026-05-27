@@ -31,10 +31,10 @@ export function FactoryDashboardQuickNav({
             type="button"
             onClick={() => onViewChange(link.id)}
             className={cn(
-              'rounded-[12px] px-3 py-2 text-xs font-bold transition-all',
+              'rounded-xl px-3 py-2 text-xs font-semibold transition-all duration-200',
               view === link.id
-                ? 'bg-[#FF6B00] text-white shadow-lg shadow-[#FF6B00]/20'
-                : 'bg-white text-[#64748B] ring-1 ring-slate-200/60 hover:bg-slate-50',
+                ? 'bg-amber-500 text-white shadow-sm'
+                : 'bg-white/80 text-slate-600 ring-1 ring-slate-200/60 hover:bg-slate-50',
             )}
           >
             {link.label}

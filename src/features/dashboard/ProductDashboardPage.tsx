@@ -1,7 +1,8 @@
 import { useMemo, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { AlertTriangle, ClipboardList, FolderKanban, Plus, Sparkles, Factory } from 'lucide-react';
+import { AlertTriangle, ClipboardList, FolderKanban, Plus, RefreshCw, Sparkles, Factory } from 'lucide-react';
 import { buildFromLocation } from '../../navigation/contextNavigation';
+import { DashboardKpiGrid, DashboardShell } from '../../components/layout/DashboardShell';
 import { MetricCard } from '../../components/cards/MetricCard';
 import { OperationalTray } from '../../components/operational/OperationalTray';
 import { Button } from '../../components/ui/Button';
@@ -128,16 +129,28 @@ export function ProductDashboardPage() {
   );
 
   return (
-    <div className="space-y-7">
+    <DashboardShell>
       <PageHeader
-        prominentEyebrow
+        roleAccent="product"
         eyebrow="Centro de control"
         title="Dashboard Product"
-        description="Resumen operativo por materia: revision, correcciones, cambios y atrasos."
+        description="Resumen operativo por materia: revisión, correcciones, cambios y atrasos."
         action={
-          <Button size="sm" onClick={() => setShowCreateModal(true)} className="shadow-lg shadow-orange-500/25">
-            <Plus className="h-3.5 w-3.5" /> Crear solicitud
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              className="gap-2"
+              onClick={() => void refreshProjects()}
+            >
+              <RefreshCw className="h-3.5 w-3.5" />
+              Refrescar
+            </Button>
+            <Button size="sm" onClick={() => setShowCreateModal(true)}>
+              <Plus className="h-3.5 w-3.5" /> Crear solicitud
+            </Button>
+          </div>
         }
       />
 
@@ -149,24 +162,18 @@ export function ProductDashboardPage() {
         />
       )}
 
-      <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
-        <MetricCard variant="subjectPanel" label="Solicitudes activas" value={activeProjects} icon={FolderKanban} />
+      <DashboardKpiGrid columns={6}>
+        <MetricCard label="Solicitudes activas" value={activeProjects} icon={FolderKanban} />
+        <MetricCard label="Pend. experto temático" value={pendingSubjectMatterExpert} icon={ClipboardList} />
+        <MetricCard label="Solicitudes nuevas" value={notStarted.length} icon={Sparkles} />
         <MetricCard
-          variant="subjectPanel"
-          label="Pend. experto temático"
-          value={pendingSubjectMatterExpert}
-          icon={ClipboardList}
-        />
-        <MetricCard variant="subjectPanel" label="Solicitudes nuevas" value={notStarted.length} icon={Sparkles} />
-        <MetricCard
-          variant="subjectPanel"
           label="Materias por revisar"
           value={backendEnabled && institutionalPendingReview.length > 0 ? institutionalPendingReview.length : inReview.length}
           icon={ClipboardList}
         />
-        <MetricCard variant="subjectPanel" label="Correcciones por validar" value={correctionSent.length} icon={AlertTriangle} />
-        <MetricCard variant="subjectPanel" label="Proyectos atrasados" value={lateProjects} icon={AlertTriangle} />
-      </section>
+        <MetricCard label="Correcciones por validar" value={correctionSent.length} icon={AlertTriangle} tone="text-rose-500" />
+        <MetricCard label="Proyectos atrasados" value={lateProjects} icon={AlertTriangle} tone="text-red-500" />
+      </DashboardKpiGrid>
 
       <section className="grid gap-4 md:grid-cols-2">
         <OperationalTray
@@ -300,6 +307,6 @@ export function ProductDashboardPage() {
       )}
 
       <CreateProjectModal isOpen={showCreateModal} onClose={() => setShowCreateModal(false)} />
-    </div>
+    </DashboardShell>
   );
 }

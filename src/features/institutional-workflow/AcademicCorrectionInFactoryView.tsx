@@ -1,7 +1,7 @@
 import { Link } from 'react-router-dom';
 import { Factory, ArrowRight } from 'lucide-react';
 import type { OperationalWorkspaceDto } from '../../services/institutionalWorkflowApi';
-import { institutionalStateLabel } from './institutionalCopy';
+import { InstitutionalStateBadge } from '../../components/status/InstitutionalStateBadge';
 import { Card } from '../../components/ui/Card';
 
 type AcademicCorrectionInFactoryViewProps = {
@@ -20,9 +20,9 @@ export function AcademicCorrectionInFactoryView({ workspace }: AcademicCorrectio
           <p className="mt-2 text-sm font-medium text-slate-600">
             Solicitó correcciones académicas. Fábrica debe reentregar la producción antes de continuar la revisión.
           </p>
-          <p className="mt-2 text-xs font-bold text-amber-800">
-            {institutionalStateLabel(workspace.operationalState)}
-          </p>
+          <div className="mt-2">
+            <InstitutionalStateBadge state={workspace.operationalState} />
+          </div>
           {workspace.lastReturnReason ? (
             <p className="mt-2 text-sm text-rose-800">
               <strong>Motivo:</strong> {workspace.lastReturnReason}

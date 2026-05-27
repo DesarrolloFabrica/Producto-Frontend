@@ -1,6 +1,7 @@
 import { CheckCircle2, CornerDownLeft, Dot } from 'lucide-react';
 import type { OperationalStateV2 } from '../../../types/operationalWorkflow';
 import { cn } from '../../../components/ui/tokens';
+import { pipelineContainer, pipelineHeaderEyebrow, pipelineHeaderTitle } from '../../institutional-workflow/components/pipelineStyles';
 
 type StepId =
   | 'PRODUCT_CREATE'
@@ -65,9 +66,9 @@ export function OperationalPipelineV2({ state }: { state: OperationalStateV2 }) 
   const returned = isReturnedState(state);
 
   return (
-    <div className="rounded-2xl border border-slate-200/60 bg-white p-4 shadow-sm">
-      <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Pipeline institucional</p>
-      <p className="mt-1 text-xs font-bold text-slate-900">Etapa actual resaltada. Devoluciones marcadas.</p>
+    <div className={cn(pipelineContainer, 'p-4')}>
+      <p className={pipelineHeaderEyebrow}>Pipeline institucional</p>
+      <p className={pipelineHeaderTitle}>Etapa actual resaltada. Devoluciones marcadas.</p>
 
       <div className="mt-3 flex items-center gap-2 overflow-x-auto pb-1">
         {STEPS.map((step, idx) => {

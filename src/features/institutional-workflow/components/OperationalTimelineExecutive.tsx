@@ -1,6 +1,8 @@
 import type React from 'react';
 import { CheckCircle2, CornerDownLeft } from 'lucide-react';
 import type { OperationalTransitionV2 } from '../../../types/operationalWorkflow';
+import { History } from 'lucide-react';
+import { EmptyState } from '../../../components/ui/EmptyState';
 import { cn } from '../../../components/ui/tokens';
 import { actionTimelineLabel } from '../institutionalTimelineLabels';
 
@@ -65,8 +67,15 @@ type OperationalTimelineExecutiveProps = {
 export function OperationalTimelineExecutive({ items, compact = false }: OperationalTimelineExecutiveProps) {
   if (items.length === 0) {
     return (
-      <section className="border-t border-slate-200 pt-6">
-        <p className="text-sm text-slate-500">No hay eventos registrados en el historial operacional.</p>
+      <section className="border-t border-slate-200/60 pt-6">
+        <EmptyState
+          icon={History}
+          title="Sin eventos en el historial"
+          description="Las transiciones del flujo institucional aparecerán aquí."
+          variant="compact"
+          cardVariant="solid"
+          className="border-0 bg-transparent shadow-none"
+        />
       </section>
     );
   }

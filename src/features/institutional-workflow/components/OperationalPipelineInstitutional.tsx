@@ -1,6 +1,14 @@
 import { Check, CornerDownLeft } from 'lucide-react';
 import type { InstitutionalOperationalState } from '../../../types/domain';
 import { cn } from '../../../components/ui/tokens';
+import {
+  pipelineConnectorClass,
+  pipelineContainer,
+  pipelineHeaderEyebrow,
+  pipelineHeaderTitle,
+  pipelineNodeClass,
+  pipelineNodeTransition,
+} from './pipelineStyles';
 
 type StepId =
   | 'PRODUCT_CREATE'
@@ -67,14 +75,10 @@ export function OperationalPipelineInstitutional({ state }: { state: Institution
   const returned = isReturnedState(state);
 
   return (
-    <section className="rounded-xl border border-slate-100 bg-white p-6 shadow-sm">
+    <section className={pipelineContainer}>
       <header className="mb-6">
-        <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-          Pipeline institucional
-        </p>
-        <h2 className="mt-1 text-base font-semibold text-slate-900">
-          Orquestación del flujo end-to-end
-        </h2>
+        <p className={pipelineHeaderEyebrow}>Pipeline institucional</p>
+        <h2 className={pipelineHeaderTitle}>Orquestación del flujo end-to-end</h2>
       </header>
 
       <div className="overflow-x-auto pb-2">
@@ -83,22 +87,20 @@ export function OperationalPipelineInstitutional({ state }: { state: Institution
             const done = idx < curIndex || (cur === 'FINALIZED' && idx <= curIndex);
             const active = idx === curIndex;
             const upcoming = idx > curIndex;
-            const connectorDone = idx < curIndex;
+            const nodeStatus = done ? 'done' : active ? 'active' : 'upcoming';
+            const connectorStatus = idx < curIndex ? 'done' : active ? 'active' : 'upcoming';
 
             return (
               <div key={step.id} className="flex flex-1 items-start">
                 <div className="flex flex-1 flex-col items-center px-1">
                   <div
                     className={cn(
-                      'flex h-10 w-10 items-center justify-center rounded-full border-2 text-sm font-semibold transition-all',
-                      done &&
-                        'border-emerald-500 bg-emerald-500 text-white shadow-sm shadow-emerald-200/50',
-                      active &&
-                        !returned &&
-                        'border-orange-500 bg-orange-500 text-white shadow-md ring-2 ring-orange-500/30 ring-offset-2',
-                      active &&
-                        returned &&
-                        'border-rose-500 bg-rose-500 text-white shadow-md ring-2 ring-rose-500/30 ring-offset-2',
+                      'flex h-10 w-10 items-center justify-center rounded-full border-2 text-sm font-semibold',
+                      pipelineNodeTransition,
+                      pipelineNodeClass(nodeStatus, active && returned),
+                      done && 'border-emerald-500 bg-emerald-500 text-white',
+                      active && !returned && 'border-orange-500 bg-orange-500 text-white',
+                      active && returned && 'border-rose-500 bg-rose-500 text-white',
                       upcoming && 'border-slate-200 bg-white text-slate-400',
                     )}
                   >
@@ -119,14 +121,7 @@ export function OperationalPipelineInstitutional({ state }: { state: Institution
 
                 {idx < STEPS.length - 1 ? (
                   <div
-                    className={cn(
-                      'mt-5 h-0.5 min-w-[12px] flex-1 rounded-full',
-                      connectorDone
-                        ? 'bg-emerald-400'
-                        : active
-                          ? 'bg-gradient-to-r from-orange-400 to-slate-200'
-                          : 'bg-slate-200',
-                    )}
+                    className={cn('mt-5 h-0.5 min-w-[12px] flex-1 rounded-full', pipelineConnectorClass(connectorStatus))}
                     aria-hidden
                   />
                 ) : null}
@@ -137,7 +132,7 @@ export function OperationalPipelineInstitutional({ state }: { state: Institution
       </div>
 
       {returned ? (
-        <p className="mt-4 flex items-center gap-2 rounded-lg border border-rose-100 bg-rose-50 px-3 py-2 text-sm font-medium text-rose-800">
+        <p className="mt-4 flex items-center gap-2 rounded-xl border border-rose-100/80 bg-rose-50/80 px-3 py-2 text-sm font-medium text-rose-800">
           <CornerDownLeft className="h-4 w-4 shrink-0" />
           Hay una devolución activa en esta etapa del flujo.
         </p>

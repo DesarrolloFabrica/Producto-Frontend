@@ -2,6 +2,7 @@ import { useCallback, useState } from 'react';
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { History, RefreshCw, RotateCcw } from 'lucide-react';
 import { useQueryClient } from '@tanstack/react-query';
+import { DashboardShell } from '../../components/layout/DashboardShell';
 import { PageHeader } from '../../components/ui/PageHeader';
 import { Button } from '../../components/ui/Button';
 import { useToast } from '../../components/ui/ToastProvider';
@@ -84,8 +85,9 @@ export function LmsDashboardPage() {
     !isLoading && !error && visibleRows.length === 0;
 
   return (
-    <div className="mx-auto max-w-7xl space-y-6 px-4 py-6 lg:px-6">
+    <DashboardShell>
       <PageHeader
+        roleAccent="lms"
         eyebrow="Operaciones"
         title="LMS — Carga y publicación"
         description="Gestión de materias listas para carga, publicación en C-Digital/LMS y seguimiento de devoluciones."
@@ -109,8 +111,8 @@ export function LmsDashboardPage() {
               <RotateCcw className="h-4 w-4" />
               Ver devueltas
             </Button>
-            <Button type="button" className="gap-2" onClick={() => void handleRefresh()} disabled={isRefreshing}>
-              <RefreshCw className={`h-4 w-4 ${isRefreshing ? 'animate-spin' : ''}`} />
+            <Button type="button" className="gap-2" loading={isRefreshing} onClick={() => void handleRefresh()}>
+              <RefreshCw className="h-4 w-4" />
               Refrescar
             </Button>
           </div>
@@ -131,16 +133,18 @@ export function LmsDashboardPage() {
         />
       ) : null}
 
-      <LmsWorkTable
-        rows={visibleRows}
-        isLoading={isLoading}
-        error={error}
-        busySubjectId={busySubjectId}
-        onOpenFlow={openOperationalFlow}
-        onTransition={(subjectId, action) => void handleTransition(subjectId, action)}
-      />
+      {!showEmpty ? (
+        <LmsWorkTable
+          rows={visibleRows}
+          isLoading={isLoading}
+          error={error}
+          busySubjectId={busySubjectId}
+          onOpenFlow={openOperationalFlow}
+          onTransition={(subjectId, action) => void handleTransition(subjectId, action)}
+        />
+      ) : null}
 
       <LmsRecentActivity items={recentActivity} />
-    </div>
+    </DashboardShell>
   );
 }

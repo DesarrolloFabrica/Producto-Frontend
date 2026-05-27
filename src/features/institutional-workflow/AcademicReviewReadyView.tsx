@@ -1,7 +1,7 @@
 import { Link } from 'react-router-dom';
 import { GraduationCap, ArrowRight } from 'lucide-react';
 import type { OperationalWorkspaceDto } from '../../services/institutionalWorkflowApi';
-import { institutionalStateLabel } from './institutionalCopy';
+import { InstitutionalStateBadge } from '../../components/status/InstitutionalStateBadge';
 import { OperationalPipelineInstitutional } from './components/OperationalPipelineInstitutional';
 import { SlaBadgeV2 } from '../operations-v2/components/SlaBadgeV2';
 import type { SlaStatusV2 } from '../../types/operationalWorkflow';
@@ -26,9 +26,7 @@ export function AcademicReviewReadyView({ workspace }: AcademicReviewReadyViewPr
               Planeación validó LMS. Inicie la revisión académica desde el centro operacional para habilitar el checklist.
             </p>
             <div className="mt-3 flex flex-wrap gap-2">
-              <span className="rounded-full bg-white px-3 py-1 text-xs font-bold text-slate-700 ring-1 ring-slate-200/80">
-                {institutionalStateLabel(workspace.operationalState)}
-              </span>
+              <InstitutionalStateBadge state={workspace.operationalState} />
               <SlaBadgeV2 status={workspace.slaStatus as SlaStatusV2} />
             </div>
           </div>

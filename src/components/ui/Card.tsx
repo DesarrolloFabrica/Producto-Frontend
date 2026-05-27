@@ -1,24 +1,40 @@
 import type { HTMLAttributes, ReactNode } from 'react';
-import { cn, radius, surface } from './tokens';
+import { cn, motion, radius, surface } from './tokens';
 
-export type CardVariant = 'default' | 'subjectPanel' | 'nested';
+export type CardVariant = 'default' | 'elevated' | 'solid' | 'subjectPanel' | 'nested';
 
 interface CardProps extends HTMLAttributes<HTMLDivElement> {
   children: ReactNode;
   glass?: boolean;
-  /** default: marca global redondeada; subjectPanel/nested: vista materia y anidados */
+  interactive?: boolean;
   variant?: CardVariant;
 }
 
-export function Card({ children, className, glass = false, variant = 'default', ...props }: CardProps) {
-  const panel =
-    variant === 'subjectPanel'
-      ? cn(surface.subjectPanel, radius.subjectPanel)
-      : variant === 'nested'
-        ? cn(surface.nested, radius.nested)
-        : cn(surface.card, radius.card);
+const variantClasses: Record<CardVariant, string> = {
+  default: cn(surface.glassSubtle, radius.card),
+  elevated: cn(surface.elevated, radius.elevated),
+  solid: cn(surface.solid, radius.card),
+  subjectPanel: cn(surface.subjectPanel, radius.subjectPanel),
+  nested: cn(surface.nested, radius.nested),
+};
+
+export function Card({
+  children,
+  className,
+  glass = false,
+  interactive = false,
+  variant = 'default',
+  ...props
+}: CardProps) {
   return (
-    <div className={cn(glass ? cn(surface.glass, radius.card) : panel, className)} {...props}>
+    <div
+      className={cn(
+        glass ? cn(surface.glass, radius.card) : variantClasses[variant],
+        interactive && motion.hoverLift,
+        className,
+      )}
+      {...props}
+    >
       {children}
     </div>
   );

@@ -1,5 +1,5 @@
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { AlertCircle, Loader2 } from 'lucide-react';
+import { AlertCircle } from 'lucide-react';
 import { useState } from 'react';
 import { useAuth } from '../auth/AuthContext';
 import { ContextBackLink } from '../../navigation/ContextBackLink';
@@ -18,7 +18,8 @@ import { InstitutionalOperationalChecks } from './components/InstitutionalOperat
 import { institutionalStateLabel } from './institutionalCopy';
 import type { OperationalCheckKeyV2 } from '../../types/operationalWorkflow';
 import type { SlaStatusV2 } from '../../types/operationalWorkflow';
-import { cn } from '../../components/ui/tokens';
+import { Skeleton, SkeletonKpiGrid } from '../../components/ui/Skeleton';
+import { cn, surface } from '../../components/ui/tokens';
 import { useToast } from '../../components/ui/ToastProvider';
 import { getApiErrorMessage } from '../operations/apiMappers';
 
@@ -77,11 +78,12 @@ export function SubjectOperationsPage() {
 
   if (loading) {
     return (
-      <div className="flex min-h-[50vh] items-center justify-center bg-slate-50">
-        <div className="flex items-center gap-2 text-sm text-slate-500">
-          <Loader2 className="h-4 w-4 animate-spin text-orange-500" />
-          Cargando centro operacional…
-        </div>
+      <div className="mx-auto max-w-6xl space-y-6 px-4 py-8 lg:px-8">
+        <Skeleton variant="title" />
+        <Skeleton variant="card" className="h-32" />
+        <SkeletonKpiGrid count={3} />
+        <Skeleton variant="row" />
+        <Skeleton variant="row" />
       </div>
     );
   }
@@ -141,7 +143,7 @@ export function SubjectOperationsPage() {
     <div className="min-h-screen bg-slate-50">
       <div className="mx-auto max-w-6xl space-y-6 px-4 py-8 lg:px-8">
         {/* Header */}
-        <header className="flex flex-wrap items-start justify-between gap-4">
+        <header className={cn('glass-surface flex flex-wrap items-start justify-between gap-4 rounded-2xl p-5', surface.glassSubtle)}>
           <div className="flex items-start gap-3">
             <ContextBackLink
               fallback={roleHome}
@@ -183,12 +185,12 @@ export function SubjectOperationsPage() {
 
         <div className="grid items-start gap-6 lg:grid-cols-3">
           {/* Checks — 2/3 width */}
-          <section className="rounded-xl border border-slate-100 bg-white p-6 shadow-sm lg:col-span-2">
+          <section className={cn('glass-surface rounded-2xl p-6 lg:col-span-2', surface.glassSubtle)}>
             <InstitutionalOperationalChecks checks={operationalChecks} now={new Date()} />
           </section>
 
           {/* Next action — altura según contenido */}
-          <section className="h-fit self-start rounded-xl border border-slate-100 border-l-4 border-l-amber-500 bg-amber-50/30 p-5 shadow-sm lg:col-span-1">
+          <section className="glass-surface h-fit self-start rounded-2xl border-l-4 border-l-amber-500 bg-amber-50/40 p-5 lg:col-span-1">
             <p className="text-xs font-semibold uppercase tracking-wide text-amber-800/90">
               Siguiente acción
             </p>

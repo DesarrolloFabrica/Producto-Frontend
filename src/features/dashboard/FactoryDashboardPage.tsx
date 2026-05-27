@@ -4,8 +4,11 @@ import {
   AlertTriangle,
   Clock3,
   Package,
+  RefreshCw,
 } from 'lucide-react';
+import { DashboardKpiGrid, DashboardShell } from '../../components/layout/DashboardShell';
 import { MetricCard } from '../../components/cards/MetricCard';
+import { Button } from '../../components/ui/Button';
 import { OperationalTray } from '../../components/operational/OperationalTray';
 import { ProjectsLoadNotice } from '../../components/feedback/ProjectsLoadNotice';
 import { PageHeader } from '../../components/ui/PageHeader';
@@ -78,12 +81,18 @@ export function FactoryDashboardPage() {
   const hasSearch = search.trim().length > 0;
 
   return (
-    <div className="space-y-7">
+    <DashboardShell>
       <PageHeader
-        prominentEyebrow
+        roleAccent="factory"
         eyebrow="Centro de control"
         title="Dashboard Factory"
         description="Resumen operativo por materia: correcciones, producción, vencimientos y revisiones."
+        action={
+          <Button type="button" variant="secondary" size="sm" className="gap-2" onClick={() => void loadSummary()}>
+            <RefreshCw className="h-3.5 w-3.5" />
+            Refrescar
+          </Button>
+        }
       />
 
       {backendEnabled && (
@@ -102,18 +111,15 @@ export function FactoryDashboardPage() {
         />
       )}
 
-      <section className="grid gap-3 md:grid-cols-4">
+      <DashboardKpiGrid columns={4}>
         <MetricCard
-          variant="subjectPanel"
           label="Total asignadas"
           value={isLoading && !summary ? '—' : totalAssigned}
           icon={Package}
-          tone="text-[#1E293B]"
           active={view === 'all'}
           onClick={() => setView('all')}
         />
         <MetricCard
-          variant="subjectPanel"
           label="Correcciones pendientes"
           value={isLoading && !summary ? '—' : (summaryCounts?.CHANGES_REQUESTED ?? 0)}
           icon={AlertTriangle}
@@ -122,24 +128,22 @@ export function FactoryDashboardPage() {
           onClick={() => setView('corrections')}
         />
         <MetricCard
-          variant="subjectPanel"
           label="En producción"
           value={isLoading && !summary ? '—' : (summaryCounts?.IN_PRODUCTION ?? 0)}
           icon={Package}
-          tone="text-orange-500"
-          active={view === 'active'}
-          onClick={() => setView('active')}
-        />
-        <MetricCard
-          variant="subjectPanel"
-          label="Próximas / vencidas"
-          value={isLoading && !summary ? '—' : (summary?.overdueOrDueSoonCount ?? 0)}
-          icon={Clock3}
           tone="text-amber-500"
           active={view === 'active'}
           onClick={() => setView('active')}
         />
-      </section>
+        <MetricCard
+          label="Próximas / vencidas"
+          value={isLoading && !summary ? '—' : (summary?.overdueOrDueSoonCount ?? 0)}
+          icon={Clock3}
+          tone="text-emerald-500"
+          active={view === 'active'}
+          onClick={() => setView('active')}
+        />
+      </DashboardKpiGrid>
 
       <FactoryDashboardQuickNav
         view={view}
@@ -183,6 +187,6 @@ export function FactoryDashboardPage() {
           No hay bandejas para esta vista.
         </p>
       )}
-    </div>
+    </DashboardShell>
   );
 }

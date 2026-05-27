@@ -1,7 +1,7 @@
 import { Link } from 'react-router-dom';
 import { Clock3, GitBranch } from 'lucide-react';
 import type { OperationalWorkspaceDto } from '../../services/institutionalWorkflowApi';
-import { institutionalStateLabel } from './institutionalCopy';
+import { InstitutionalStateBadge } from '../../components/status/InstitutionalStateBadge';
 import { OperationalPipelineInstitutional } from './components/OperationalPipelineInstitutional';
 import { OperationalTimelineExecutive } from './components/OperationalTimelineExecutive';
 import { SlaBadgeV2 } from '../operations-v2/components/SlaBadgeV2';
@@ -81,9 +81,7 @@ export function AcademicInstitutionalWaitingView({
               habilitar la revisión de Product.
             </p>
             <div className="mt-4 flex flex-wrap items-center gap-2">
-              <span className="rounded-full bg-white px-3 py-1 text-xs font-bold text-slate-700 ring-1 ring-slate-200/80">
-                {institutionalStateLabel(workspace.operationalState)}
-              </span>
+              <InstitutionalStateBadge state={workspace.operationalState} />
               <SlaBadgeV2 status={workspace.slaStatus as SlaStatusV2} />
             </div>
           </div>

@@ -2,6 +2,7 @@ import { useCallback, useState } from 'react';
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { History, RefreshCw } from 'lucide-react';
 import { useQueryClient } from '@tanstack/react-query';
+import { DashboardShell } from '../../components/layout/DashboardShell';
 import { PageHeader } from '../../components/ui/PageHeader';
 import { Button } from '../../components/ui/Button';
 import { useToast } from '../../components/ui/ToastProvider';
@@ -105,9 +106,12 @@ export function PlanningDashboardPage() {
     busyProjectId,
   };
 
+  const showTable = !showEmpty && !showEmptyAll;
+
   return (
-    <div className="mx-auto max-w-7xl space-y-6 px-4 py-6 lg:px-6">
+    <DashboardShell>
       <PageHeader
+        roleAccent="planning"
         eyebrow="Operaciones"
         title="Planeación — Centro de validación"
         description="Seguimiento institucional de solicitudes, validaciones, radicación y cierre operativo."
@@ -122,8 +126,8 @@ export function PlanningDashboardPage() {
               <History className="h-4 w-4" />
               Ver historial
             </Button>
-            <Button type="button" className="gap-2" onClick={() => void handleRefresh()} disabled={isRefreshing}>
-              <RefreshCw className={`h-4 w-4 ${isRefreshing ? 'animate-spin' : ''}`} />
+            <Button type="button" className="gap-2" loading={isRefreshing} onClick={() => void handleRefresh()}>
+              <RefreshCw className="h-4 w-4" />
               Refrescar
             </Button>
           </div>
@@ -144,11 +148,13 @@ export function PlanningDashboardPage() {
         />
       ) : null}
 
-      {filter === 'radication' ? (
-        <PlanningRadicationTable {...tableProps} />
-      ) : (
-        <PlanningWorkTable {...tableProps} />
-      )}
+      {showTable ? (
+        filter === 'radication' ? (
+          <PlanningRadicationTable {...tableProps} />
+        ) : (
+          <PlanningWorkTable {...tableProps} />
+        )
+      ) : null}
 
       {filter !== 'history' && filter !== 'radication' ? (
         <PlanningRecentActivity items={recentActivity} />
@@ -157,6 +163,6 @@ export function PlanningDashboardPage() {
       {filter === 'history' && recentActivity.length > 0 ? (
         <PlanningRecentActivity items={recentActivity} />
       ) : null}
-    </div>
+    </DashboardShell>
   );
 }
