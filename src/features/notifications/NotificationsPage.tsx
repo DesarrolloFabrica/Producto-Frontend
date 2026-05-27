@@ -46,7 +46,9 @@ import { notificationsApi } from '../../services/notificationsApi';
 
 type InboxView = 'attention' | 'activity' | 'cleared';
 
-
+const EMPTY_INBOX_TITLE = 'Sin notificaciones disponibles';
+const EMPTY_INBOX_DESCRIPTION =
+  'No hay notificaciones para tu usuario o rol actual. Si esperabas ver alertas, revisa en DevTools (Network) la respuesta de GET /notifications y confirma que userId o roleTarget coinciden con tu sesión.';
 
 export function NotificationsPage() {
 
@@ -83,17 +85,23 @@ export function NotificationsPage() {
 
 
   useEffect(() => {
-
     if (!backendEnabled) return;
 
     void (async () => {
-
-      await notificationsApi.dismissInformative().catch(() => undefined);
+      try {
+        const dismissResult = await notificationsApi.dismissInformative();
+        if (import.meta.env.DEV) {
+          console.warn('[Notifications] PATCH /notifications/dismiss-informative OK', dismissResult);
+        }
+      } catch (error) {
+        console.warn(
+          '[Notifications] PATCH /notifications/dismiss-informative falló; se continúa cargando el inbox.',
+          error,
+        );
+      }
 
       await loadNotifications();
-
     })();
-
   }, [backendEnabled, loadNotifications]);
 
 
@@ -165,16 +173,57 @@ export function NotificationsPage() {
 
 
   useEffect(() => {
-
-    if (summary.actionableCount === 0 && view === 'attention') {
-
+    if (view === 'attention' && attentionGroups.length === 0 && activityGroups.length > 0) {
       setView('activity');
-
     }
+  }, [view, attentionGroups.length, activityGroups.length]);
 
-  }, [summary.actionableCount, view]);
+  const inboxLoadedEmpty =
+    !isLoadingNotifications && !notificationsError && notifications.length === 0;
 
+  const recipientFilterMismatch =
+    !isLoadingNotifications &&
+    !notificationsError &&
+    notifications.length > 0 &&
+    visible.length === 0;
 
+  useEffect(() => {
+    if (!import.meta.env.DEV) return;
+    if (isLoadingNotifications) return;
+
+    console.warn('[Notifications] diagnóstico bandeja (UI)', {
+      userId: user?.id ?? null,
+      role: role ?? null,
+      backendEnabled,
+      notificationsError,
+      rawItemCount: notifications.length,
+      visibleItemCount: visible.length,
+      recipientFilterMismatch,
+      summaryFromContext: notificationSummary,
+      summaryDisplay: summary,
+      groupsByTab: {
+        attention: attentionGroups.length,
+        activity: activityGroups.length,
+        cleared: clearedGroups.length,
+      },
+      hasMore: hasMoreNotifications,
+    });
+  }, [
+    isLoadingNotifications,
+    notifications,
+    visible.length,
+    recipientFilterMismatch,
+    notificationSummary,
+    notificationsError,
+    attentionGroups.length,
+    activityGroups.length,
+    clearedGroups.length,
+    user?.id,
+    role,
+    backendEnabled,
+    hasMoreNotifications,
+    summary,
+  ]);
 
   const handleOpenResource = (group: NotificationGroup) => {
 
@@ -245,30 +294,39 @@ export function NotificationsPage() {
 
 
       {notificationsError && (
-
         <Card variant="subjectPanel" className="flex items-center justify-between gap-3 border-rose-100 bg-rose-50/40 p-4">
-
           <p className="text-sm font-bold text-rose-700">{notificationsError}</p>
-
           <button
-
             type="button"
-
             onClick={() => void loadNotifications()}
-
             className="rounded-xl bg-white px-3 py-2 text-xs font-bold text-rose-700 ring-1 ring-rose-200"
-
           >
-
             Reintentar
-
           </button>
-
         </Card>
-
       )}
 
+      {inboxLoadedEmpty && (
+        <EmptyState
+          icon={Bell}
+          title={EMPTY_INBOX_TITLE}
+          description={EMPTY_INBOX_DESCRIPTION}
+          cardVariant="subjectPanel"
+        />
+      )}
 
+      {recipientFilterMismatch && (
+        <Card variant="subjectPanel" className="border-amber-100 bg-amber-50/40 p-4">
+          <p className="text-sm font-bold text-amber-800">
+            El backend devolvió {notifications.length} notificación(es), pero ninguna coincide con tu
+            usuario o rol actual.
+          </p>
+          <p className="mt-1 text-xs font-medium text-amber-700">
+            Revisa en consola (modo desarrollo) el log &quot;diagnóstico bandeja&quot;: compara userId y
+            role con los destinatarios de cada item.
+          </p>
+        </Card>
+      )}
 
       <section className="grid gap-4 md:grid-cols-3">
 
@@ -341,19 +399,16 @@ export function NotificationsPage() {
       {view === 'attention' ? (
 
         attentionGroups.length === 0 ? (
-
           <EmptyState
-
             icon={Bell}
-
-            title="Sin alertas pendientes"
-
-            description="No hay acciones urgentes. Revisa la actividad reciente o continúa desde el dashboard."
-
+            title={inboxLoadedEmpty ? EMPTY_INBOX_TITLE : 'Sin alertas pendientes'}
+            description={
+              inboxLoadedEmpty
+                ? EMPTY_INBOX_DESCRIPTION
+                : 'No hay acciones urgentes. Revisa la actividad reciente o continúa desde el dashboard.'
+            }
             cardVariant="subjectPanel"
-
           />
-
         ) : (
 
           <div className="grid gap-4 lg:grid-cols-2">
@@ -377,8 +432,12 @@ export function NotificationsPage() {
         activityGroups.length === 0 ? (
           <EmptyState
             icon={Clock3}
-            title="Sin actividad reciente"
-            description="Las actualizaciones informativas se archivan automáticamente. Solo conservamos los últimos 7 días."
+            title={inboxLoadedEmpty ? EMPTY_INBOX_TITLE : 'Sin actividad reciente'}
+            description={
+              inboxLoadedEmpty
+                ? EMPTY_INBOX_DESCRIPTION
+                : 'Las actualizaciones informativas se archivan automáticamente. Solo conservamos los últimos 7 días.'
+            }
             cardVariant="subjectPanel"
           />
         ) : (
@@ -396,8 +455,12 @@ export function NotificationsPage() {
       ) : clearedGroups.length === 0 ? (
         <EmptyState
           icon={Bell}
-          title="Sin novedades informativas"
-          description="Aquí aparecen las actualizaciones que ya no requieren acción: aprobaciones, cambios resueltos o actividad archivada."
+          title={inboxLoadedEmpty ? EMPTY_INBOX_TITLE : 'Sin novedades informativas'}
+          description={
+            inboxLoadedEmpty
+              ? EMPTY_INBOX_DESCRIPTION
+              : 'Aquí aparecen las actualizaciones que ya no requieren acción: aprobaciones, cambios resueltos o actividad archivada.'
+          }
           cardVariant="subjectPanel"
         />
       ) : (

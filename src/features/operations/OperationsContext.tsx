@@ -1302,21 +1302,30 @@ export function OperationsProvider({ children }: { children: ReactNode }) {
       });
       dispatch({ type: 'LOAD_NOTIFICATION_SUMMARY_SUCCESS', payload: summary });
       queryClient.setQueryData(queryKeys.notificationsSummary(), summary);
-    } catch {
-      // Badge can fall back to inbox-derived counts.
+      if (import.meta.env.DEV) {
+        console.warn('[Notifications] GET /notifications/summary OK', summary);
+      }
+    } catch (error) {
+      if (import.meta.env.DEV) {
+        console.warn(
+          '[Notifications] GET /notifications/summary falló; el badge usará fallback local.',
+          error,
+        );
+      }
     }
   }, [state.backendEnabled]);
 
   const loadNotifications = useCallback(async (options?: { offset?: number; append?: boolean }) => {
     if (!state.backendEnabled) return;
     dispatch({ type: 'LOAD_NOTIFICATIONS_START' });
+    const inboxParams = {
+      limit: 40,
+      offset: options?.offset ?? 0,
+      readDays: 7,
+    };
     try {
-      const inbox = await notificationsApi.getInbox({
-        limit: 40,
-        offset: options?.offset ?? 0,
-        readDays: 7,
-      });
-      const mapped = mapNotificationsFromApi(inbox.items);
+      const inbox = await notificationsApi.getInbox(inboxParams);
+      const mapped = mapNotificationsFromApi(inbox.items ?? []);
       dispatch({
         type: 'LOAD_NOTIFICATIONS_SUCCESS',
         payload: {
@@ -1326,8 +1335,28 @@ export function OperationsProvider({ children }: { children: ReactNode }) {
           append: options?.append ?? false,
         },
       });
+      queryClient.setQueryData(queryKeys.notificationsSummary(), inbox.summary);
+      if (import.meta.env.DEV) {
+        console.warn('[Notifications] GET /notifications OK', {
+          endpoint: '/notifications',
+          params: inboxParams,
+          itemCount: inbox.items?.length ?? 0,
+          summary: inbox.summary,
+          hasMore: inbox.hasMore,
+          storedInContext: mapped.length,
+        });
+      }
     } catch (error) {
-      dispatch({ type: 'LOAD_NOTIFICATIONS_ERROR', payload: getApiErrorMessage(error) });
+      const message = getApiErrorMessage(error);
+      dispatch({ type: 'LOAD_NOTIFICATIONS_ERROR', payload: message });
+      if (import.meta.env.DEV) {
+        console.warn('[Notifications] GET /notifications falló', {
+          endpoint: '/notifications',
+          params: inboxParams,
+          error,
+          message,
+        });
+      }
     }
   }, [state.backendEnabled]);
 

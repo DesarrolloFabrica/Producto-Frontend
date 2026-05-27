@@ -140,7 +140,7 @@ export function SubjectOperationsPage() {
       : 'La revisión académica se habilitará cuando Planeación valide la carga LMS.';
 
   return (
-    <div className="min-h-screen bg-slate-50">
+    <div className="min-h-screen bg-transparent">
       <div className="mx-auto max-w-6xl space-y-6 px-4 py-8 lg:px-8">
         {/* Header */}
         <header className={cn('glass-surface flex flex-wrap items-start justify-between gap-4 rounded-2xl p-5', surface.glassSubtle)}>

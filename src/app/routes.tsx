@@ -1,4 +1,5 @@
 import { Navigate, createBrowserRouter, useLocation } from 'react-router-dom';
+import { AppProviders } from './AppProviders';
 import { RouteLoadingScreen } from '../components/feedback/RouteLoadingScreen';
 import { AppShell } from '../components/layout/AppShell';
 import { AuditPage } from '../features/audit/AuditPage';
@@ -59,11 +60,14 @@ function RoleRedirect({ expectedRole, children }: { expectedRole: Role; children
 }
 
 export const router = createBrowserRouter([
-  { path: '/login', element: <LoginPage /> },
   {
-    path: '/',
-    element: <RequireAuth />,
+    element: <AppProviders />,
     children: [
+      { path: '/login', element: <LoginPage /> },
+      {
+        path: '/',
+        element: <RequireAuth />,
+        children: [
       { index: true, element: <RoleScopeGuard><HomeRedirect /></RoleScopeGuard> },
       { path: 'product/dashboard', element: <RoleScopeGuard><RoleRedirect expectedRole="PRODUCT"><ProductDashboardPage /></RoleRedirect></RoleScopeGuard> },
       { path: 'product/work', element: <RoleScopeGuard><RoleRedirect expectedRole="PRODUCT"><ProductWorkPage /></RoleRedirect></RoleScopeGuard> },
@@ -81,7 +85,9 @@ export const router = createBrowserRouter([
       { path: 'notifications', element: <RoleScopeGuard><NotificationsPage /></RoleScopeGuard> },
       { path: 'notifications/settings', element: <RoleScopeGuard><NotificationSettings /></RoleScopeGuard> },
       { path: 'audit', element: <RoleScopeGuard><AuditPage /></RoleScopeGuard> },
+        ],
+      },
+      { path: '*', element: <Navigate to="/" replace /> },
     ],
   },
-  { path: '*', element: <Navigate to="/" replace /> },
 ]);

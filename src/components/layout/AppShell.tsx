@@ -78,8 +78,29 @@ export function AppShell() {
   }, [location.pathname, navigate, role]);
 
   return (
-    <div className="min-h-screen text-slate-900">
-      <header className="glass-surface sticky top-0 z-40 border-b border-slate-200/50 px-4 py-2.5 lg:px-6">
+    <div className="relative min-h-screen overflow-hidden authenticated-bg-noise text-slate-900">
+      <div
+        aria-hidden="true"
+        className="authenticated-bg-topo pointer-events-none absolute inset-0 z-0"
+      >
+        <svg
+          className="absolute inset-0 h-full w-full"
+          viewBox="0 0 100 100"
+          preserveAspectRatio="none"
+          xmlns="http://www.w3.org/2000/svg"
+        >
+          <path d="M -10 26 C 12 18, 28 34, 48 24 S 82 12, 110 22" fill="none" stroke="rgba(15,23,42,0.035)" strokeWidth="0.28" />
+          <path d="M -10 34 C 14 24, 30 42, 52 30 S 84 20, 110 30" fill="none" stroke="rgba(255,107,0,0.032)" strokeWidth="0.28" />
+          <path d="M -10 42 C 16 30, 34 50, 56 38 S 88 26, 110 38" fill="none" stroke="rgba(15,23,42,0.035)" strokeWidth="0.28" />
+          <path d="M -10 50 C 18 38, 36 58, 60 46 S 90 34, 110 46" fill="none" stroke="rgba(255,107,0,0.03)" strokeWidth="0.28" />
+          <path d="M -10 58 C 18 48, 38 66, 62 54 S 92 42, 110 54" fill="none" stroke="rgba(15,23,42,0.032)" strokeWidth="0.26" />
+          <path d="M -10 66 C 16 58, 36 74, 60 64 S 90 52, 110 62" fill="none" stroke="rgba(255,107,0,0.028)" strokeWidth="0.26" />
+          <path d="M -10 74 C 14 68, 34 82, 58 74 S 88 62, 110 70" fill="none" stroke="rgba(15,23,42,0.03)" strokeWidth="0.25" />
+          <path d="M -10 82 C 12 76, 30 90, 54 82 S 86 72, 110 78" fill="none" stroke="rgba(255,107,0,0.026)" strokeWidth="0.25" />
+        </svg>
+      </div>
+      <div className="relative z-10">
+        <header className="glass-surface sticky top-0 z-40 border-b border-slate-200/50 px-4 py-2.5 lg:px-6">
         <div className="mx-auto flex max-w-7xl items-center justify-between gap-3">
           <BrandMark />
           <nav className="hidden items-center gap-1 rounded-2xl border border-slate-200/60 bg-slate-50/80 p-1 lg:flex">
@@ -115,6 +136,7 @@ export function AppShell() {
         <Outlet />
       </main>
       <ContextPanelDrawer />
+      </div>
     </div>
   );
 }
