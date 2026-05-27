@@ -13,6 +13,7 @@ import {
   mapRadicationWorkItem,
   mapReturnedPreview,
   mapSubjectWorkItem,
+  mapTrackingWorkItem,
 } from './planningTypes';
 
 export function usePlanningDashboard(filter: PlanningDashboardFilter) {
@@ -36,6 +37,12 @@ export function usePlanningDashboard(filter: PlanningDashboardFilter) {
     staleTime: 15_000,
   });
 
+  const trackingQuery = useQuery({
+    queryKey: queryKeys.planning.tracking(),
+    queryFn: () => institutionalWorkflowApi.planningTracking(),
+    staleTime: 15_000,
+  });
+
   const allRows = useMemo(() => {
     const subjectRows = (workQuery.data ?? []).map((item) => {
       const row = mapSubjectWorkItem(item);
@@ -53,8 +60,15 @@ export function usePlanningDashboard(filter: PlanningDashboardFilter) {
       return row;
     });
     const finalizedRows = (summaryQuery.data?.finalizedProjects ?? []).map(mapFinalizedProject);
-    return [...subjectRows, ...radicationRows, ...returnedRows, ...finalizedRows];
-  }, [workQuery.data, radicationQuery.data, summaryQuery.data]);
+    const trackingRows = (trackingQuery.data ?? []).map((item) => {
+      const row = mapTrackingWorkItem(item);
+      if (row.kind === 'tracking') {
+        row.stageLabel = institutionalStateLabel(row.operationalState);
+      }
+      return row;
+    });
+    return [...subjectRows, ...radicationRows, ...returnedRows, ...finalizedRows, ...trackingRows];
+  }, [workQuery.data, radicationQuery.data, summaryQuery.data, trackingQuery.data]);
 
   const visibleRows = useMemo(() => filterPlanningRows(allRows, filter), [allRows, filter]);
 
@@ -79,9 +93,10 @@ export function usePlanningDashboard(filter: PlanningDashboardFilter) {
   const pendingRadicationCount = radicationQuery.data?.length ?? 0;
   const hasNoPending = pendingSubjectCount === 0 && pendingRadicationCount === 0;
 
-  const isLoading = workQuery.isLoading || radicationQuery.isLoading || summaryQuery.isLoading;
+  const isLoading =
+    workQuery.isLoading || radicationQuery.isLoading || summaryQuery.isLoading || trackingQuery.isLoading;
   const error =
-    workQuery.error || radicationQuery.error || summaryQuery.error
+    workQuery.error || radicationQuery.error || summaryQuery.error || trackingQuery.error
       ? 'No se pudo cargar el panel de Planeación'
       : null;
 

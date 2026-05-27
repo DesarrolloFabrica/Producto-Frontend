@@ -147,7 +147,7 @@ export function LmsDashboardPage() {
         />
       ) : null}
 
-      <LmsRecentActivity items={recentActivity} />
+      {filter !== 'history' ? <LmsRecentActivity items={recentActivity} /> : null}
     </DashboardShell>
   );
 }

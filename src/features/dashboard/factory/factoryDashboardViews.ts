@@ -139,8 +139,8 @@ export const FACTORY_DASHBOARD_TRAYS: FactoryDashboardTrayConfig[] = [
   {
     id: 'in-review',
     views: ['review', 'all'],
-    title: 'En revisión Product',
-    description: 'Esperando validación de Product.',
+    title: 'En seguimiento',
+    description: 'Paquetes fuera de producción activa de Fábrica.',
     emptyMessage: 'Sin materias en revisión.',
     viewAllTo: '/factory/work?status=IN_REVIEW',
     icon: Send,

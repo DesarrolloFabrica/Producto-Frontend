@@ -19,22 +19,27 @@ export function PlanningEmptyState({
   const isHistory = filter === 'history';
   const isRadication = filter === 'radication';
   const isReturned = filter === 'returned';
+  const isTracking = filter === 'tracking';
 
   const title = isHistory
     ? 'Sin solicitudes finalizadas recientes'
     : isRadication
       ? 'No hay radicaciones pendientes de revisión'
-      : isReturned
-        ? 'No hay devoluciones activas en seguimiento'
-        : 'No tienes validaciones pendientes en este momento';
+      : isTracking
+        ? 'No hay paquetes en seguimiento activo'
+        : isReturned
+          ? 'No hay devoluciones activas en seguimiento'
+          : 'No tienes validaciones pendientes en este momento';
 
   const description = isHistory
     ? 'Cuando Planeación cierre solicitudes validando radicados, aparecerán aquí con trazabilidad.'
     : isRadication
       ? 'Product registrará el radicado cuando todas las materias estén listas. Puede revisar historial o solicitudes en curso.'
-      : isReturned
-        ? 'Las devoluciones recientes a Product, Fábrica o LMS se listan aquí cuando existan.'
-        : 'Puedes revisar radicaciones, historial reciente o consultar solicitudes en curso.';
+      : isTracking
+        ? 'Los semestres que ya validaste y siguen en Fábrica, LMS o revisión académica aparecerán aquí.'
+        : isReturned
+          ? 'Las devoluciones recientes a Product, Fábrica o LMS se listan aquí cuando existan.'
+          : 'Puedes revisar radicaciones, historial reciente o paquetes en seguimiento.';
 
   return (
     <Card className="border-dashed border-slate-200 bg-slate-50/50 p-8 text-center">

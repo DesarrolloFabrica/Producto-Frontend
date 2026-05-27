@@ -1,4 +1,4 @@
-import { useParams } from 'react-router-dom';
+import { Link, useLocation, useParams } from 'react-router-dom';
 import { ContextBackLink } from '../../navigation/ContextBackLink';
 import { ContextLink } from '../../navigation/ContextLink';
 import { ArrowLeft, BookOpen, CalendarDays, CheckCircle2, MessageSquare } from 'lucide-react';
@@ -12,14 +12,20 @@ import { useOperations } from '../../features/operations/OperationsContext';
 import { useEnsureProjectDetail } from '../operations/useEnsureProjectDetail';
 import { useAuth } from '../auth/AuthContext';
 import { formatDate } from '../../utils/formatters';
+import { cn } from '../../components/ui/tokens';
 import { FactorySemesterSubjectsView } from './FactorySemesterSubjectsView';
 import { useDismissNotificationsOnVisit } from '../notifications/useDismissNotificationsOnVisit';
 import { ChangeOriginBadge, ChangeOriginCardAccent, ChangeOriginHint } from '../../components/change-tracking/ChangeOriginBadge';
+import { semesterOperationsPath } from '../institutional-workflow/institutionalNavigation';
 
 export function ProjectSemesterSubjectsPage() {
   const { projectId, semesterNumber } = useParams();
+  const location = useLocation();
   const { projectObservations, refreshProjects } = useOperations();
   const { role } = useAuth();
+  const reviewJustStarted = Boolean(
+    (location.state as { reviewStarted?: boolean } | null)?.reviewStarted,
+  );
   const { project, isLoading, error, notFound } = useEnsureProjectDetail(projectId);
   useDismissNotificationsOnVisit({ projectId: project?.id });
   const semesterNum = parseInt(semesterNumber ?? '0', 10);
@@ -75,6 +81,8 @@ export function ProjectSemesterSubjectsPage() {
   const openObservations = projectObservations.filter(
     (o) => o.projectId === project.id && o.status === 'ABIERTA' && subjects.some((s) => s.id === o.subjectId)
   ).length;
+  const semesterOpsUrl =
+    semester && project ? semesterOperationsPath(project.id, semester.id) : null;
 
   return (
     <div className="space-y-7">
@@ -114,16 +122,37 @@ export function ProjectSemesterSubjectsPage() {
         </div>
       </Card>
 
-      <Card variant="subjectPanel" className="p-4 sm:p-5">
-        <div className="flex items-start gap-3">
-          <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-orange-500" />
-          <div>
-            <p className="text-sm font-bold text-slate-900">Revisión de asignaturas</p>
-            <p className="text-xs font-medium text-slate-600">
-              Revisa las asignaturas de este semestre y valida el checklist de entregables. Las asignaturas de un semestre
-              quedan definidas al crearlo; para agregar más materias, crea un nuevo semestre desde el detalle del proyecto.
-            </p>
+      <Card
+        variant="subjectPanel"
+        className={reviewJustStarted ? 'border-emerald-200 bg-emerald-50/60 p-4 sm:p-5' : 'p-4 sm:p-5'}
+      >
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="flex min-w-0 items-start gap-3">
+            <CheckCircle2
+              className={cn(
+                'mt-0.5 h-5 w-5 shrink-0',
+                reviewJustStarted ? 'text-emerald-600' : 'text-orange-500',
+              )}
+            />
+            <div>
+              <p className="text-sm font-bold text-slate-900">
+                {reviewJustStarted ? 'Revisión académica en curso' : 'Revisión de asignaturas'}
+              </p>
+              <p className="text-xs font-medium text-slate-600">
+                {reviewJustStarted
+                  ? 'El checklist ya está habilitado. Elija una asignatura abajo para definir temas, validar entregables y aprobar.'
+                  : 'Revisa las asignaturas de este semestre y valida el checklist de entregables. Las asignaturas de un semestre quedan definidas al crearlo; para agregar más materias, crea un nuevo semestre desde el detalle del proyecto.'}
+              </p>
+            </div>
           </div>
+          {semesterOpsUrl && (role === 'PRODUCT' || role === 'ADMIN') ? (
+            <Link
+              to={semesterOpsUrl}
+              className="shrink-0 text-xs font-semibold text-slate-600 underline-offset-2 hover:text-orange-600 hover:underline"
+            >
+              Centro operacional del semestre
+            </Link>
+          ) : null}
         </div>
       </Card>
 

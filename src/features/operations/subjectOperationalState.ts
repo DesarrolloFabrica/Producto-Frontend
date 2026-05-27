@@ -98,7 +98,7 @@ export interface SubjectWorkItem {
 const OPERATIONAL_LABELS: Record<SubjectOperationalState, string> = {
   NOT_STARTED: 'Por iniciar',
   IN_PRODUCTION: 'En producción',
-  IN_REVIEW: 'En revisión Product',
+  IN_REVIEW: 'En seguimiento',
   CHANGES_REQUESTED: 'Correcciones pendientes',
   CORRECTION_SENT: 'Corrección enviada',
   APPROVED: 'Aprobada',

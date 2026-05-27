@@ -8,7 +8,7 @@ export const statusOptions: Array<{ value: SubjectOperationalState | ''; label: 
   { value: 'CHANGES_REQUESTED', label: 'Correcciones pendientes' },
   { value: 'IN_PRODUCTION', label: 'En producción' },
   { value: 'NOT_STARTED', label: 'Por iniciar' },
-  { value: 'IN_REVIEW', label: 'En revisión Product' },
+  { value: 'IN_REVIEW', label: 'En seguimiento' },
   { value: 'CORRECTION_SENT', label: 'Corrección enviada' },
   { value: 'APPROVED', label: 'Aprobadas' },
 ];

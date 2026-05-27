@@ -2,6 +2,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import type { InstitutionalOperationalAction } from '../../types/domain';
 import { institutionalWorkflowApi } from '../../services/institutionalWorkflowApi';
 import { useAuth } from '../auth/AuthContext';
+import { invalidateSemesterWorkflowQueries } from './invalidateSemesterWorkflowQueries';
 import { queryKeys } from './queryKeys';
 
 export function useSemesterInstitutionalTransitionMutation(semesterId?: string) {
@@ -15,17 +16,14 @@ export function useSemesterInstitutionalTransitionMutation(semesterId?: string) 
       evidenceUrl?: string;
     }) => institutionalWorkflowApi.transitionSemester(semesterId!, body),
     onSuccess: (data) => {
-      void queryClient.invalidateQueries({ queryKey: ['semester-operational-workspace', semesterId] });
-      void queryClient.invalidateQueries({ queryKey: ['institutional-work'] });
-      void queryClient.invalidateQueries({ queryKey: queryKeys.factory.all() });
-      void queryClient.invalidateQueries({ queryKey: queryKeys.planning.dashboardSummary() });
-      void queryClient.invalidateQueries({ queryKey: queryKeys.institutionalWork.planning() });
-      void queryClient.invalidateQueries({ queryKey: queryKeys.institutionalWork.factory() });
-      void queryClient.invalidateQueries({ queryKey: queryKeys.lms.dashboardSummary() });
-      void queryClient.invalidateQueries({ queryKey: queryKeys.institutionalWork.lms() });
-      void queryClient.invalidateQueries({ queryKey: queryKeys.project(data.projectId) });
-      if (role) {
-        void queryClient.invalidateQueries({ queryKey: queryKeys.institutionalWork.forRole(role) });
+      invalidateSemesterWorkflowQueries(queryClient, {
+        semesterId,
+        projectId: data.projectId,
+        role,
+      });
+      for (const subject of data.subjects ?? []) {
+        void queryClient.invalidateQueries({ queryKey: queryKeys.operationalWorkspace(subject.subjectId) });
+        void queryClient.invalidateQueries({ queryKey: queryKeys.subjectWorkspace(subject.subjectId) });
       }
     },
   });

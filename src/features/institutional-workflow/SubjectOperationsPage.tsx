@@ -1,4 +1,4 @@
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import { Link, Navigate, useNavigate, useParams } from 'react-router-dom';
 import { AlertCircle } from 'lucide-react';
 import { useState } from 'react';
 import { useAuth } from '../auth/AuthContext';
@@ -22,6 +22,7 @@ import { Skeleton, SkeletonKpiGrid } from '../../components/ui/Skeleton';
 import { cn, surface } from '../../components/ui/tokens';
 import { useToast } from '../../components/ui/ToastProvider';
 import { getApiErrorMessage } from '../operations/apiMappers';
+import { semesterOperationsPath, semesterSubjectsPanelPath } from './institutionalNavigation';
 
 function isReturnOrRejectAction(action: InstitutionalOperationalAction): boolean {
   return action.includes('RETURN') || action === 'PRODUCT_REQUEST_CHANGES';
@@ -68,8 +69,13 @@ export function SubjectOperationsPage() {
         returnReason: params.comment,
         evidenceUrl: params.evidenceUrl,
       });
-      if (params.action === 'PRODUCT_START_ACADEMIC_REVIEW') {
-        navigate(`/subjects/${subjectId}?review=started`);
+      if (params.action === 'PRODUCT_START_ACADEMIC_REVIEW' && workspace?.semesterId) {
+        navigate(semesterSubjectsPanelPath(workspace.projectId, workspace.semesterNumber), {
+          replace: true,
+          state: { reviewStarted: true },
+        });
+        showToast('Revisión académica iniciada. Elija una asignatura para continuar.');
+        return;
       }
     } catch (e: unknown) {
       showToast(getApiErrorMessage(e), 'error');
@@ -96,6 +102,19 @@ export function SubjectOperationsPage() {
           Volver a mi bandeja
         </ContextBackLink>
       </div>
+    );
+  }
+
+  if (
+    workspace.institutionalFlowActive &&
+    (role === 'PRODUCT' || role === 'ADMIN') &&
+    workspace.semesterId
+  ) {
+    return (
+      <Navigate
+        to={semesterOperationsPath(workspace.projectId, workspace.semesterId)}
+        replace
+      />
     );
   }
 

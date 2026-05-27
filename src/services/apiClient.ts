@@ -52,8 +52,17 @@ async function request<T>(method: 'GET' | 'POST' | 'PATCH', path: string, body?:
   const res = await fetch(toUrl(path), {
     method,
     headers,
+    cache: 'no-store',
     body: body === undefined ? undefined : JSON.stringify(body),
   });
+
+  if (res.status === 304) {
+    const err: ApiError = {
+      status: 304,
+      message: 'La respuesta en caché no incluye datos. Recarga la página.',
+    };
+    throw err;
+  }
 
   if (res.status === 401) {
     emitUnauthorized();

@@ -195,6 +195,8 @@ export function mapSubjectFromApi(
     status: api.status,
     operationalState: api.operationalState,
     progress: api.progress,
+    factoryProductionStatus: api.factoryProductionStatus ?? 'NOT_STARTED',
+    factoryProductionCompletedAt: api.factoryProductionCompletedAt ?? null,
     createdFromChange: Boolean(api.createdFromChange),
     openObservationsCount: api.openObservationsCount ?? 0,
     correctionSentCount: api.correctionSentCount ?? 0,

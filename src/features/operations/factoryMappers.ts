@@ -14,7 +14,7 @@ export function mapFactoryWorkItemFromApi(api: ApiFactorySubjectWorkItem): Subje
   const ctaLabels: Record<SubjectOperationalState, string> = {
     NOT_STARTED: 'Iniciar producción',
     IN_PRODUCTION: 'Continuar producción',
-    IN_REVIEW: 'Esperando Product',
+    IN_REVIEW: 'Ver paquete',
     CHANGES_REQUESTED: 'Ver correcciones',
     CORRECTION_SENT: 'Esperando validación',
     APPROVED: 'Ver aprobado',
@@ -22,7 +22,7 @@ export function mapFactoryWorkItemFromApi(api: ApiFactorySubjectWorkItem): Subje
   const operationalLabels: Record<SubjectOperationalState, string> = {
     NOT_STARTED: 'Por iniciar',
     IN_PRODUCTION: 'En producción',
-    IN_REVIEW: 'En revisión Product',
+    IN_REVIEW: 'En seguimiento',
     CHANGES_REQUESTED: 'Correcciones pendientes',
     CORRECTION_SENT: 'Corrección enviada',
     APPROVED: 'Aprobada',

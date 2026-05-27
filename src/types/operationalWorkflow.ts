@@ -128,6 +128,9 @@ export interface OperationalSubjectV2 {
 }
 
 export interface OperationalWorkItemV2 {
+  kind?: 'semester' | 'subject';
+  semesterId?: string;
+  actionUrl?: string;
   subjectId: string;
   projectId: string;
   subjectName: string;
@@ -145,6 +148,8 @@ export interface OperationalWorkItemV2 {
   lastActivityAt: string;
   checksCompleted: number;
   checksTotal: number;
+  subjectsTotal?: number;
+  subjectsReady?: number;
   primaryAction: OperationalActionV2;
   actions: OperationalActionV2[];
 }

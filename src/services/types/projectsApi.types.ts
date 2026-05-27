@@ -42,6 +42,8 @@ export interface ApiSubjectSummary {
   semesterNumber: number;
   expectedDeliveryDate?: string | null;
   progress: number;
+  factoryProductionStatus?: 'NOT_STARTED' | 'IN_PROGRESS' | 'COMPLETED';
+  factoryProductionCompletedAt?: string | null;
   openObservationsCount: number;
   correctionSentCount: number;
   updatedAt: string;
@@ -117,6 +119,8 @@ export interface ApiSubjectDetail {
   status: ApiSubjectStatus;
   operationalState?: SubjectOperationalState;
   progress: number;
+  factoryProductionStatus?: 'NOT_STARTED' | 'IN_PROGRESS' | 'COMPLETED';
+  factoryProductionCompletedAt?: string | null;
   openObservationsCount?: number;
   correctionSentCount?: number;
   createdFromChange: boolean;

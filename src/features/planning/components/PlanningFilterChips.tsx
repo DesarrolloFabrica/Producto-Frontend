@@ -7,6 +7,7 @@ const filters: Array<{ id: PlanningDashboardFilter; label: string }> = [
   { id: 'production', label: 'Validación producción' },
   { id: 'lms', label: 'Validación LMS' },
   { id: 'radication', label: 'Radicación' },
+  { id: 'tracking', label: 'En seguimiento' },
   { id: 'returned', label: 'Devueltas' },
   { id: 'history', label: 'Finalizadas / Historial' },
 ];

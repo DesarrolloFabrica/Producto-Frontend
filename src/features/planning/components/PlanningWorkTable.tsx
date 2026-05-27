@@ -83,6 +83,52 @@ export function PlanningWorkTable({
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {rows.map((row) => {
+                  if (row.kind === 'tracking') {
+                    return (
+                      <tr key={row.id} className={tableRow}>
+                        <td className="px-5 py-4 sm:px-6">
+                          <p className="text-[10px] font-bold uppercase text-slate-400">{row.school}</p>
+                          <p className="font-bold text-slate-900">{row.program}</p>
+                          <p className="text-xs text-slate-500">Sem. {row.semesterNumber}</p>
+                        </td>
+                        <td className="px-3 py-4">
+                          <p className="font-semibold text-slate-800">{row.subjectName}</p>
+                          <p className="text-xs text-slate-500">
+                            {row.subjectsReady}/{row.subjectsTotal} producidas
+                          </p>
+                        </td>
+                        <td className="px-3 py-4">
+                          <OperationalStateBadgeV2 state={row.operationalState} />
+                        </td>
+                        <td className="px-3 py-4 text-xs font-semibold text-slate-600">
+                          {roleLabel(row.responsibleRole)}
+                        </td>
+                        <td className="px-3 py-4">
+                          <div className="flex flex-col gap-1">
+                            {row.stageDueAt ? (
+                              <span className="text-xs font-medium text-slate-600">
+                                {formatDate(row.stageDueAt)}
+                              </span>
+                            ) : (
+                              <span className="text-xs text-slate-400">—</span>
+                            )}
+                            <SlaBadgeV2 status={row.slaStatus as SlaStatusV2} />
+                          </div>
+                        </td>
+                        <td className="max-w-[12rem] px-3 py-4 text-xs text-slate-500">—</td>
+                        <td className="px-5 py-4 text-right sm:px-6">
+                          <Link
+                            to={row.actionUrl}
+                            className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 px-3 py-1.5 text-xs font-bold text-slate-700 hover:bg-slate-50"
+                          >
+                            Ver seguimiento
+                            <ArrowRight className="h-3.5 w-3.5" />
+                          </Link>
+                        </td>
+                      </tr>
+                    );
+                  }
+
                   if (row.kind === 'subject' || row.kind === 'returned') {
                     return (
                       <tr key={row.id} className={tableRow}>

@@ -80,6 +80,29 @@ const subjectChecklistLabels = [
   'Seminario Aleman',
 ];
 
+type WorkspaceSubjectShape = ApiSubjectWorkspace extends infer T
+  ? T extends { subject: infer S }
+    ? S
+    : never
+  : never;
+type ProjectSubjectShape = ApiProjectDetail['semesters'][number]['subjects'][number];
+
+function scoreChecklistStatus(status: ChecklistStatus): number {
+  if (status === 'APROBADO' || status === 'ENTREGADO') return 1;
+  if (status === 'EN_PRODUCCION') return 0.5;
+  return 0;
+}
+
+function calculateApiSubjectProgress(subject: WorkspaceSubjectShape | ProjectSubjectShape): number {
+  const checklist = subject.checklist ?? [];
+  const topicItems = subject.topics.flatMap((topic) => topic.checklist);
+  const average = (items: typeof checklist) => {
+    if (items.length === 0) return 0;
+    return items.reduce((sum, item) => sum + scoreChecklistStatus(item.status), 0) / items.length;
+  };
+  return Math.round((average(checklist) * 0.7 + average(topicItems) * 0.3) * 100);
+}
+
 function patchChecklistStatusesInProject(
   project: VirtualizationProject,
   subjectId: string,
@@ -106,28 +129,43 @@ function patchChecklistStatusesInProject(
   };
 }
 
+function patchApiSubjectChecklistStatuses<T extends WorkspaceSubjectShape | ProjectSubjectShape>(
+  subject: T,
+  itemIds: Set<string>,
+  status: ChecklistStatus,
+): T {
+  const nextSubject = {
+    ...subject,
+    checklist: subject.checklist.map((item) =>
+      itemIds.has(item.id) ? { ...item, status } : item,
+    ),
+    topics: subject.topics.map((topic) => ({
+      ...topic,
+      checklist: topic.checklist.map((item) =>
+        itemIds.has(item.id) ? { ...item, status } : item,
+      ),
+    })),
+  };
+  return {
+    ...nextSubject,
+    progress: calculateApiSubjectProgress(nextSubject),
+  } as T;
+}
+
 function patchChecklistStatusesInWorkspace(
   workspace: ApiSubjectWorkspace | undefined,
   itemIds: string[],
+  subjectProgress?: number,
 ): ApiSubjectWorkspace | undefined {
   if (!workspace) return workspace;
   const itemIdSet = new Set(itemIds);
 
   if (isLightSubjectWorkspace(workspace)) {
+    const nextSubject = patchApiSubjectChecklistStatuses(workspace.subject, itemIdSet, 'APROBADO');
     return {
       ...workspace,
-      subject: {
-        ...workspace.subject,
-        checklist: workspace.subject.checklist.map((item) =>
-          itemIdSet.has(item.id) ? { ...item, status: 'APROBADO' } : item,
-        ),
-        topics: workspace.subject.topics.map((topic) => ({
-          ...topic,
-          checklist: topic.checklist.map((item) =>
-            itemIdSet.has(item.id) ? { ...item, status: 'APROBADO' } : item,
-          ),
-        })),
-      },
+      subject:
+        subjectProgress != null ? { ...nextSubject, progress: subjectProgress } : nextSubject,
     };
   }
 
@@ -135,46 +173,38 @@ function patchChecklistStatusesInWorkspace(
     ...workspace,
     project: {
       ...workspace.project,
+      progress: workspace.project.progress,
       semesters: workspace.project.semesters.map((semester) => ({
         ...semester,
-        subjects: semester.subjects.map((subject) => ({
-          ...subject,
-          checklist: subject.checklist.map((item) =>
-            itemIdSet.has(item.id) ? { ...item, status: 'APROBADO' } : item,
-          ),
-          topics: subject.topics.map((topic) => ({
-            ...topic,
-            checklist: topic.checklist.map((item) =>
-              itemIdSet.has(item.id) ? { ...item, status: 'APROBADO' } : item,
-            ),
-          })),
-        })),
+        subjects: semester.subjects.map((subject) =>
+          patchApiSubjectChecklistStatuses(subject, itemIdSet, 'APROBADO'),
+        ),
       })),
     },
   };
 }
 
-type WorkspaceSubjectShape = ApiSubjectWorkspace extends infer T
-  ? T extends { subject: infer S }
-    ? S
-    : never
-  : never;
-type ProjectSubjectShape = ApiProjectDetail['semesters'][number]['subjects'][number];
-
-function scoreChecklistStatus(status: ChecklistStatus): number {
-  if (status === 'APROBADO' || status === 'ENTREGADO') return 1;
-  if (status === 'EN_PRODUCCION') return 0.5;
-  return 0;
-}
-
-function calculateApiSubjectProgress(subject: WorkspaceSubjectShape | ProjectSubjectShape): number {
-  const checklist = subject.checklist ?? [];
-  const topicItems = subject.topics.flatMap((topic) => topic.checklist);
-  const average = (items: typeof checklist) => {
-    if (items.length === 0) return 0;
-    return items.reduce((sum, item) => sum + scoreChecklistStatus(item.status), 0) / items.length;
+function patchChecklistStatusesInProjectDetail(
+  project: ApiProjectDetail | undefined,
+  itemIds: string[],
+  subjectId: string,
+  subjectProgress?: number,
+  projectProgress?: number,
+): ApiProjectDetail | undefined {
+  if (!project) return project;
+  const itemIdSet = new Set(itemIds);
+  return {
+    ...project,
+    progress: projectProgress ?? project.progress,
+    semesters: project.semesters.map((semester) => ({
+      ...semester,
+      subjects: semester.subjects.map((subject) => {
+        if (subject.id !== subjectId) return subject;
+        const next = patchApiSubjectChecklistStatuses(subject, itemIdSet, 'APROBADO');
+        return subjectProgress != null ? { ...next, progress: subjectProgress } : next;
+      }),
+    })),
   };
-  return Math.round((average(checklist) * 0.7 + average(topicItems) * 0.3) * 100);
 }
 
 function patchApiSubjectChecklistStatus<T extends WorkspaceSubjectShape | ProjectSubjectShape>(
@@ -302,6 +332,16 @@ type OperationsAction =
   | { type: 'ADD_PROJECT_LINK'; payload: { projectId: string; link: LinkResource; project: VirtualizationProject } }
   | { type: 'ADD_OBSERVATION'; payload: { projectId: string; observation: OperationalObservation; project: VirtualizationProject } }
   | { type: 'UPDATE_CHECKLIST_ITEM'; payload: { projectId: string; subjectId: string; checklistItemId: string; newStatus: ChecklistStatus; project: VirtualizationProject } }
+  | {
+      type: 'UPDATE_CHECKLIST_ITEMS_BULK';
+      payload: {
+        projectId: string;
+        subjectId: string;
+        itemIds: string[];
+        newStatus: ChecklistStatus;
+        subjectProgress?: number;
+      };
+    }
   | { type: 'MARK_NOTIFICATION_READ'; payload: { notificationId: string } }
   | { type: 'ADD_AUDIT_LOG'; payload: AuditLog }
   | { type: 'ADD_ACTIVITY_EVENT'; payload: ActivityEvent }
@@ -745,6 +785,29 @@ function operationsReducer(state: OperationsState, action: OperationsAction): Op
           ],
         };
       }
+    case 'UPDATE_CHECKLIST_ITEMS_BULK': {
+      const updatedProjects = state.projects.map((project) => {
+        if (project.id !== action.payload.projectId) return project;
+        const updatedProject = patchChecklistStatusesInProject(
+          project,
+          action.payload.subjectId,
+          action.payload.itemIds,
+        );
+        const withProgress =
+          action.payload.subjectProgress != null
+            ? {
+                ...updatedProject,
+                subjects: updatedProject.subjects.map((subject) =>
+                  subject.id === action.payload.subjectId
+                    ? { ...subject, progress: action.payload.subjectProgress! }
+                    : subject,
+                ),
+              }
+            : updatedProject;
+        return recalcProject(withProgress);
+      });
+      return { ...state, projects: updatedProjects };
+    }
     case 'MARK_NOTIFICATION_READ':
       return {
         ...state,
@@ -1085,7 +1148,11 @@ interface OperationsContextValue extends OperationsState {
   validateObservationFromApi: (observationId: string, projectId?: string) => Promise<void>;
   reopenObservationFromApi: (observationId: string, reason: string, projectId?: string) => Promise<void>;
   sendObservationsBatchToFactoryFromApi: (subjectId: string, projectId: string) => Promise<number>;
-  notifyCorrectionsBatchFromApi: (subjectId: string, projectId: string) => Promise<number>;
+  notifyCorrectionsBatchFromApi: (
+    subjectId: string,
+    projectId: string,
+    observationIds?: string[],
+  ) => Promise<number>;
   submitSubjectFromApi: (subjectId: string, projectId: string) => Promise<void>;
   approveSubjectFromApi: (subjectId: string, projectId: string) => Promise<void>;
   rejectSubjectFromApi: (subjectId: string, projectId: string, reason?: string) => Promise<void>;
@@ -1567,11 +1634,11 @@ export function OperationsProvider({ children }: { children: ReactNode }) {
   );
 
   const notifyCorrectionsBatchFromApi = useCallback(
-    async (subjectId: string, projectId: string) => {
+    async (subjectId: string, projectId: string, observationIds?: string[]) => {
       if (!state.backendEnabled) throw new Error('Backend deshabilitado.');
       dispatch({ type: 'SET_MUTATING', payload: true });
       try {
-        const response = await observationsApi.notifyCorrectionsToProduct(subjectId);
+        const response = await observationsApi.notifyCorrectionsToProduct(subjectId, observationIds);
         await refreshWorkflowContext({
           projectId,
           subjectId,
@@ -1892,15 +1959,6 @@ export function OperationsProvider({ children }: { children: ReactNode }) {
 
         try {
           await checklistApi.updateStatus(checklistItemId, { status: newStatus });
-          void queryClient.invalidateQueries({
-            queryKey: queryKeys.subjectWorkspace(subjectId),
-          });
-          void queryClient.invalidateQueries({
-            queryKey: queryKeys.operationalWorkspace(subjectId),
-          });
-          void queryClient.invalidateQueries({
-            queryKey: queryKeys.project(projectId),
-          });
         } catch (error) {
           queryClient.setQueryData(queryKeys.subjectWorkspace(subjectId), previousWorkspace);
           queryClient.setQueryData(queryKeys.project(projectId), previousProject);
@@ -1937,43 +1995,36 @@ export function OperationsProvider({ children }: { children: ReactNode }) {
       if (state.backendEnabled) {
         const response = await checklistApi.bulkApproveSection(payload);
         if (response.updatedItemIds.length > 0) {
-          for (const checklistItemId of response.updatedItemIds) {
-            applyChecklistUpdateLocal(projectId, payload.subjectId, checklistItemId, 'APROBADO');
-          }
-
           queryClient.setQueryData<ApiSubjectWorkspace>(
             queryKeys.subjectWorkspace(payload.subjectId),
-            (current) => patchChecklistStatusesInWorkspace(current, response.updatedItemIds),
+            (current) =>
+              patchChecklistStatusesInWorkspace(
+                current,
+                response.updatedItemIds,
+                response.subjectProgress,
+              ),
           );
           queryClient.setQueryData<ApiProjectDetail>(
             queryKeys.project(projectId),
-            (current) => {
-              if (!current) return current;
-              const itemIdSet = new Set(response.updatedItemIds);
-              return {
-                ...current,
-                semesters: current.semesters.map((semester) => ({
-                  ...semester,
-                  subjects: semester.subjects.map((subject) => ({
-                    ...subject,
-                    checklist: subject.checklist.map((item) =>
-                      itemIdSet.has(item.id) ? { ...item, status: 'APROBADO' } : item,
-                    ),
-                    topics: subject.topics.map((topic) => ({
-                      ...topic,
-                      checklist: topic.checklist.map((item) =>
-                        itemIdSet.has(item.id) ? { ...item, status: 'APROBADO' } : item,
-                      ),
-                    })),
-                  })),
-                })),
-              };
+            (current) =>
+              patchChecklistStatusesInProjectDetail(
+                current,
+                response.updatedItemIds,
+                payload.subjectId,
+                response.subjectProgress,
+                response.projectProgress,
+              ),
+          );
+          dispatch({
+            type: 'UPDATE_CHECKLIST_ITEMS_BULK',
+            payload: {
+              projectId,
+              subjectId: payload.subjectId,
+              itemIds: response.updatedItemIds,
+              newStatus: 'APROBADO',
+              subjectProgress: response.subjectProgress,
             },
-          );
-          queryClient.setQueryData(
-            queryKeys.projects(),
-            (current: unknown) => current,
-          );
+          });
           markFactoryQueriesStale(queryClient);
         }
         return response.countUpdated;

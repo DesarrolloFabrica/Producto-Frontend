@@ -20,6 +20,8 @@ export interface BulkApproveSectionResponse {
   projectId: string;
   alreadyApproved: boolean;
   updatedItemIds: string[];
+  subjectProgress?: number;
+  projectProgress?: number;
 }
 
 export const checklistApi = {

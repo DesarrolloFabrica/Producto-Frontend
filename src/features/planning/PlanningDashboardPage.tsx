@@ -58,8 +58,9 @@ export function PlanningDashboardPage() {
   };
 
   const openOperationalFlow = (row: typeof visibleRows[number]) => {
-    if (row.kind !== 'subject' && row.kind !== 'returned') return;
-    navigate(row.actionUrl, {
+    const url = 'actionUrl' in row ? row.actionUrl : null;
+    if (!url) return;
+    navigate(url, {
       state: { from: buildFromLocation(location) },
     });
   };
@@ -158,10 +159,6 @@ export function PlanningDashboardPage() {
       ) : null}
 
       {filter !== 'history' && filter !== 'radication' ? (
-        <PlanningRecentActivity items={recentActivity} />
-      ) : null}
-
-      {filter === 'history' && recentActivity.length > 0 ? (
         <PlanningRecentActivity items={recentActivity} />
       ) : null}
     </DashboardShell>

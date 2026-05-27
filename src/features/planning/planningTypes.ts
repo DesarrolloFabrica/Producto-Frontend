@@ -9,6 +9,7 @@ export type PlanningDashboardFilter =
   | 'production'
   | 'lms'
   | 'radication'
+  | 'tracking'
   | 'returned'
   | 'history';
 
@@ -42,6 +43,25 @@ export type PlanningWorkRow =
       scopeSubjectsTotal: number;
       planningRadicationCheckDueAt: string | null;
       lastRadicationReturnReason: string | null;
+    }
+  | {
+      kind: 'tracking';
+      id: string;
+      subjectId: string;
+      projectId: string;
+      subjectName: string;
+      program: string;
+      school: string;
+      semesterNumber: number;
+      operationalState: InstitutionalOperationalState;
+      stageLabel: string;
+      responsibleRole: Role;
+      stageDueAt: string | null;
+      slaStatus: SlaStatus;
+      lastActivity: string | null;
+      actionUrl: string;
+      subjectsTotal: number;
+      subjectsReady: number;
     }
   | {
       kind: 'returned';
@@ -79,6 +99,7 @@ export function parsePlanningFilter(raw: string | null): PlanningDashboardFilter
     'production',
     'lms',
     'radication',
+    'tracking',
     'returned',
     'history',
   ];
@@ -88,10 +109,34 @@ export function parsePlanningFilter(raw: string | null): PlanningDashboardFilter
   return 'all';
 }
 
+export function mapTrackingWorkItem(item: OperationalWorkItemDto): PlanningWorkRow {
+  const isSemester = item.kind === 'semester' && item.semesterId;
+  return {
+    kind: 'tracking',
+    id: isSemester ? item.semesterId! : item.subjectId,
+    subjectId: item.subjectId,
+    projectId: item.projectId,
+    subjectName: item.subjectName,
+    program: item.program,
+    school: item.school,
+    semesterNumber: item.semesterNumber,
+    operationalState: item.operationalState,
+    stageLabel: '',
+    responsibleRole: item.currentResponsibleRole,
+    stageDueAt: item.stageDueAt,
+    slaStatus: item.slaStatus,
+    lastActivity: item.lastReturnReason,
+    actionUrl: item.actionUrl,
+    subjectsTotal: item.subjectsTotal ?? 0,
+    subjectsReady: item.subjectsReady ?? 0,
+  };
+}
+
 export function mapSubjectWorkItem(item: OperationalWorkItemDto): PlanningWorkRow {
+  const isSemester = item.kind === 'semester' && item.semesterId;
   return {
     kind: 'subject',
-    id: item.subjectId,
+    id: isSemester ? item.semesterId! : item.subjectId,
     subjectId: item.subjectId,
     projectId: item.projectId,
     subjectName: item.subjectName,
@@ -178,6 +223,8 @@ export function filterPlanningRows(
       );
     case 'radication':
       return rows.filter((r) => r.kind === 'radication');
+    case 'tracking':
+      return rows.filter((r) => r.kind === 'tracking');
     case 'returned':
       return rows.filter((r) => r.kind === 'returned');
     case 'history':

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { ContextBackLink } from '../../navigation/ContextBackLink';
 import {
@@ -17,8 +17,10 @@ import { Card } from '../../components/ui/Card';
 import { getApiErrorMessage } from '../operations/apiMappers';
 import { calculateSubjectProgress } from '../operations/progress';
 import {
-  countPendingFactoryCorrectionNotifications,
   filterObservationsVisibleToFactory,
+  getFactoryCorrectionPhase,
+  isCorrectionReadyToNotify,
+  isCorrectionSentToProduct,
 } from '../observations/observationDeliverableHelpers';
 import {
   getOperationalCta,
@@ -29,8 +31,10 @@ import {
 } from '../operations/subjectOperationalState';
 import { useOperations } from '../../features/operations/OperationsContext';
 import { useToast } from '../../components/ui/ToastProvider';
+import { useQueryClient } from '@tanstack/react-query';
 import { useUpdateSubjectProductionStatusMutation } from '../queries/useWorkflowMutations';
 import { useOperationalWorkspaceQuery } from '../queries/useOperationalWorkspaceQuery';
+import { queryKeys } from '../queries/queryKeys';
 import { formatDate } from '../../utils/formatters';
 import { Button } from '../../components/ui/Button';
 import { cn } from '../../components/ui/tokens';
@@ -42,14 +46,15 @@ import type {
 } from '../../types/domain';
 import { ChangeOriginBadge, ChangeOriginHint } from '../../components/change-tracking/ChangeOriginBadge';
 import { FACTORY_COPY, institutionalStateLabel } from '../institutional-workflow/institutionalCopy';
+import { isSubjectFactoryProductionComplete } from './factoryProductionStatus';
 
-type FlowStepId = 'PENDIENTE' | 'EN_PRODUCCION' | 'EN_REVISION';
-type GeneralProductionState = FlowStepId | 'APROBADA';
+type FlowStepId = 'PENDIENTE' | 'EN_PRODUCCION' | 'ENTREGA_SEMESTRE';
+type GeneralProductionState = FlowStepId | 'INTERNA_COMPLETA' | 'APROBADA';
 
 function mapSubjectToProductionState(status: string): GeneralProductionState {
   if (status === 'APPROVED' || status === 'DELIVERED') return 'APROBADA';
   if (status === 'IN_PRODUCTION' || status === 'CHANGES_REQUESTED') return 'EN_PRODUCCION';
-  if (status === 'IN_REVIEW' || status === 'SUBMITTED') return 'EN_REVISION';
+  if (status === 'IN_REVIEW' || status === 'SUBMITTED') return 'INTERNA_COMPLETA';
   return 'PENDIENTE';
 }
 
@@ -62,9 +67,9 @@ function mapSubjectToProgress(status: string): number {
 }
 
 function stepState(current: GeneralProductionState, step: FlowStepId) {
-  if (current === 'APROBADA') return 'done';
-  const order: FlowStepId[] = ['PENDIENTE', 'EN_PRODUCCION', 'EN_REVISION'];
-  const currentIndex = order.indexOf(current);
+  if (current === 'APROBADA' || current === 'INTERNA_COMPLETA') return 'done';
+  const order: FlowStepId[] = ['PENDIENTE', 'EN_PRODUCCION', 'ENTREGA_SEMESTRE'];
+  const currentIndex = order.indexOf(current as FlowStepId);
   const stepIndex = order.indexOf(step);
   if (currentIndex === stepIndex) return 'current';
   if (currentIndex > stepIndex) return 'done';
@@ -74,13 +79,13 @@ function stepState(current: GeneralProductionState, step: FlowStepId) {
 function flowStepLabel(
   stepId: FlowStepId,
   productionState: GeneralProductionState,
-  institutionalState?: InstitutionalOperationalState,
+  useInstitutionalUi: boolean,
 ): string {
-  if (stepId === 'EN_REVISION') {
-    if (productionState === 'APROBADA') return 'Completada';
-    if (institutionalState === 'PENDING_PLANNING_PRODUCTION_VALIDATION') return 'En validación Planeación';
-    if (institutionalState && productionState === 'EN_REVISION') return 'Entregada a Planeación';
-    return 'En revisión Product';
+  if (stepId === 'ENTREGA_SEMESTRE') {
+    if (productionState === 'INTERNA_COMPLETA' || productionState === 'APROBADA') {
+      return useInstitutionalUi ? 'Producción interna completa' : 'Completada';
+    }
+    return useInstitutionalUi ? 'Entrega del semestre' : 'Validación Planeación';
   }
   if (stepId === 'PENDIENTE') return 'Pendiente';
   return 'En producción';
@@ -100,7 +105,7 @@ function mapInstitutionalToFactoryFlowState(
     state === 'IN_PRODUCT_ACADEMIC_REVIEW' ||
     state === 'PENDING_PROJECT_RADICATION'
   ) {
-    return 'EN_REVISION';
+    return 'INTERNA_COMPLETA';
   }
   if (
     state === 'IN_FACTORY_PRODUCTION' ||
@@ -118,7 +123,7 @@ function getInstitutionalFactoryCta(state: InstitutionalOperationalState): { lab
     case 'RETURNED_TO_FACTORY_FROM_PLANNING':
       return { label: 'Iniciar producción' };
     case 'IN_FACTORY_PRODUCTION':
-      return { label: 'Finalizar producción' };
+      return { label: 'Marcar producción completa' };
     case 'CHANGES_REQUESTED_BY_PRODUCT':
       return { label: 'Ver correcciones' };
     case 'PENDING_PLANNING_PRODUCTION_VALIDATION':
@@ -156,14 +161,14 @@ function getFactoryRecommendation(params: {
   if (useInstitutionalUi && institutionalOperationalState === 'PENDING_PLANNING_PRODUCTION_VALIDATION') {
     return 'Producción entregada. Planeación está validando la entrega antes de continuar hacia LMS.';
   }
-  if (useInstitutionalUi && displayProductionState === 'EN_REVISION') {
-    return 'La producción de Fábrica ya fue entregada. Sigue el avance operacional desde este panel.';
+  if (useInstitutionalUi && displayProductionState === 'INTERNA_COMPLETA') {
+    return 'Producción interna completa. La entrega formal del paquete semestral a Planeación se realiza desde el centro operacional del semestre.';
   }
   if (displayProductionState === 'PENDIENTE') {
     return 'Cuando el equipo inicie el trabajo, marca la materia como En producción.';
   }
   if (displayProductionState === 'EN_PRODUCCION') {
-    return 'Cuando el contenido esté listo, finalice la producción para enviarla a validación de Planeación.';
+    return 'Cuando el contenido esté listo, marca la producción interna como completa. La entrega del semestre a Planeación se hace desde el centro operacional del paquete.';
   }
   if (isApproved) {
     return 'Product aprobó esta materia. No hay acciones pendientes de Fábrica.';
@@ -171,29 +176,43 @@ function getFactoryRecommendation(params: {
   return 'La materia ya fue enviada a Product. Espera validación.';
 }
 
-const correctionStatusUi = {
-  ABIERTA: {
-    badge: 'border-rose-200 bg-rose-50 text-rose-700',
-    dot: 'bg-rose-500',
-    label: 'ABIERTA',
-    title: 'Corrección pendiente',
-    helper: 'Aún falta aplicar esta corrección en la materia.',
-  },
-  EN_CORRECCION: {
-    badge: 'border-sky-200 bg-sky-50 text-sky-700',
-    dot: 'bg-sky-500',
-    label: 'EN_CORRECCION',
-    title: 'Corrección enviada a Product',
-    helper: 'Product debe validar esta corrección de forma individual.',
-  },
-  RESUELTA: {
+function correctionCardMeta(observation: OperationalObservation) {
+  const phase = getFactoryCorrectionPhase(observation);
+  if (phase === 'open') {
+    return {
+      badge: 'border-rose-200 bg-rose-50 text-rose-700',
+      dot: 'bg-rose-500',
+      label: 'ABIERTA',
+      title: 'Corrección pendiente',
+      helper: 'Aplica el cambio en la materia y márcala como corregida cuando esté lista.',
+    };
+  }
+  if (phase === 'ready_to_notify') {
+    return {
+      badge: 'border-amber-200 bg-amber-50 text-amber-800',
+      dot: 'bg-amber-500',
+      label: FACTORY_COPY.correctionReadyLabel,
+      title: 'Corrección lista (sin notificar)',
+      helper: 'Ya quedó marcada como corregida. Selecciónala y envíala a Product cuando quieras.',
+    };
+  }
+  if (phase === 'sent_to_product') {
+    return {
+      badge: 'border-sky-200 bg-sky-50 text-sky-700',
+      dot: 'bg-sky-500',
+      label: FACTORY_COPY.correctionSentLabel,
+      title: 'Corrección enviada a Product',
+      helper: 'Product debe validar esta corrección de forma individual.',
+    };
+  }
+  return {
     badge: 'border-emerald-200 bg-emerald-50 text-emerald-700',
     dot: 'bg-emerald-500',
     label: 'RESUELTA',
     title: 'Validada por Product',
     helper: 'Esta observación ya quedó cerrada.',
-  },
-} as const;
+  };
+}
 
 interface FactorySubjectDetailProps {
   project: VirtualizationProject;
@@ -212,14 +231,19 @@ export function FactorySubjectDetail({ project, subject, observations }: Factory
     backendEnabled,
   } = useOperations();
   const { showToast } = useToast();
+  const queryClient = useQueryClient();
   const updateProductionStatusMutation = useUpdateSubjectProductionStatusMutation();
   const operationalWorkspaceQuery = useOperationalWorkspaceQuery(subject.id, backendEnabled);
 
-  const [submittingAction, setSubmittingAction] = useState<'production' | 'complete' | 'send-corrections' | 'notify-corrections' | null>(null);
+  const [submittingAction, setSubmittingAction] = useState<
+    'production' | 'complete' | 'send-corrections' | 'notify-corrections' | 'batch-mark' | null
+  >(null);
   const [submittingObservationId, setSubmittingObservationId] = useState<string | null>(null);
   const actionInFlightRef = useRef(false);
   const correctionsSectionRef = useRef<HTMLDivElement | null>(null);
   const [correctionsHighlighted, setCorrectionsHighlighted] = useState(false);
+  const [selectedOpenIds, setSelectedOpenIds] = useState<Set<string>>(() => new Set());
+  const [selectedNotifyIds, setSelectedNotifyIds] = useState<Set<string>>(() => new Set());
 
   useEffect(() => {
     if (searchParams.get('focus') !== 'correction') return;
@@ -249,9 +273,40 @@ export function FactorySubjectDetail({ project, subject, observations }: Factory
   );
 
   const openCorrections = productCorrections.filter((observation) => observation.status === 'ABIERTA');
-  const correctionsInReview = productCorrections.filter((observation) => observation.status === 'EN_CORRECCION');
+  const correctionsReadyToNotify = productCorrections.filter(isCorrectionReadyToNotify);
+  const correctionsSentToProduct = productCorrections.filter(isCorrectionSentToProduct);
   const resolvedCorrections = productCorrections.filter((observation) => observation.status === 'RESUELTA');
-  const hasCorrectionFlow = openCorrections.length > 0 || correctionsInReview.length > 0;
+  const hasCorrectionFlow =
+    openCorrections.length > 0 ||
+    correctionsReadyToNotify.length > 0 ||
+    correctionsSentToProduct.length > 0;
+
+  const readyNotifyIdsKey = useMemo(
+    () => correctionsReadyToNotify.map((o) => o.id).join(','),
+    [correctionsReadyToNotify],
+  );
+
+  useEffect(() => {
+    setSelectedNotifyIds(new Set(correctionsReadyToNotify.map((o) => o.id)));
+  }, [readyNotifyIdsKey, correctionsReadyToNotify]);
+
+  const toggleOpenSelection = useCallback((observationId: string) => {
+    setSelectedOpenIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(observationId)) next.delete(observationId);
+      else next.add(observationId);
+      return next;
+    });
+  }, []);
+
+  const toggleNotifySelection = useCallback((observationId: string) => {
+    setSelectedNotifyIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(observationId)) next.delete(observationId);
+      else next.add(observationId);
+      return next;
+    });
+  }, []);
   const productionState = mapSubjectToProductionState(subject.status);
   const institutionalFlowActive = operationalWorkspaceQuery.data?.institutionalFlowActive === true;
   const institutionalOperationalState = operationalWorkspaceQuery.data?.operationalState;
@@ -259,11 +314,15 @@ export function FactorySubjectDetail({ project, subject, observations }: Factory
     backendEnabled && institutionalFlowActive && institutionalOperationalState,
   );
   const factoryActionsReady = !backendEnabled || operationalWorkspaceQuery.isFetched;
-  const displayProductionState = useInstitutionalUi
-    ? mapInstitutionalToFactoryFlowState(institutionalOperationalState!)
-    : productionState;
+  const isFactoryComplete = isSubjectFactoryProductionComplete(subject);
+  const displayProductionState: GeneralProductionState = isFactoryComplete
+    ? 'INTERNA_COMPLETA'
+    : useInstitutionalUi
+      ? mapInstitutionalToFactoryFlowState(institutionalOperationalState!)
+      : productionState;
   const canStartProduction =
     factoryActionsReady &&
+    !isFactoryComplete &&
     !hasCorrectionFlow &&
     (useInstitutionalUi
       ? ['PENDING_FACTORY', 'RETURNED_TO_FACTORY_FROM_PLANNING', 'CHANGES_REQUESTED_BY_PRODUCT'].includes(
@@ -272,6 +331,7 @@ export function FactorySubjectDetail({ project, subject, observations }: Factory
       : productionState === 'PENDIENTE');
   const canFinishProduction =
     factoryActionsReady &&
+    !isFactoryComplete &&
     (useInstitutionalUi
       ? institutionalOperationalState === 'IN_FACTORY_PRODUCTION'
       : productionState === 'EN_PRODUCCION');
@@ -280,26 +340,45 @@ export function FactorySubjectDetail({ project, subject, observations }: Factory
     observations: productCorrections,
     projectStatus: project.status,
   });
-  const operationalLabel = useInstitutionalUi
-    ? institutionalStateLabel(institutionalOperationalState!)
-    : getOperationalStateLabel(operationalState);
-  const operationalCta = useInstitutionalUi
-    ? getInstitutionalFactoryCta(institutionalOperationalState!)
-    : getOperationalCta(operationalState);
-  const progress =
-    subject.checklist.length > 0 ? calculateSubjectProgress(subject) : mapSubjectToProgress(subject.status);
+  const operationalLabel = isFactoryComplete
+    ? FACTORY_COPY.internalProductionCompleteLabel
+    : useInstitutionalUi
+      ? institutionalStateLabel(institutionalOperationalState!)
+      : getOperationalStateLabel(operationalState);
+  const operationalCta = isFactoryComplete
+    ? { label: 'Producción completa', passive: true }
+    : useInstitutionalUi
+      ? getInstitutionalFactoryCta(institutionalOperationalState!)
+      : getOperationalCta(operationalState);
+  const progress = isFactoryComplete
+    ? 100
+    : backendEnabled
+      ? subject.progress ?? 0
+      : subject.checklist.length > 0
+        ? calculateSubjectProgress(subject)
+        : mapSubjectToProgress(subject.status);
   const semester = project.semesters.find((item) => item.semesterNumber === subject.semesterNumber);
-  const canSendCorrections = openCorrections.length === 0 && correctionsInReview.length > 0;
+  const semesterId = semester?.id;
+  const semesterOperationsUrl =
+    semesterId && project.id ? `/projects/${project.id}/semesters/${semesterId}/operations` : null;
+  const canSendCorrections =
+    openCorrections.length === 0 &&
+    correctionsReadyToNotify.length === 0 &&
+    correctionsSentToProduct.length > 0;
   const isApproved = displayProductionState === 'APROBADA';
+  const isInternallyComplete = isFactoryComplete;
   const factoryProductionDelivered =
-    useInstitutionalUi && displayProductionState === 'EN_REVISION' && !hasCorrectionFlow;
+    useInstitutionalUi &&
+    !isFactoryComplete &&
+    institutionalOperationalState === 'PENDING_PLANNING_PRODUCTION_VALIDATION' &&
+    !hasCorrectionFlow;
   const factoryRecommendation = getFactoryRecommendation({
     displayProductionState,
     useInstitutionalUi,
     institutionalOperationalState,
     openCorrections: openCorrections.length,
     hasCorrectionFlow,
-    correctionsInReview: correctionsInReview.length,
+    correctionsInReview: correctionsSentToProduct.length,
     isApproved,
   });
 
@@ -308,9 +387,14 @@ export function FactorySubjectDetail({ project, subject, observations }: Factory
     actionInFlightRef.current = true;
     setSubmittingAction('production');
     try {
-      await updateProductionStatusMutation.mutateAsync({ subjectId: subject.id, projectId: project.id, status: 'EN_PRODUCCION' });
+      await updateProductionStatusMutation.mutateAsync({
+        subjectId: subject.id,
+        projectId: project.id,
+        semesterId,
+        status: 'EN_PRODUCCION',
+      });
       await operationalWorkspaceQuery.refetch();
-      showToast('Producción iniciada.');
+      showToast(FACTORY_COPY.toastProductionStarted);
     } catch (updateError) {
       showToast(getApiErrorMessage(updateError), 'error');
     } finally {
@@ -324,9 +408,17 @@ export function FactorySubjectDetail({ project, subject, observations }: Factory
     actionInFlightRef.current = true;
     setSubmittingAction('complete');
     try {
-      await updateProductionStatusMutation.mutateAsync({ subjectId: subject.id, projectId: project.id, status: 'COMPLETADA' });
-      await operationalWorkspaceQuery.refetch();
-      showToast('Producción finalizada — enviada a validación de Planeación.');
+      await updateProductionStatusMutation.mutateAsync({
+        subjectId: subject.id,
+        projectId: project.id,
+        semesterId,
+        status: 'COMPLETADA',
+      });
+      await Promise.all([
+        operationalWorkspaceQuery.refetch(),
+        queryClient.invalidateQueries({ queryKey: queryKeys.subjectWorkspace(subject.id) }),
+      ]);
+      showToast(FACTORY_COPY.toastProductionFinished);
     } catch (updateError) {
       showToast(getApiErrorMessage(updateError), 'error');
     } finally {
@@ -340,8 +432,13 @@ export function FactorySubjectDetail({ project, subject, observations }: Factory
     actionInFlightRef.current = true;
     setSubmittingAction('send-corrections');
     try {
-      await updateProductionStatusMutation.mutateAsync({ subjectId: subject.id, projectId: project.id, status: 'COMPLETADA' });
-      showToast('Producción corregida reentregada a validación operacional.');
+      await updateProductionStatusMutation.mutateAsync({
+        subjectId: subject.id,
+        projectId: project.id,
+        semesterId,
+        status: 'COMPLETADA',
+      });
+      showToast(FACTORY_COPY.toastCorrectionsRedelivered);
     } catch (updateError) {
       showToast(getApiErrorMessage(updateError), 'error');
     } finally {
@@ -350,18 +447,18 @@ export function FactorySubjectDetail({ project, subject, observations }: Factory
     }
   };
 
-  const pendingCorrectionNotifyCount = countPendingFactoryCorrectionNotifications(
-    productCorrections,
-    subject.id,
-  );
-
-  const handleNotifyCorrectionsToProduct = async () => {
+  const handleNotifyCorrectionsToProduct = async (observationIds: string[]) => {
     if (actionInFlightRef.current || isActionBusy || submittingAction) return;
+    if (observationIds.length === 0) {
+      showToast('Selecciona al menos una corrección para enviar a Product.', 'error');
+      return;
+    }
     actionInFlightRef.current = true;
     setSubmittingAction('notify-corrections');
     try {
-      const count = await notifyCorrectionsBatchFromApi(subject.id, project.id);
-      showToast(`${count} corrección(es) notificadas a Product`);
+      const count = await notifyCorrectionsBatchFromApi(subject.id, project.id, observationIds);
+      showToast(`${count} corrección(es) enviadas a Product en un solo aviso`);
+      setSelectedNotifyIds(new Set());
     } catch (updateError) {
       showToast(getApiErrorMessage(updateError), 'error');
     } finally {
@@ -374,11 +471,41 @@ export function FactorySubjectDetail({ project, subject, observations }: Factory
     setSubmittingObservationId(observation.id);
     try {
       await markObservationCorrectionApplied(project.id, observation.id, observation);
-      showToast('Corrección marcada. Notifica a Product cuando termines el lote.');
+      showToast(FACTORY_COPY.correctionMarkedLocally);
+      setSelectedOpenIds((prev) => {
+        const next = new Set(prev);
+        next.delete(observation.id);
+        return next;
+      });
     } catch (updateError) {
       showToast(getApiErrorMessage(updateError), 'error');
     } finally {
       setSubmittingObservationId(null);
+    }
+  };
+
+  const handleMarkSelectedCorrections = async () => {
+    const ids = [...selectedOpenIds];
+    if (ids.length === 0) {
+      showToast('Selecciona al menos una corrección abierta.', 'error');
+      return;
+    }
+    if (actionInFlightRef.current || isActionBusy) return;
+    actionInFlightRef.current = true;
+    setSubmittingAction('batch-mark');
+    try {
+      for (const id of ids) {
+        const observation = openCorrections.find((o) => o.id === id);
+        if (!observation) continue;
+        await markObservationCorrectionApplied(project.id, observation.id, observation);
+      }
+      showToast(FACTORY_COPY.correctionBatchMarked);
+      setSelectedOpenIds(new Set());
+    } catch (updateError) {
+      showToast(getApiErrorMessage(updateError), 'error');
+    } finally {
+      actionInFlightRef.current = false;
+      setSubmittingAction(null);
     }
   };
 
@@ -387,7 +514,7 @@ export function FactorySubjectDetail({ project, subject, observations }: Factory
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <ContextBackLink
-            fallback={`/projects/${project.id}/semesters/${subject.semesterNumber}`}
+            fallback={semesterOperationsUrl ?? `/projects/${project.id}/semesters/${subject.semesterNumber}`}
             className="inline-flex items-center gap-1 text-xs font-medium text-[#64748B] hover:text-[#FF6B00]"
           >
             <ArrowLeft className="h-3.5 w-3.5" /> Volver al semestre
@@ -411,6 +538,20 @@ export function FactorySubjectDetail({ project, subject, observations }: Factory
           </span>
         </div>
       </div>
+
+      {useInstitutionalUi && (
+        <div className="rounded-[14px] border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+          <p className="font-semibold">{FACTORY_COPY.institutionalSubjectBanner}</p>
+          {semesterOperationsUrl ? (
+            <p className="mt-1 text-xs text-amber-800">
+              Entrega del paquete:{' '}
+              <a href={semesterOperationsUrl} className="font-bold underline hover:text-amber-950">
+                centro operacional del semestre {subject.semesterNumber}
+              </a>
+            </p>
+          ) : null}
+        </div>
+      )}
 
       <Card className="p-6 sm:p-7">
         <div className="flex items-center gap-3">
@@ -437,7 +578,7 @@ export function FactorySubjectDetail({ project, subject, observations }: Factory
             {([
               { id: 'PENDIENTE' as const },
               { id: 'EN_PRODUCCION' as const },
-              { id: 'EN_REVISION' as const },
+              { id: 'ENTREGA_SEMESTRE' as const },
             ]).map((step, index, list) => {
               const state = stepState(displayProductionState, step.id);
               return (
@@ -447,7 +588,7 @@ export function FactorySubjectDetail({ project, subject, observations }: Factory
                   </div>
                   <div className="min-w-0">
                     <p className={cn('text-xs font-bold transition-colors', state === 'upcoming' ? 'text-slate-400' : state === 'done' ? 'text-emerald-700' : 'text-slate-900')}>
-                      {flowStepLabel(step.id, displayProductionState, institutionalOperationalState)}
+                      {flowStepLabel(step.id, displayProductionState, useInstitutionalUi)}
                     </p>
                     <p className={cn('text-[10px] font-medium', state === 'done' ? 'text-emerald-600' : 'text-slate-400')}>
                       {state === 'current' ? 'Estado actual' : state === 'done' ? 'Completado' : 'Pendiente'}
@@ -472,7 +613,7 @@ export function FactorySubjectDetail({ project, subject, observations }: Factory
                   <div
                     className={cn(
                       'h-full rounded-full',
-                      isApproved
+                      isInternallyComplete || isApproved
                         ? 'bg-gradient-to-r from-emerald-400 to-emerald-600'
                         : 'bg-gradient-to-r from-orange-400 to-orange-600',
                     )}
@@ -480,7 +621,12 @@ export function FactorySubjectDetail({ project, subject, observations }: Factory
                   />
                 </div>
               </div>
-              <span className={cn('text-xs font-black', isApproved ? 'text-emerald-600' : 'text-orange-600')}>
+              <span
+                className={cn(
+                  'text-xs font-black',
+                  isInternallyComplete || isApproved ? 'text-emerald-600' : 'text-orange-600',
+                )}
+              >
                 {progress}%
               </span>
             </div>
@@ -490,14 +636,16 @@ export function FactorySubjectDetail({ project, subject, observations }: Factory
         <div
           className={cn(
             'mt-6 rounded-[16px] border p-4',
-            isApproved ? 'border-emerald-100 bg-emerald-50/70' : 'border-slate-100 bg-slate-50/60',
+            isInternallyComplete || isApproved
+              ? 'border-emerald-100 bg-emerald-50/70'
+              : 'border-slate-100 bg-slate-50/60',
           )}
         >
-          <p className={cn('text-xs font-bold', isApproved ? 'text-emerald-900' : 'text-slate-900')}>
-            {isApproved ? 'Materia completada' : 'Siguiente acción recomendada'}
+          <p className={cn('text-xs font-bold', isInternallyComplete || isApproved ? 'text-emerald-900' : 'text-slate-900')}>
+            {isInternallyComplete ? 'Producción interna registrada' : isApproved ? 'Materia completada' : 'Siguiente acción recomendada'}
           </p>
-          <p className={cn('mt-1 text-sm font-medium', isApproved ? 'text-emerald-800' : 'text-slate-600')}>
-            {factoryRecommendation}
+          <p className={cn('mt-1 text-sm font-medium', isInternallyComplete || isApproved ? 'text-emerald-800' : 'text-slate-600')}>
+            {isInternallyComplete ? FACTORY_COPY.internalProductionCompleteBanner : factoryRecommendation}
           </p>
         </div>
 
@@ -531,7 +679,7 @@ export function FactorySubjectDetail({ project, subject, observations }: Factory
                   className="w-full py-3 text-sm font-bold shadow-[0_14px_28px_-20px_rgba(249,115,22,0.55)]"
                 >
                   {submittingAction === 'complete' ? <Clock3 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
-                  Finalizar producción
+                  {FACTORY_COPY.finishProduction}
                 </Button>
               </div>
             )}
@@ -560,9 +708,10 @@ export function FactorySubjectDetail({ project, subject, observations }: Factory
                   </p>
                 </div>
               </div>
-              <div className="grid grid-cols-3 gap-2 rounded-2xl border border-white/70 bg-white/80 p-2 shadow-sm">
+              <div className="grid grid-cols-2 gap-2 rounded-2xl border border-white/70 bg-white/80 p-2 shadow-sm sm:grid-cols-4">
                 <MetricPill label="Abiertas" value={openCorrections.length} tone="rose" />
-                <MetricPill label="En revisión" value={correctionsInReview.length} tone="sky" />
+                <MetricPill label="Listas" value={correctionsReadyToNotify.length} tone="amber" />
+                <MetricPill label="Notificadas" value={correctionsSentToProduct.length} tone="sky" />
                 <MetricPill label="Validadas" value={resolvedCorrections.length} tone="emerald" />
               </div>
             </div>
@@ -577,6 +726,11 @@ export function FactorySubjectDetail({ project, subject, observations }: Factory
               </div>
             ) : (
               <div className="space-y-4">
+                <div className="rounded-[18px] border border-slate-200 bg-slate-50/80 px-4 py-3 text-sm text-slate-700">
+                  <p className="font-semibold text-slate-900">Flujo en dos pasos</p>
+                  <p className="mt-1">{FACTORY_COPY.correctionNotifyHint}</p>
+                </div>
+
                 {openCorrections.length > 0 && (
                   <div className="rounded-[18px] border border-amber-200 bg-amber-50/70 px-4 py-3 text-sm text-amber-800">
                     <div className="flex items-start gap-2">
@@ -592,37 +746,57 @@ export function FactorySubjectDetail({ project, subject, observations }: Factory
                 )}
 
                 <div className="grid gap-4 xl:grid-cols-2">
-                  {productCorrections.map((observation) => (
-                    <CorrectionCard
-                      key={observation.id}
-                      observation={observation}
-                      isSubmitting={submittingObservationId === observation.id}
-                      disabled={isActionBusy}
-                      onMarkApplied={() => void handleMarkCorrectionApplied(observation)}
-                    />
-                  ))}
+                  {productCorrections.map((observation) => {
+                    const phase = getFactoryCorrectionPhase(observation);
+                    return (
+                      <CorrectionCard
+                        key={observation.id}
+                        observation={observation}
+                        phase={phase}
+                        isSubmitting={submittingObservationId === observation.id}
+                        disabled={isActionBusy || submittingAction !== null}
+                        selectedForMark={selectedOpenIds.has(observation.id)}
+                        selectedForNotify={selectedNotifyIds.has(observation.id)}
+                        onToggleMarkSelect={() => toggleOpenSelection(observation.id)}
+                        onToggleNotifySelect={() => toggleNotifySelection(observation.id)}
+                        onMarkApplied={() => void handleMarkCorrectionApplied(observation)}
+                      />
+                    );
+                  })}
                 </div>
 
-                {pendingCorrectionNotifyCount > 0 && (
-                  <div className="rounded-[22px] border border-sky-200 bg-sky-50/70 p-5 shadow-sm">
-                    <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-                      <div>
-                        <p className="text-[10px] font-black uppercase tracking-widest text-sky-600">Notificación agrupada</p>
-                        <h3 className="mt-1 text-base font-black text-slate-950">
-                          {pendingCorrectionNotifyCount} corrección(es) lista(s) para notificar
-                        </h3>
-                        <p className="mt-1 text-sm text-slate-600">
-                          Product recibirá un solo aviso con todas las correcciones marcadas.
-                        </p>
-                      </div>
-                      <Button
-                        onClick={() => void handleNotifyCorrectionsToProduct()}
-                        disabled={isActionBusy || submittingAction === 'notify-corrections'}
-                        className="min-w-[280px] py-3 text-sm font-bold shadow-[0_14px_28px_-20px_rgba(14,165,233,0.6)]"
-                      >
-                        {submittingAction === 'notify-corrections' ? <Clock3 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-                        Notificar correcciones realizadas
-                      </Button>
+                {(selectedOpenIds.size > 0 || selectedNotifyIds.size > 0) && (
+                  <div className="sticky bottom-4 z-10 rounded-[22px] border border-slate-200 bg-white/95 p-5 shadow-lg backdrop-blur-sm">
+                    <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">Acciones en lote</p>
+                    <div className="mt-3 flex flex-col gap-3 lg:flex-row lg:flex-wrap lg:items-center">
+                      {selectedOpenIds.size > 0 ? (
+                        <Button
+                          onClick={() => void handleMarkSelectedCorrections()}
+                          disabled={isActionBusy || submittingAction !== null}
+                          className="min-w-[260px] py-3 text-sm font-bold"
+                        >
+                          {submittingAction === 'batch-mark' ? (
+                            <Clock3 className="h-4 w-4 animate-spin" />
+                          ) : (
+                            <RefreshCcw className="h-4 w-4" />
+                          )}
+                          {FACTORY_COPY.correctionMarkSelected} ({selectedOpenIds.size})
+                        </Button>
+                      ) : null}
+                      {selectedNotifyIds.size > 0 ? (
+                        <Button
+                          onClick={() => void handleNotifyCorrectionsToProduct([...selectedNotifyIds])}
+                          disabled={isActionBusy || submittingAction !== null}
+                          className="min-w-[280px] py-3 text-sm font-bold shadow-[0_14px_28px_-20px_rgba(14,165,233,0.6)]"
+                        >
+                          {submittingAction === 'notify-corrections' ? (
+                            <Clock3 className="h-4 w-4 animate-spin" />
+                          ) : (
+                            <Send className="h-4 w-4" />
+                          )}
+                          {FACTORY_COPY.correctionNotifySelected} ({selectedNotifyIds.size})
+                        </Button>
+                      ) : null}
                     </div>
                   </div>
                 )}
@@ -659,29 +833,68 @@ export function FactorySubjectDetail({ project, subject, observations }: Factory
 
 function CorrectionCard({
   observation,
+  phase,
   isSubmitting,
   disabled,
+  selectedForMark,
+  selectedForNotify,
+  onToggleMarkSelect,
+  onToggleNotifySelect,
   onMarkApplied,
 }: {
   observation: OperationalObservation;
+  phase: ReturnType<typeof getFactoryCorrectionPhase>;
   isSubmitting: boolean;
   disabled: boolean;
+  selectedForMark: boolean;
+  selectedForNotify: boolean;
+  onToggleMarkSelect: () => void;
+  onToggleNotifySelect: () => void;
   onMarkApplied: () => void;
 }) {
-  const statusUi = correctionStatusUi[observation.status];
+  const statusUi = correctionCardMeta(observation);
   const lastUpdated = observation.updatedAt ?? observation.createdAt;
 
   return (
-    <div className="rounded-[22px] border border-slate-200 bg-white p-5 shadow-[0_18px_40px_-30px_rgba(15,23,42,0.25)] transition-all hover:border-slate-300">
+    <div
+      className={cn(
+        'rounded-[22px] border bg-white p-5 shadow-[0_18px_40px_-30px_rgba(15,23,42,0.25)] transition-all hover:border-slate-300',
+        selectedForMark || selectedForNotify ? 'border-orange-300 ring-1 ring-orange-100' : 'border-slate-200',
+      )}
+    >
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
           <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Corrección solicitada por Product</p>
           <h3 className="mt-1 text-base font-black tracking-tight text-slate-950">{statusUi.title}</h3>
         </div>
-        <span className={cn('inline-flex items-center gap-2 rounded-full border px-3 py-1 text-[10px] font-black tracking-wide', statusUi.badge)}>
-          <span className={cn('h-2 w-2 rounded-full', statusUi.dot)} />
-          {statusUi.label}
-        </span>
+        <div className="flex flex-wrap items-center gap-2">
+          {phase === 'open' ? (
+            <label className="inline-flex cursor-pointer items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[10px] font-bold text-slate-600">
+              <input
+                type="checkbox"
+                className="h-3.5 w-3.5 rounded border-slate-300 text-orange-600 focus:ring-orange-500"
+                checked={selectedForMark}
+                onChange={onToggleMarkSelect}
+              />
+              Seleccionar
+            </label>
+          ) : null}
+          {phase === 'ready_to_notify' ? (
+            <label className="inline-flex cursor-pointer items-center gap-2 rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-[10px] font-bold text-amber-800">
+              <input
+                type="checkbox"
+                className="h-3.5 w-3.5 rounded border-amber-300 text-amber-600 focus:ring-amber-500"
+                checked={selectedForNotify}
+                onChange={onToggleNotifySelect}
+              />
+              Enviar a Product
+            </label>
+          ) : null}
+          <span className={cn('inline-flex items-center gap-2 rounded-full border px-3 py-1 text-[10px] font-black tracking-wide', statusUi.badge)}>
+            <span className={cn('h-2 w-2 rounded-full', statusUi.dot)} />
+            {statusUi.label}
+          </span>
+        </div>
       </div>
 
       <div className="mt-4 rounded-[18px] border border-slate-100 bg-slate-50/80 p-4">
@@ -698,25 +911,32 @@ function CorrectionCard({
       <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <p className="text-sm text-slate-500">{statusUi.helper}</p>
 
-        {observation.status === 'ABIERTA' && (
+        {phase === 'open' && (
           <Button
             onClick={onMarkApplied}
             disabled={disabled || isSubmitting}
             className="min-w-[240px] py-2.5 text-sm font-bold"
           >
             {isSubmitting ? <Clock3 className="h-4 w-4 animate-spin" /> : <RefreshCcw className="h-4 w-4" />}
-            Marcar corrección aplicada
+            {FACTORY_COPY.correctionMarkApplied}
           </Button>
         )}
 
-        {observation.status === 'EN_CORRECCION' && (
-          <div className="inline-flex min-w-[240px] items-center justify-center gap-2 rounded-2xl border border-sky-200 bg-sky-50 px-4 py-2.5 text-sm font-bold text-sky-700">
-            <Send className="h-4 w-4" />
-            Corrección enviada a Product
+        {phase === 'ready_to_notify' && (
+          <div className="inline-flex min-w-[240px] items-center justify-center gap-2 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-2.5 text-sm font-bold text-amber-800">
+            <Clock3 className="h-4 w-4" />
+            Pendiente de envío a Product
           </div>
         )}
 
-        {observation.status === 'RESUELTA' && (
+        {phase === 'sent_to_product' && (
+          <div className="inline-flex min-w-[240px] items-center justify-center gap-2 rounded-2xl border border-sky-200 bg-sky-50 px-4 py-2.5 text-sm font-bold text-sky-700">
+            <Send className="h-4 w-4" />
+            {FACTORY_COPY.correctionSentLabel}
+          </div>
+        )}
+
+        {phase === 'resolved' && (
           <div className="inline-flex min-w-[240px] items-center justify-center gap-2 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-2.5 text-sm font-bold text-emerald-700">
             <CheckCircle2 className="h-4 w-4" />
             Validada por Product
@@ -736,9 +956,18 @@ function MetaBox({ label, value }: { label: string; value: string }) {
   );
 }
 
-function MetricPill({ label, value, tone }: { label: string; value: number; tone: 'rose' | 'sky' | 'emerald' }) {
+function MetricPill({
+  label,
+  value,
+  tone,
+}: {
+  label: string;
+  value: number;
+  tone: 'rose' | 'amber' | 'sky' | 'emerald';
+}) {
   const tones = {
     rose: 'bg-rose-50 text-rose-700',
+    amber: 'bg-amber-50 text-amber-800',
     sky: 'bg-sky-50 text-sky-700',
     emerald: 'bg-emerald-50 text-emerald-700',
   } as const;

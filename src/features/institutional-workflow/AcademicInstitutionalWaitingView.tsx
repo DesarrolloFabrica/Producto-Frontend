@@ -98,7 +98,7 @@ export function AcademicInstitutionalWaitingView({
 
         <div className="mt-6 flex flex-wrap gap-3">
           <Link
-            to={`/subjects/${workspace.subjectId}/operations`}
+            to={`/projects/${workspace.projectId}/semesters/${workspace.semesterId}/operations`}
             className="inline-flex items-center justify-center gap-1.5 rounded-[12px] bg-linear-to-br from-[#FF6B00] to-[#FF852D] px-4 py-2 text-xs font-bold text-white shadow-[0_4px_14px_0_rgba(255,107,0,0.39)]"
           >
             <GitBranch className="h-4 w-4" />

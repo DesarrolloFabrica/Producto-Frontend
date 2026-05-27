@@ -1,6 +1,6 @@
-import { Link, useNavigate, useParams } from 'react-router-dom';
-import { AlertCircle, ArrowRight } from 'lucide-react';
-import { useState } from 'react';
+import { useNavigate, useParams } from 'react-router-dom';
+import { AlertCircle, MessageSquare } from 'lucide-react';
+import { useRef, useState } from 'react';
 import { useAuth } from '../auth/AuthContext';
 import { ContextBackLink } from '../../navigation/ContextBackLink';
 import { homePathForRole } from '../../navigation/roleNavigation';
@@ -17,7 +17,13 @@ import { getApiErrorMessage } from '../operations/apiMappers';
 import { OperationalPipelineInstitutional } from './components/OperationalPipelineInstitutional';
 import { OperationalTimelineExecutive } from './components/OperationalTimelineExecutive';
 import { InstitutionalOperationalChecks } from './components/InstitutionalOperationalChecks';
-import { institutionalStateLabel } from './institutionalCopy';
+import { SemesterSubjectsTable } from './components/SemesterSubjectsTable';
+import {
+  institutionalStateLabel,
+  isSemesterProductAcademicReviewPhase,
+  shouldShowSemesterAcademicRequirements,
+} from './institutionalCopy';
+import { semesterSubjectsPanelPath } from './institutionalNavigation';
 import { useSemesterOperationalWorkspaceQuery } from '../queries/useSemesterOperationalWorkspaceQuery';
 import { useSemesterInstitutionalTransitionMutation } from '../queries/useSemesterInstitutionalTransitionMutation';
 import type { OperationalCheckKeyV2, SlaStatusV2 } from '../../types/operationalWorkflow';
@@ -41,6 +47,7 @@ export function SemesterOperationsPage() {
   const { role } = useAuth();
   const roleHome = homePathForRole(role);
   const [modal, setModal] = useState<ModalRequestV2>(null);
+  const subjectsSectionRef = useRef<HTMLElement>(null);
   const { showToast } = useToast();
   const workspaceQuery = useSemesterOperationalWorkspaceQuery(semesterId);
   const transitionMutation = useSemesterInstitutionalTransitionMutation(semesterId);
@@ -53,14 +60,19 @@ export function SemesterOperationsPage() {
   }) => {
     if (!semesterId) return;
     try {
-      await transitionMutation.mutateAsync({
+      const updated = await transitionMutation.mutateAsync({
         action: params.action,
         comment: params.comment,
         returnReason: params.comment,
         evidenceUrl: params.evidenceUrl,
       });
-      if (params.action === 'PRODUCT_START_ACADEMIC_REVIEW' && workspace?.subjects[0]) {
-        navigate(`/subjects/${workspace.subjects[0].subjectId}?review=started`);
+      if (params.action === 'PRODUCT_START_ACADEMIC_REVIEW') {
+        navigate(semesterSubjectsPanelPath(updated.projectId, updated.semesterNumber), {
+          replace: true,
+          state: { reviewStarted: true },
+        });
+        showToast('Revisión académica iniciada. Elija una asignatura para continuar.');
+        return;
       }
     } catch (e: unknown) {
       showToast(getApiErrorMessage(e), 'error');
@@ -114,6 +126,35 @@ export function SemesterOperationsPage() {
 
   const hasActions = workspace.availableActions.length > 0;
   const blockers = workspace.readiness?.blockers ?? [];
+  const deliverBlocked =
+    workspace.operationalState === 'IN_FACTORY_PRODUCTION' && !workspace.readiness?.ready;
+  const productionDelivered =
+    workspace.operationalState === 'PENDING_PLANNING_PRODUCTION_VALIDATION' ||
+    workspace.operationalState === 'PENDING_LMS_UPLOAD';
+  const isFactoryView = role === 'FABRICA';
+  const showAcademicRequirements = shouldShowSemesterAcademicRequirements(
+    role,
+    workspace.operationalState,
+  );
+  const subjectsPendingProduction = Math.max(
+    0,
+    workspace.metrics.subjectsTotal - workspace.metrics.subjectsReady,
+  );
+  const subjectsWithObservations = workspace.subjects.filter(
+    (s) => s.internalState === 'HAS_OBSERVATIONS' || (s.openObservationsCount ?? 0) > 0,
+  );
+
+  const scrollToSubjectsWithObservations = () => {
+    const first = subjectsWithObservations[0];
+    if (first) {
+      document.getElementById(`subject-row-${first.subjectId}`)?.scrollIntoView({
+        behavior: 'smooth',
+        block: 'center',
+      });
+      return;
+    }
+    subjectsSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
 
   return (
     <div className="min-h-screen bg-slate-50">
@@ -150,24 +191,69 @@ export function SemesterOperationsPage() {
 
         <OperationalPipelineInstitutional state={workspace.operationalState} />
 
-        <div className="grid gap-3 sm:grid-cols-4">
+        <div className={cn('grid gap-3', showAcademicRequirements ? 'sm:grid-cols-4' : 'sm:grid-cols-3')}>
           <div className="rounded-xl bg-white p-4 ring-1 ring-slate-200">
-            <p className="text-xs font-semibold uppercase text-slate-400">Asignaturas listas</p>
+            <p className="text-xs font-semibold uppercase text-slate-400">Producidas</p>
             <p className="mt-1 text-2xl font-bold text-slate-900">{workspace.metrics.subjectsReady}/{workspace.metrics.subjectsTotal}</p>
           </div>
-          <div className="rounded-xl bg-white p-4 ring-1 ring-slate-200">
-            <p className="text-xs font-semibold uppercase text-slate-400">Aprobadas</p>
-            <p className="mt-1 text-2xl font-bold text-emerald-700">{workspace.metrics.subjectsApproved}</p>
-          </div>
-          <div className="rounded-xl bg-white p-4 ring-1 ring-slate-200">
-            <p className="text-xs font-semibold uppercase text-slate-400">Bloqueadas</p>
-            <p className="mt-1 text-2xl font-bold text-rose-700">{workspace.metrics.subjectsBlocked}</p>
-          </div>
-          <div className="rounded-xl bg-white p-4 ring-1 ring-slate-200">
+          {showAcademicRequirements ? (
+            <>
+              <div className="rounded-xl bg-white p-4 ring-1 ring-slate-200">
+                <p className="text-xs font-semibold uppercase text-slate-400">Aprobadas</p>
+                <p className="mt-1 text-2xl font-bold text-emerald-700">{workspace.metrics.subjectsApproved}</p>
+              </div>
+              <div className="rounded-xl bg-white p-4 ring-1 ring-slate-200">
+                <p className="text-xs font-semibold uppercase text-slate-400">Requisitos pendientes</p>
+                <p className="mt-1 text-2xl font-bold text-amber-700">{workspace.metrics.subjectsBlocked}</p>
+              </div>
+            </>
+          ) : (
+            <div className="rounded-xl bg-white p-4 ring-1 ring-slate-200">
+              <p className="text-xs font-semibold uppercase text-slate-400">Pendientes de producir</p>
+              <p className="mt-1 text-2xl font-bold text-orange-600">{subjectsPendingProduction}</p>
+            </div>
+          )}
+          <button
+            type="button"
+            onClick={scrollToSubjectsWithObservations}
+            disabled={workspace.metrics.openObservations === 0}
+            className={cn(
+              'rounded-xl bg-white p-4 text-left ring-1 ring-slate-200 transition-colors',
+              workspace.metrics.openObservations > 0 &&
+                'cursor-pointer hover:bg-amber-50/80 hover:ring-amber-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500',
+              workspace.metrics.openObservations === 0 && 'cursor-default',
+            )}
+          >
             <p className="text-xs font-semibold uppercase text-slate-400">Observaciones abiertas</p>
             <p className="mt-1 text-2xl font-bold text-amber-700">{workspace.metrics.openObservations}</p>
-          </div>
+            {workspace.metrics.openObservations > 0 ? (
+              <p className="mt-1 text-[10px] font-medium text-amber-700">Clic para ir a la asignatura</p>
+            ) : null}
+          </button>
         </div>
+
+        {workspace.metrics.openObservations > 0 && isFactoryView ? (
+          <div className="flex items-start gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+            <MessageSquare className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+            <div className="min-w-0 flex-1">
+              <p className="font-semibold">
+                Hay {workspace.metrics.openObservations} observación
+                {workspace.metrics.openObservations !== 1 ? 'es' : ''} de Product sin resolver en este semestre.
+              </p>
+              <p className="mt-1 text-xs text-amber-800">
+                Las asignaturas afectadas aparecen como «Observaciones de Product». Usa «Ver observaciones» para aplicar
+                cada corrección.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={scrollToSubjectsWithObservations}
+              className="shrink-0 rounded-lg bg-amber-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-amber-700"
+            >
+              Ir a asignaturas
+            </button>
+          </div>
+        ) : null}
 
         <div className="grid items-start gap-6 lg:grid-cols-3">
           <section className={cn('glass-surface rounded-2xl p-6 lg:col-span-2', surface.glassSubtle)}>
@@ -184,17 +270,40 @@ export function SemesterOperationsPage() {
                 {blockers.slice(0, 5).map((blocker) => <li key={blocker}>• {blocker}</li>)}
               </ul>
             ) : null}
+            {productionDelivered ? (
+              <p className="mt-4 rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-xs text-sky-900">
+                Producción entregada. Pendiente validación de Planeación (producción).
+              </p>
+            ) : null}
+            {isSemesterProductAcademicReviewPhase(workspace.operationalState) &&
+            (role === 'PRODUCT' || role === 'ADMIN') ? (
+              <div className="mt-4">
+                <Button
+                  size="sm"
+                  variant="primary"
+                  className="w-full justify-center font-medium"
+                  onClick={() =>
+                    navigate(semesterSubjectsPanelPath(workspace.projectId, workspace.semesterNumber))
+                  }
+                >
+                  Ir al panel de asignaturas
+                </Button>
+              </div>
+            ) : null}
             {hasActions ? (
               <div className="mt-4 flex flex-col gap-2.5">
                 {sortActionsForDisplay(workspace.availableActions).map((action) => {
                   const isReturn = isReturnOrRejectAction(action);
+                  const isDeliver = action === 'FACTORY_DELIVER_CONTENT';
+                  const actionDisabled =
+                    transitionMutation.isPending || (isDeliver && deliverBlocked);
                   return (
                     <Button
                       key={action}
                       size="sm"
                       variant={isReturn ? 'secondary' : 'primary'}
                       className="w-full justify-center font-medium"
-                      disabled={transitionMutation.isPending}
+                      disabled={actionDisabled}
                       onClick={() => {
                         if (isReturn) {
                           setModal({ subjectId: workspace.semesterId, action: action as never });
@@ -214,39 +323,28 @@ export function SemesterOperationsPage() {
           </section>
         </div>
 
-        <section className="overflow-hidden rounded-2xl bg-white ring-1 ring-slate-200">
-          <div className="border-b border-slate-100 px-5 py-4">
-            <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">Asignaturas del paquete</p>
-            <h2 className="text-sm font-semibold text-slate-900">Detalle interno del semestre</h2>
+        <section
+          ref={subjectsSectionRef}
+          id="semester-subjects-section"
+          className="overflow-hidden rounded-2xl bg-white shadow-sm ring-1 ring-slate-200"
+        >
+          <div className="border-b border-slate-100 bg-gradient-to-r from-slate-50 to-white px-5 py-4">
+            <p className="text-[10px] font-bold uppercase tracking-widest text-orange-600">Asignaturas del paquete</p>
+            <h2 className="mt-0.5 text-base font-semibold text-slate-900">Detalle interno del semestre</h2>
+            <p className="mt-1 text-xs text-slate-500">
+              {showAcademicRequirements
+                ? 'Revise temas, granularidad y checklist académico por asignatura antes de aprobar el paquete.'
+                : isFactoryView
+                  ? 'Marca la producción interna de cada asignatura. La validación académica (temas y granularidad) la realiza Product en la fase 7 del flujo.'
+                  : 'Avance de producción del paquete por asignatura. Los requisitos académicos se validan en la fase de revisión Product.'}
+            </p>
           </div>
-          <div className="overflow-x-auto">
-            <table className="min-w-full text-sm">
-              <thead className="bg-slate-50 text-xs uppercase text-slate-400">
-                <tr>
-                  <th className="px-5 py-3 text-left">Asignatura</th>
-                  <th className="px-5 py-3 text-left">Estado interno</th>
-                  <th className="px-5 py-3 text-left">Bloqueos</th>
-                  <th className="px-5 py-3 text-right">Detalle</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {workspace.subjects.map((subject) => (
-                  <tr key={subject.subjectId}>
-                    <td className="px-5 py-4 font-semibold text-slate-900">{subject.subjectName}</td>
-                    <td className="px-5 py-4 text-xs font-bold text-slate-600">{subject.internalState}</td>
-                    <td className="px-5 py-4 text-xs text-slate-500">
-                      {subject.blockers.length ? subject.blockers.slice(0, 2).join(' · ') : 'Sin bloqueos'}
-                    </td>
-                    <td className="px-5 py-4 text-right">
-                      <Link to={`/subjects/${subject.subjectId}/operations`} className="inline-flex items-center gap-1 rounded-xl border border-slate-200 px-3 py-1.5 text-xs font-bold text-slate-700">
-                        Ver asignatura <ArrowRight className="h-3.5 w-3.5" />
-                      </Link>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <SemesterSubjectsTable
+            subjects={workspace.subjects}
+            showRequirements={showAcademicRequirements}
+            checklistReviewMode={isSemesterProductAcademicReviewPhase(workspace.operationalState)}
+            factoryCorrectionsMode={isFactoryView}
+          />
         </section>
 
         <OperationalTimelineExecutive items={operationalTimeline} />

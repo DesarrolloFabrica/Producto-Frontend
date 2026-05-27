@@ -6,10 +6,14 @@ import type { OperationalWorkItemV2 } from '../../types/operationalWorkflow';
 import { PageHeader } from '../../components/ui/PageHeader';
 import { useInstitutionalWorkQuery } from '../queries/useInstitutionalWorkQuery';
 import { institutionalStateLabel } from './institutionalCopy';
+import { resolveInstitutionalWorkHref } from './institutionalNavigation';
 import { buildFromLocation } from '../../navigation/contextNavigation';
 
 function mapItem(item: OperationalWorkItemDto): OperationalWorkItemV2 {
   return {
+    kind: item.kind ?? 'semester',
+    semesterId: item.semesterId,
+    actionUrl: item.actionUrl,
     subjectId: item.subjectId,
     projectId: item.projectId,
     subjectName: item.subjectName,
@@ -27,16 +31,19 @@ function mapItem(item: OperationalWorkItemDto): OperationalWorkItemV2 {
     lastActivityAt: item.stageDueAt ?? new Date().toISOString(),
     checksCompleted: 0,
     checksTotal: 7,
+    subjectsTotal: item.subjectsTotal,
+    subjectsReady: item.subjectsReady,
     primaryAction: 'VIEW_DETAIL',
     actions: ['VIEW_DETAIL'],
   };
 }
 
-function dedupeBySubjectId(items: OperationalWorkItemV2[]): OperationalWorkItemV2[] {
+function dedupeWorkItems(items: OperationalWorkItemV2[]): OperationalWorkItemV2[] {
   const seen = new Map<string, OperationalWorkItemV2>();
   for (const item of items) {
-    if (!seen.has(item.subjectId)) {
-      seen.set(item.subjectId, item);
+    const key = item.semesterId ?? item.subjectId;
+    if (!seen.has(key)) {
+      seen.set(key, item);
     }
   }
   return Array.from(seen.values());
@@ -48,7 +55,7 @@ export function InstitutionalWorkPage({ title }: { title: string }) {
   const location = useLocation();
   const workQuery = useInstitutionalWorkQuery(role);
 
-  const items = dedupeBySubjectId((workQuery.data ?? []).map(mapItem));
+  const items = dedupeWorkItems((workQuery.data ?? []).map(mapItem));
   const loading = workQuery.isLoading;
   const error = workQuery.error
     ? workQuery.error instanceof Error
@@ -56,8 +63,8 @@ export function InstitutionalWorkPage({ title }: { title: string }) {
       : 'No se pudo cargar la bandeja'
     : null;
 
-  const openOperationalFlow = (subjectId: string) => {
-    navigate(`/subjects/${subjectId}/operations`, {
+  const openOperationalFlow = (item: OperationalWorkItemV2) => {
+    navigate(resolveInstitutionalWorkHref(item), {
       state: { from: buildFromLocation(location) },
     });
   };
@@ -69,10 +76,11 @@ export function InstitutionalWorkPage({ title }: { title: string }) {
       <PageHeader
         eyebrow="Operaciones"
         title={title}
-        description="Revise el detalle de cada asignatura en el centro operacional antes de ejecutar validaciones."
+        description="Revise el centro operacional de cada semestre antes de ejecutar validaciones o revisiones."
       />
       <OperationalWorkTableV2
         role={displayRole ?? 'PLANEACION'}
+        semesterFirst
         items={items}
         isLoading={loading}
         error={error}
