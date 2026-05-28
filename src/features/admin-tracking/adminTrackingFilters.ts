@@ -1,7 +1,7 @@
 import type { AdminProgramTrackingRow } from './adminTrackingTypes';
 import type { Role } from '../../types/domain';
 
-export const ADMIN_TRACKING_PAGE_SIZE = 5;
+export const ADMIN_TRACKING_PAGE_SIZE = 10;
 
 export type AdminTrackingStatusFilter =
   | 'all'
@@ -19,6 +19,7 @@ export type AdminTrackingFiltersState = {
   status: AdminTrackingStatusFilter;
   owner: AdminTrackingOwnerFilter;
   modality: string;
+  school: string;
 };
 
 export const DEFAULT_ADMIN_TRACKING_FILTERS: AdminTrackingFiltersState = {
@@ -26,12 +27,13 @@ export const DEFAULT_ADMIN_TRACKING_FILTERS: AdminTrackingFiltersState = {
   status: 'all',
   owner: 'all',
   modality: 'all',
+  school: 'all',
 };
 
 export const ADMIN_TRACKING_STATUS_OPTIONS: Array<{ id: AdminTrackingStatusFilter; label: string }> = [
   { id: 'all', label: 'Todos' },
   { id: 'overdue', label: 'Vencidos' },
-  { id: 'returned', label: 'En devolución' },
+  { id: 'returned', label: 'Devolución' },
   { id: 'at_risk', label: 'En riesgo' },
   { id: 'in_progress', label: 'En curso' },
   { id: 'pre_institutional', label: 'Pre-institutional' },
@@ -46,7 +48,7 @@ export const ADMIN_TRACKING_OWNER_OPTIONS: Array<{ id: AdminTrackingOwnerFilter;
   { id: 'LMS', label: 'LMS' },
 ];
 
-function normalizeModalityKey(value: string): string {
+function normalizeKey(value: string): string {
   return value.trim().toLowerCase();
 }
 
@@ -68,12 +70,18 @@ function rowStatusCategory(row: AdminProgramTrackingRow): AdminTrackingStatusFil
   return 'in_progress';
 }
 
+function rowOwnerForFilter(row: AdminProgramTrackingRow): Role | null {
+  if (row.currentResponsibleRole) return row.currentResponsibleRole;
+  if (row.isLegacyOnly) return 'PRODUCT';
+  return null;
+}
+
 export function extractModalityOptions(rows: AdminProgramTrackingRow[]): string[] {
   const keys = new Map<string, string>();
   for (const row of rows) {
     const label = row.modality?.trim();
     if (!label || label === '—') continue;
-    const key = normalizeModalityKey(label);
+    const key = normalizeKey(label);
     if (!keys.has(key)) keys.set(key, formatModalityFilterLabel(label));
   }
   return [...keys.entries()]
@@ -81,12 +89,24 @@ export function extractModalityOptions(rows: AdminProgramTrackingRow[]): string[
     .map(([, label]) => label);
 }
 
+export function extractSchoolOptions(rows: AdminProgramTrackingRow[]): string[] {
+  const keys = new Map<string, string>();
+  for (const row of rows) {
+    const label = row.school?.trim();
+    if (!label || label === '—') continue;
+    const key = normalizeKey(label);
+    if (!keys.has(key)) keys.set(key, label);
+  }
+  return [...keys.values()].sort((a, b) => a.localeCompare(b, 'es'));
+}
+
 export function hasActiveAdminFilters(filters: AdminTrackingFiltersState): boolean {
   return (
     filters.query.trim().length > 0 ||
     filters.status !== 'all' ||
     filters.owner !== 'all' ||
-    filters.modality !== 'all'
+    filters.modality !== 'all' ||
+    filters.school !== 'all'
   );
 }
 
@@ -98,19 +118,47 @@ export function filterAdminTrackingRows(
 
   return rows.filter((row) => {
     if (q) {
-      const haystack = `${row.program} ${row.school} ${row.modality}`.toLowerCase();
+      const semesterText = row.semesterNumbers.join(' ');
+      const ownerText = `${row.productOwnerName ?? ''} ${row.factoryOwnerName ?? ''}`;
+      const haystack =
+        `${row.program} ${row.school} ${row.modality} ${semesterText} ${ownerText} ${row.currentResponsibleRole ?? ''}`.toLowerCase();
       if (!haystack.includes(q)) return false;
     }
     if (filters.status !== 'all' && rowStatusCategory(row) !== filters.status) return false;
-    if (filters.owner !== 'all' && row.currentResponsibleRole !== filters.owner) return false;
+    if (filters.owner !== 'all') {
+      const owner = rowOwnerForFilter(row);
+      if (owner !== filters.owner) return false;
+    }
     if (
       filters.modality !== 'all' &&
-      normalizeModalityKey(row.modality) !== normalizeModalityKey(filters.modality)
+      normalizeKey(row.modality) !== normalizeKey(filters.modality)
     ) {
+      return false;
+    }
+    if (filters.school !== 'all' && normalizeKey(row.school) !== normalizeKey(filters.school)) {
       return false;
     }
     return true;
   });
+}
+
+export function countAdminRowsByStatus(
+  rows: AdminProgramTrackingRow[],
+): Record<AdminTrackingStatusFilter, number> {
+  const counts: Record<AdminTrackingStatusFilter, number> = {
+    all: rows.length,
+    overdue: 0,
+    returned: 0,
+    at_risk: 0,
+    in_progress: 0,
+    pre_institutional: 0,
+    finalized: 0,
+  };
+  for (const row of rows) {
+    const cat = rowStatusCategory(row);
+    counts[cat] += 1;
+  }
+  return counts;
 }
 
 export function adminTrackingTotalPages(totalItems: number, pageSize = ADMIN_TRACKING_PAGE_SIZE): number {

@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { CheckCircle2, Loader2 } from 'lucide-react';
 import { Card } from '../../../components/ui/Card';
+import { cn } from '../../../components/ui/tokens';
 import { formatDate } from '../../../utils/formatters';
 import { projectRadicationApi, type ProjectInstitutionalClosureDto } from '../../../services/projectRadicationApi';
 import { projectRadicationKeys, RadicationProgressBar } from '../../project-radication/ProjectRadicationPanel';
@@ -51,6 +52,11 @@ export function ProjectInstitutionalClosurePanel({ projectId }: ProjectInstituti
 
   const data = closureQuery.data;
   const checks = mapClosureToChecks(data);
+  const scopeComplete =
+    data.scopeSubjectsTotal > 0 &&
+    (data.projectInstitutionalState === 'FINALIZED' ||
+      data.scopeSubjectsApproved >= data.scopeSubjectsTotal);
+  const scopeApproved = scopeComplete ? data.scopeSubjectsTotal : data.scopeSubjectsApproved;
 
   return (
     <Card className="overflow-hidden rounded-[20px] border border-emerald-200/80 bg-white shadow-sm">
@@ -77,10 +83,14 @@ export function ProjectInstitutionalClosurePanel({ projectId }: ProjectInstituti
           </p>
         ) : null}
         <div className="mt-4">
-          <RadicationProgressBar approved={data.scopeSubjectsApproved} total={data.scopeSubjectsTotal} />
-          <p className="mt-2 text-xs text-slate-500">
-            {data.scopeSemesters} semestre(s) en alcance · {data.scopeSubjectsApproved}/{data.scopeSubjectsTotal}{' '}
-            materias
+          <RadicationProgressBar
+            approved={scopeApproved}
+            total={data.scopeSubjectsTotal}
+            complete={scopeComplete}
+          />
+          <p className={cn('mt-2 text-xs', scopeComplete ? 'text-emerald-700' : 'text-slate-500')}>
+            {data.scopeSemesters} semestre(s) en alcance · {scopeApproved}/{data.scopeSubjectsTotal} materias
+            {scopeComplete ? ' · alcance completo' : ''}
           </p>
         </div>
       </div>

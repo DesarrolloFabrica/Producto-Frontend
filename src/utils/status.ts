@@ -8,7 +8,7 @@ export const projectStatusLabels: Record<ProjectStatus, string> = {
   IN_REVIEW: 'En revision',
   DELIVERED_TO_LMS: 'Entregado LMS',
   FEEDBACK_PENDING: 'Obs. pendientes',
-  CLOSED: 'Cerrado',
+  CLOSED: 'Finalizada',
 };
 
 export const subjectStatusLabels: Record<SubjectStatus, string> = {
@@ -54,7 +54,7 @@ export const projectStatusTone: Record<ProjectStatus, string> = {
   IN_REVIEW: 'bg-purple-50 text-purple-600 border-purple-100',
   DELIVERED_TO_LMS: 'bg-emerald-50 text-emerald-600 border-emerald-100',
   FEEDBACK_PENDING: 'bg-rose-50 text-rose-600 border-rose-100',
-  CLOSED: 'bg-slate-100 text-slate-600 border-slate-200',
+  CLOSED: 'bg-emerald-50 text-emerald-700 border-emerald-200',
 };
 
 export const subjectStatusTone: Record<SubjectStatus, string> = {

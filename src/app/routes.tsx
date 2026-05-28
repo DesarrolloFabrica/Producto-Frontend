@@ -24,6 +24,7 @@ import { LmsDashboardPage } from '../features/lms/LmsDashboardPage';
 import { SubjectOperationsPage } from '../features/institutional-workflow/SubjectOperationsPage';
 import { ProjectProgramOperationsPage } from '../features/institutional-workflow/ProjectProgramOperationsPage';
 import { SemesterOperationsPage } from '../features/institutional-workflow/SemesterOperationsPage';
+import { AdminProgramDetailPage } from '../features/admin-tracking/AdminProgramDetailPage';
 import type { Role } from '../types/domain';
 import { homePathForRole, isPathAllowedForRole } from '../navigation/roleNavigation';
 
@@ -79,6 +80,10 @@ export const router = createBrowserRouter([
         children: [
       { index: true, element: <RoleScopeGuard><HomeRedirect /></RoleScopeGuard> },
       { path: 'product/dashboard', element: <RoleScopeGuard><RoleRedirect expectedRole="PRODUCT"><ProductOrAdminDashboardPage /></RoleRedirect></RoleScopeGuard> },
+      {
+        path: 'admin/programs/:projectId',
+        element: <RoleScopeGuard><RoleRedirect expectedRole="ADMIN"><AdminProgramDetailPage /></RoleRedirect></RoleScopeGuard>,
+      },
       { path: 'product/work', element: <RoleScopeGuard><RoleRedirect expectedRole="PRODUCT"><ProductWorkPage /></RoleRedirect></RoleScopeGuard> },
       { path: 'factory/dashboard', element: <RoleScopeGuard><RoleRedirect expectedRole="FABRICA"><FactoryDashboardPage /></RoleRedirect></RoleScopeGuard> },
       { path: 'factory/work', element: <RoleScopeGuard><RoleRedirect expectedRole="FABRICA"><FactoryWorkPage /></RoleRedirect></RoleScopeGuard> },

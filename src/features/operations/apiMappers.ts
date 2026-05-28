@@ -265,6 +265,26 @@ export function mapSubjectSummaryFromApi(api: ApiSubjectSummary): SubjectSummary
   };
 }
 
+function resolveListItemProgress(api: ApiProjectListItem): number {
+  if (api.status === 'CLOSED') return 100;
+  const summary = api.subjectsSummary ?? [];
+  if (summary.length > 0) {
+    const allComplete = summary.every(
+      (s) =>
+        (s.progress ?? 0) >= 100 ||
+        s.status === 'DELIVERED' ||
+        s.status === 'APPROVED' ||
+        s.operationalState === 'APPROVED',
+    );
+    if (allComplete) return 100;
+    const avg = Math.round(
+      summary.reduce((acc, s) => acc + Math.min(100, Math.max(0, s.progress ?? 0)), 0) / summary.length,
+    );
+    return Math.max(api.progress ?? 0, avg);
+  }
+  return api.progress ?? 0;
+}
+
 export function mapProjectListItemFromApi(api: ApiProjectListItem): VirtualizationProject {
   const subjectsSummary = api.subjectsSummary?.map(mapSubjectSummaryFromApi);
   return {
@@ -275,7 +295,7 @@ export function mapProjectListItemFromApi(api: ApiProjectListItem): Virtualizati
     requestType: api.requestType,
     priority: mapPriorityFromApi(api.priority),
     status: mapStatusFromApi(api.status),
-    progress: api.progress,
+    progress: resolveListItemProgress(api),
     createdAt: toDateOnly(api.createdAt),
     expectedDeliveryDate: api.expectedDeliveryDate ? toDateOnly(api.expectedDeliveryDate) : '',
     subjectMatterExpertType: api.subjectMatterExpertType ?? 'INTERNAL',

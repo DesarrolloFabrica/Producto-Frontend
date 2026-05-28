@@ -94,48 +94,49 @@ function projectStateLabel(state: ProjectRadicationReadinessDto['projectInstitut
 
 
 
-export function RadicationProgressBar({ approved, total }: { approved: number; total: number }) {
-
-  const pct = total > 0 ? Math.round((approved / total) * 100) : 0;
+export function RadicationProgressBar({
+  approved,
+  total,
+  complete = false,
+}: {
+  approved: number;
+  total: number;
+  /** Fuerza barra llena y verde (p. ej. solicitud ya finalizada). */
+  complete?: boolean;
+}) {
+  const effectiveApproved = complete && total > 0 ? total : approved;
+  const pct = total > 0 ? Math.round((effectiveApproved / total) * 100) : complete ? 100 : 0;
+  const isComplete = complete || (total > 0 && effectiveApproved >= total);
 
   return (
-
     <div className="mt-3">
-
-      <div className="flex items-center justify-between text-xs font-semibold text-slate-600">
-
+      <div
+        className={cn(
+          'flex items-center justify-between text-xs font-semibold',
+          isComplete ? 'text-emerald-800' : 'text-slate-600',
+        )}
+      >
         <span>Materias del alcance aprobadas</span>
-
         <span>
-
-          {approved}/{total} ({pct}%)
-
+          {effectiveApproved}/{total} ({pct}%)
         </span>
-
       </div>
-
-      <div className="mt-1.5 h-2 overflow-hidden rounded-full bg-slate-100">
-
+      <div
+        className={cn(
+          'mt-1.5 h-2 overflow-hidden rounded-full',
+          isComplete ? 'bg-emerald-100' : 'bg-slate-100',
+        )}
+      >
         <div
-
           className={cn(
-
             'h-full rounded-full transition-all',
-
-            pct >= 100 ? 'bg-emerald-500' : 'bg-orange-400',
-
+            isComplete ? 'bg-emerald-500' : 'bg-orange-400',
           )}
-
-          style={{ width: `${pct}%` }}
-
+          style={{ width: `${isComplete ? 100 : pct}%` }}
         />
-
       </div>
-
     </div>
-
   );
-
 }
 
 
@@ -345,7 +346,11 @@ export function ProjectRadicationPanel({ projectId }: { projectId: string }) {
 
           </div>
 
-          <RadicationProgressBar approved={data.scope.subjectsApproved} total={data.scope.subjectsTotal} />
+          <RadicationProgressBar
+            approved={data.scope.subjectsApproved}
+            total={data.scope.subjectsTotal}
+            complete={isFinalized || scopeComplete}
+          />
 
           <p className="mt-2 text-xs text-slate-500">
 

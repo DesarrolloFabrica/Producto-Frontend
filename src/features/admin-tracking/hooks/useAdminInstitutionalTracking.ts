@@ -13,9 +13,9 @@ const emptyData: AdminInstitutionalTrackingData = {
 };
 
 export function useAdminInstitutionalTracking(enabled = true) {
-  const workQuery = useQuery({
+  const trackingQuery = useQuery({
     queryKey: queryKeys.adminTracking.programs(),
-    queryFn: () => institutionalWorkflowApi.planningWork(),
+    queryFn: () => institutionalWorkflowApi.planningTrackingPrograms(),
     enabled,
     staleTime: 15_000,
     gcTime: queryGcTime,
@@ -32,20 +32,20 @@ export function useAdminInstitutionalTracking(enabled = true) {
   });
 
   const data = useMemo(() => {
-    if (!workQuery.data || !projectsQuery.data) return emptyData;
-    return aggregateAdminInstitutionalTracking(workQuery.data, projectsQuery.data);
-  }, [workQuery.data, projectsQuery.data]);
+    if (!trackingQuery.data || !projectsQuery.data) return emptyData;
+    return aggregateAdminInstitutionalTracking(trackingQuery.data, projectsQuery.data);
+  }, [trackingQuery.data, projectsQuery.data]);
 
-  const isLoading = workQuery.isLoading || projectsQuery.isLoading;
+  const isLoading = trackingQuery.isLoading || projectsQuery.isLoading;
   const error =
-    workQuery.error instanceof Error
-      ? workQuery.error.message
+    trackingQuery.error instanceof Error
+      ? trackingQuery.error.message
       : projectsQuery.error instanceof Error
         ? projectsQuery.error.message
         : null;
 
   const refetch = async () => {
-    await Promise.all([workQuery.refetch(), projectsQuery.refetch()]);
+    await Promise.all([trackingQuery.refetch(), projectsQuery.refetch()]);
   };
 
   return {
@@ -53,6 +53,6 @@ export function useAdminInstitutionalTracking(enabled = true) {
     isLoading,
     error,
     refetch,
-    isFetching: workQuery.isFetching || projectsQuery.isFetching,
+    isFetching: trackingQuery.isFetching || projectsQuery.isFetching,
   };
 }

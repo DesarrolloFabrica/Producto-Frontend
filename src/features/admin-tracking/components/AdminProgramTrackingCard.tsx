@@ -1,11 +1,8 @@
 import { cn } from '../../../components/ui/tokens';
 import { StatusBadge } from '../../../components/status/StatusBadge';
-import { OperationalStateBadgeV2 } from '../../operations-v2/components/OperationalStateBadgeV2';
-import { SlaBadgeV2 } from '../../operations-v2/components/SlaBadgeV2';
 import { OperationalPipelineInstitutional } from '../../institutional-workflow/components/OperationalPipelineInstitutional';
-import type { OperationalStateV2, SlaStatusV2 } from '../../../types/operationalWorkflow';
 import type { AdminProgramTrackingRow } from '../adminTrackingTypes';
-import { AdminResponsibleRoleBadge } from './AdminResponsibleRoleBadge';
+import { AdminRowEstadoSlaCell } from './AdminRowEstadoSlaCell';
 import { formatRelativeTime } from '../../operations/notificationInbox';
 
 function formatSemestersCompact(numbers: number[]): string {
@@ -45,23 +42,21 @@ function AdminRowProgram({ row, simplified }: { row: AdminProgramTrackingRow; si
 }
 
 function AdminRowEstado({ row, simplified }: { row: AdminProgramTrackingRow; simplified: boolean }) {
-  return (
-    <div className="flex min-w-0 flex-col gap-1">
-      {!simplified && row.operationalState ? (
-        <OperationalStateBadgeV2 state={row.operationalState as OperationalStateV2} />
-      ) : simplified && row.simplifiedStatusLabel ? (
-        <span className="inline-flex w-fit rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-bold text-slate-700 ring-1 ring-slate-200/80">
-          {row.simplifiedStatusLabel}
-        </span>
-      ) : null}
-      {!simplified && row.currentResponsibleRole ? (
-        <AdminResponsibleRoleBadge role={row.currentResponsibleRole} compact />
-      ) : null}
-      {!simplified && row.slaStatus ? (
-        <SlaBadgeV2 status={row.slaStatus as SlaStatusV2} />
-      ) : simplified && row.projectStatus ? (
+  if (simplified && row.projectStatus && !row.isFinalized) {
+    return (
+      <div className="flex min-w-0 flex-col gap-1">
+        {row.simplifiedStatusLabel ? (
+          <span className="inline-flex w-fit rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-bold text-slate-700 ring-1 ring-slate-200/80">
+            {row.simplifiedStatusLabel}
+          </span>
+        ) : null}
         <StatusBadge status={row.projectStatus} size="sm" />
-      ) : null}
+      </div>
+    );
+  }
+  return (
+    <div className="min-w-0">
+      <AdminRowEstadoSlaCell row={row} />
     </div>
   );
 }

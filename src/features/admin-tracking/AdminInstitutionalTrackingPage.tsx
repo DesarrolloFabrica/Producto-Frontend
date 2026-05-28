@@ -1,16 +1,21 @@
 import { useEffect, useMemo, useState } from 'react';
-import { RefreshCw } from 'lucide-react';
-import { DashboardShell } from '../../components/layout/DashboardShell';
+import { Activity, AlertTriangle, CheckCircle2, CornerDownLeft, RefreshCw } from 'lucide-react';
+import { DashboardKpiGrid, DashboardShell } from '../../components/layout/DashboardShell';
+import { MetricCard } from '../../components/cards/MetricCard';
+import { PageHeader } from '../../components/ui/PageHeader';
 import { Button } from '../../components/ui/Button';
-import { AdminExecutiveKpiStrip } from './components/AdminExecutiveKpiStrip';
-import { AdminProgramsTrackingList } from './components/AdminProgramsTrackingList';
+import { OperationalInboxPagination } from '../operations-v2/components/OperationalInboxPagination';
+import { AdminProgramsTrackingTable } from './components/AdminProgramsTrackingTable';
 import { AdminTrackingFilters } from './components/AdminTrackingFilters';
+import { AdminTrackingStatusTabs } from './components/AdminTrackingStatusTabs';
 import {
   ADMIN_TRACKING_PAGE_SIZE,
   DEFAULT_ADMIN_TRACKING_FILTERS,
   adminTrackingSafePage,
   adminTrackingTotalPages,
+  countAdminRowsByStatus,
   extractModalityOptions,
+  extractSchoolOptions,
   filterAdminTrackingRows,
   paginateAdminTrackingRows,
   type AdminTrackingFiltersState,
@@ -23,6 +28,8 @@ export function AdminInstitutionalTrackingPage() {
   const [page, setPage] = useState(1);
 
   const modalityOptions = useMemo(() => extractModalityOptions(data.rows), [data.rows]);
+  const schoolOptions = useMemo(() => extractSchoolOptions(data.rows), [data.rows]);
+  const statusCounts = useMemo(() => countAdminRowsByStatus(data.rows), [data.rows]);
 
   const filteredRows = useMemo(
     () => filterAdminTrackingRows(data.rows, filters),
@@ -54,54 +61,100 @@ export function AdminInstitutionalTrackingPage() {
     setPage(1);
   };
 
-  return (
-    <DashboardShell className="space-y-4">
-      <header className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div className="min-w-0">
-          <p className="text-[10px] font-bold uppercase tracking-wide text-slate-500">
-            Seguimiento institucional
-          </p>
-          <h1 className="text-xl font-black tracking-tight text-slate-950 sm:text-2xl">
-            Vista global de programas
-          </h1>
-          <p className="mt-0.5 text-xs text-slate-500">
-            Monitoreo ejecutivo del flujo end-to-end. Solo lectura.
-          </p>
-        </div>
-        <Button
-          variant="secondary"
-          size="sm"
-          disabled={isFetching}
-          onClick={() => void refetch()}
-          className="shrink-0 gap-2"
-        >
-          <RefreshCw className={isFetching ? 'h-4 w-4 animate-spin' : 'h-4 w-4'} />
-          Actualizar
-        </Button>
-      </header>
+  const handleStatusTab = (status: AdminTrackingFiltersState['status']) => {
+    setFilters((prev) => ({ ...prev, status }));
+    setPage(1);
+  };
 
-      <AdminExecutiveKpiStrip kpis={data.kpis} />
+  return (
+    <DashboardShell>
+      <PageHeader
+        eyebrow="Seguimiento institucional"
+        title="Vista global de programas"
+        description="Monitoreo ejecutivo del flujo end-to-end. Acceso de solo lectura con detalle completo por solicitud."
+        action={
+          <Button
+            variant="secondary"
+            size="sm"
+            disabled={isFetching}
+            onClick={() => void refetch()}
+            className="gap-2"
+          >
+            <RefreshCw className={isFetching ? 'h-4 w-4 animate-spin' : 'h-4 w-4'} />
+            Actualizar
+          </Button>
+        }
+      />
+
+      <DashboardKpiGrid>
+        <MetricCard
+          label="Activos"
+          value={data.kpis.active}
+          icon={Activity}
+          tone="text-sky-500"
+          active={filters.status === 'in_progress'}
+          onClick={() => handleStatusTab('in_progress')}
+        />
+        <MetricCard
+          label="Vencidos"
+          value={data.kpis.overdue}
+          icon={AlertTriangle}
+          tone="text-rose-500"
+          active={filters.status === 'overdue'}
+          onClick={() => handleStatusTab('overdue')}
+        />
+        <MetricCard
+          label="Devolución"
+          value={data.kpis.returned}
+          icon={CornerDownLeft}
+          tone="text-amber-500"
+          active={filters.status === 'returned'}
+          onClick={() => handleStatusTab('returned')}
+        />
+        <MetricCard
+          label="Finalizados"
+          value={data.kpis.finalized}
+          icon={CheckCircle2}
+          tone="text-emerald-500"
+          active={filters.status === 'finalized'}
+          onClick={() => handleStatusTab('finalized')}
+        />
+      </DashboardKpiGrid>
 
       {!isLoading && !error && data.rows.length > 0 ? (
-        <AdminTrackingFilters
-          filters={filters}
-          modalityOptions={modalityOptions}
-          visibleCount={filteredRows.length}
-          totalCount={data.rows.length}
-          onChange={setFilters}
-          onClear={handleClearFilters}
-        />
+        <div className="space-y-3">
+          <AdminTrackingStatusTabs
+            value={filters.status}
+            counts={statusCounts}
+            onChange={handleStatusTab}
+          />
+          <AdminTrackingFilters
+            filters={filters}
+            modalityOptions={modalityOptions}
+            schoolOptions={schoolOptions}
+            visibleCount={filteredRows.length}
+            totalCount={data.rows.length}
+            onChange={setFilters}
+            onClear={handleClearFilters}
+          />
+        </div>
       ) : null}
 
-      <AdminProgramsTrackingList
+      <AdminProgramsTrackingTable
         rows={paginatedRows}
         totalRows={data.rows.length}
         filteredCount={filteredRows.length}
-        page={safePage}
-        totalPages={totalPages}
         isLoading={isLoading}
         error={error}
         onClearFilters={handleClearFilters}
+      />
+
+      <OperationalInboxPagination
+        page={safePage}
+        totalPages={totalPages}
+        totalItems={filteredRows.length}
+        pageSize={ADMIN_TRACKING_PAGE_SIZE}
+        itemLabel={{ one: 'programa', other: 'programas' }}
         onPageChange={setPage}
       />
     </DashboardShell>

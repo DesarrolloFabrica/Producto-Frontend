@@ -47,5 +47,6 @@ export const queryKeys = {
   },
   adminTracking: {
     programs: () => ['admin', 'institutional-tracking', 'programs'] as const,
+    projectDetail: (projectId: string) => ['admin', 'project-detail', projectId] as const,
   },
 };

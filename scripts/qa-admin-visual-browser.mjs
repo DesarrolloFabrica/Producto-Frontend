@@ -76,59 +76,67 @@ async function main() {
     issues.push('Admin: aparece "Dashboard Product"');
   }
 
-  const kpiLabels = ['Activos', 'Vencidos', 'En devolución', 'Finalizados'];
+  const kpiLabels = ['Activos', 'Vencidos', 'Devolución', 'Finalizados'];
   for (const label of kpiLabels) {
     if ((await adminPage.getByText(label, { exact: false }).count()) === 0) {
       issues.push(`Admin KPI faltante: ${label}`);
     }
   }
 
-  const cardTitles = await adminPage.locator('h3').allTextContents();
-  console.log('\nOrden tarjetas Admin (h3):');
-  cardTitles.forEach((t, i) => console.log(`  ${i + 1}. ${t.trim()}`));
+  if ((await adminPage.getByRole('columnheader', { name: 'Pipeline' }).count()) === 0) {
+    issues.push('Admin: falta columna Pipeline en la tabla');
+  }
 
-  const qaOrder = [
-    '[QA Admin] VENCIDO',
-    '[QA Admin] DEVOLUCION',
-    '[QA Admin] AT RISK',
-    '[QA Admin] EN CURSO',
-    '[QA Admin] BOTTLENECK',
-    '[QA Admin] LEGACY',
-    '[QA Admin] FINALIZADO',
-  ];
-  const qaIndices = qaOrder.map((q) => cardTitles.findIndex((t) => t.includes(q.replace('[QA Admin] ', '')) || t.includes(q)));
-  const qaFound = qaOrder.filter((q) => cardTitles.some((t) => t.includes(q.replace('[QA Admin] ', '').trim()) || t.includes('VENCIDO') && q.includes('VENCIDO')));
-  // simpler check
+  const detailLinks = await adminPage.getByRole('link', { name: 'Ver detalle' }).count();
+  if (detailLinks === 0) {
+    issues.push('Admin: no hay enlaces "Ver detalle" en la tabla');
+  } else {
+    console.log(`✓ ${detailLinks} enlace(s) Ver detalle en tabla`);
+  }
+
+  const programNames = await adminPage.locator('tbody tr td p.font-bold').allTextContents();
+  console.log('\nProgramas en tabla (orden):');
+  programNames.forEach((t, i) => console.log(`  ${i + 1}. ${t.trim()}`));
+
   for (const needle of ['VENCIDO', 'DEVOLUCION', 'AT RISK', 'EN CURSO', 'BOTTLENECK', 'LEGACY', 'FINALIZADO']) {
-    if (!cardTitles.some((t) => t.toUpperCase().includes(needle))) {
-      issues.push(`Tarjeta QA no visible: ${needle}`);
+    if (!programNames.some((t) => t.toUpperCase().includes(needle))) {
+      issues.push(`Fila QA no visible en tabla: ${needle}`);
     }
   }
 
-  const vencidoIdx = cardTitles.findIndex((t) => t.includes('VENCIDO'));
-  const devIdx = cardTitles.findIndex((t) => t.includes('DEVOLUCION'));
-  const riskIdx = cardTitles.findIndex((t) => t.includes('AT RISK'));
-  const finalIdx = cardTitles.findIndex((t) => t.includes('FINALIZADO'));
+  const vencidoIdx = programNames.findIndex((t) => t.includes('VENCIDO'));
+  const devIdx = programNames.findIndex((t) => t.includes('DEVOLUCION'));
+  const riskIdx = programNames.findIndex((t) => t.includes('AT RISK'));
+  const finalIdx = programNames.findIndex((t) => t.includes('FINALIZADO'));
   if (vencidoIdx >= 0 && devIdx >= 0 && vencidoIdx > devIdx) {
     issues.push(`Orden: VENCIDO (${vencidoIdx + 1}) debería ir antes que DEVOLUCION (${devIdx + 1})`);
   }
   if (devIdx >= 0 && riskIdx >= 0 && devIdx > riskIdx) {
-    issues.push(`Orden: DEVOLUCION debería ir antes que AT RISK`);
+    issues.push('Orden: DEVOLUCION debería ir antes que AT RISK');
   }
   if (finalIdx >= 0 && vencidoIdx >= 0 && finalIdx < vencidoIdx) {
     issues.push('Orden: FINALIZADO debería ir al final del listado');
   }
 
-  const bottleneckCard = adminPage.locator('h3', { hasText: 'BOTTLENECK' }).locator('..').locator('..').locator('..');
-  const bottleneckText = await adminPage.locator('text=[QA Admin] BOTTLENECK').locator('xpath=ancestor::div[contains(@class,"overflow-hidden")]').first().textContent().catch(() => '');
-  if (bottleneckText && !bottleneckText.includes('Semestres 1, 2') && !bottleneckText.includes('Semestre')) {
-    issues.push('BOTTLENECK: no muestra semestres claramente');
+  const bottleneckRow = adminPage.locator('tr', { hasText: 'BOTTLENECK' }).first();
+  if (await bottleneckRow.count()) {
+    const rowText = await bottleneckRow.textContent();
+    if (rowText && !rowText.includes('Sem.') && !rowText.includes('1')) {
+      issues.push('BOTTLENECK: fila sin semestres visibles');
+    }
   }
 
   if (await adminPage.getByText('Pre-institutional').count()) {
     console.log('✓ Badge Pre-institutional visible (LEGACY)');
   } else {
     issues.push('LEGACY: no se ve badge Pre-institutional');
+  }
+
+  const pipelineNodes = await adminPage.locator('.rounded-full.border-2').count();
+  if (pipelineNodes < 4) {
+    issues.push(`Admin: pipeline con pocos nodos visibles (${pipelineNodes})`);
+  } else {
+    console.log(`✓ Pipeline institucional visible (${pipelineNodes} nodos)`);
   }
 
   const adminShots = [];

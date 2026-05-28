@@ -31,12 +31,14 @@ function FlowActionContent({ label }: { label: string }) {
 export function OperationalInboxFlowAction({
   label,
   to,
+  state,
   onClick,
   disabled = false,
   className,
 }: {
   label: string;
   to?: string;
+  state?: unknown;
   onClick?: () => void;
   disabled?: boolean;
   className?: string;
@@ -49,7 +51,7 @@ export function OperationalInboxFlowAction({
 
   if (to) {
     return (
-      <Link to={to} className={classes} aria-disabled={disabled}>
+      <Link to={to} state={state} className={classes} aria-disabled={disabled}>
         <FlowActionContent label={label} />
       </Link>
     );

@@ -59,7 +59,7 @@ export function getBootPrefetchTasks(role: Role | null): BootPrefetchTask[] {
         ...shared,
         {
           queryKey: queryKeys.adminTracking.programs(),
-          queryFn: () => institutionalWorkflowApi.planningWork(),
+          queryFn: () => institutionalWorkflowApi.planningTrackingPrograms(),
           staleTime: 15_000,
           gcTime: queryGcTime,
         },

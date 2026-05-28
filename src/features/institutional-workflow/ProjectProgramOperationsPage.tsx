@@ -188,12 +188,23 @@ export function ProjectProgramOperationsPage() {
             {loadError ??
               'El programa puede haber salido de su cola operacional o no estar asignado a su rol.'}
           </p>
-          <Link
-            to={roleHome}
-            className="mt-4 inline-flex rounded-xl border border-slate-200/80 bg-white px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-50"
-          >
-            Ir al dashboard
-          </Link>
+          <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
+            {role === 'ADMIN' && projectId ? (
+              <Link
+                to={`/admin/programs/${projectId}`}
+                state={{ from: location.pathname }}
+                className="inline-flex rounded-xl border border-orange-200/80 bg-orange-50 px-4 py-2 text-xs font-semibold text-orange-800 hover:bg-orange-100"
+              >
+                Ver detalle ejecutivo admin
+              </Link>
+            ) : null}
+            <Link
+              to={roleHome}
+              className="inline-flex rounded-xl border border-slate-200/80 bg-white px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-50"
+            >
+              Ir al dashboard
+            </Link>
+          </div>
         </Card>
       ) : displayProgram.kind === 'institutional' ? (
         <>
