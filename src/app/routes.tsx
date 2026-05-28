@@ -2,6 +2,7 @@ import { Navigate, createBrowserRouter, useLocation } from 'react-router-dom';
 import { AppProviders } from './AppProviders';
 import { RouteLoadingScreen } from '../components/feedback/RouteLoadingScreen';
 import { AppShell } from '../components/layout/AppShell';
+import { AppBootGate, AppBootProvider } from '../features/boot/AppBootProvider';
 import { AuditPage } from '../features/audit/AuditPage';
 import { useAuth } from '../features/auth/AuthContext';
 import { LoginPage } from '../features/auth/LoginPage';
@@ -31,7 +32,13 @@ function RequireAuth() {
   const location = useLocation();
   if (isLoading) return <RouteLoadingScreen message="Validando sesión..." />;
   if (!isAuthenticated) return <Navigate to="/login" replace state={{ from: location }} />;
-  return <AppShell />;
+  return (
+    <AppBootProvider>
+      <AppBootGate>
+        <AppShell />
+      </AppBootGate>
+    </AppBootProvider>
+  );
 }
 
 function HomeRedirect() {
@@ -82,15 +89,15 @@ export const router = createBrowserRouter([
         path: 'projects/:projectId/semesters/:semesterId/operations',
         element: <RoleScopeGuard><SemesterOperationsPage /></RoleScopeGuard>,
       },
-      { path: 'workflow-preview', element: <RoleScopeGuard><OperationalWorkflowV2Provider><WorkflowPreviewPage /></OperationalWorkflowV2Provider></RoleScopeGuard> },
-      { path: 'operations-v2/subjects/:subjectId', element: <RoleScopeGuard><OperationalWorkflowV2Provider><OperationalSubjectDetailV2Page /></OperationalWorkflowV2Provider></RoleScopeGuard> },
-      { path: 'projects', element: <RoleScopeGuard><ProjectsPage /></RoleScopeGuard> },
-      { path: 'projects/:projectId', element: <RoleScopeGuard><ProjectDetailPage /></RoleScopeGuard> },
       {
         path: 'projects/:projectId/operations',
         element: <RoleScopeGuard><ProjectProgramOperationsPage /></RoleScopeGuard>,
       },
       { path: 'projects/:projectId/semesters/:semesterNumber', element: <RoleScopeGuard><ProjectSemesterSubjectsPage /></RoleScopeGuard> },
+      { path: 'projects', element: <RoleScopeGuard><ProjectsPage /></RoleScopeGuard> },
+      { path: 'projects/:projectId', element: <RoleScopeGuard><ProjectDetailPage /></RoleScopeGuard> },
+      { path: 'workflow-preview', element: <RoleScopeGuard><OperationalWorkflowV2Provider><WorkflowPreviewPage /></OperationalWorkflowV2Provider></RoleScopeGuard> },
+      { path: 'operations-v2/subjects/:subjectId', element: <RoleScopeGuard><OperationalWorkflowV2Provider><OperationalSubjectDetailV2Page /></OperationalWorkflowV2Provider></RoleScopeGuard> },
       { path: 'subjects/:subjectId', element: <RoleScopeGuard><SubjectDetailPage /></RoleScopeGuard> },
       { path: 'notifications', element: <RoleScopeGuard><NotificationsPage /></RoleScopeGuard> },
       { path: 'notifications/settings', element: <RoleScopeGuard><NotificationSettings /></RoleScopeGuard> },

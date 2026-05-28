@@ -292,7 +292,7 @@ export function useUpdateSubjectProductionStatusMutation() {
         context?.previousOperationalWorkspace,
       );
     },
-    onSuccess: (project, variables) => {
+    onSuccess: async (project, variables) => {
       queryClient.setQueryData(queryKeys.project(project.id), project);
       queryClient.setQueryData<ApiSubjectWorkspace>(
         queryKeys.subjectWorkspace(variables.subjectId),
@@ -303,7 +303,7 @@ export function useUpdateSubjectProductionStatusMutation() {
         (current) => reconcileProjectsList(current, project, variables.subjectId),
       );
       void queryClient.invalidateQueries({ queryKey: queryKeys.notificationsSummary(), refetchType: 'none' });
-      void queryClient.refetchQueries({ queryKey: queryKeys.subjectWorkspace(variables.subjectId) });
+      await queryClient.refetchQueries({ queryKey: queryKeys.subjectWorkspace(variables.subjectId) });
       invalidateSemesterWorkflowQueries(queryClient, {
         semesterId: variables.semesterId,
         projectId: variables.projectId,

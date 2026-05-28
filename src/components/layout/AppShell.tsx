@@ -1,12 +1,12 @@
-import { useEffect } from 'react';
 import { Bell, ClipboardCheck, ClipboardList, CloudUpload, Factory, FolderKanban, Home, LogOut, Settings } from 'lucide-react';
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
+import { useEffect } from 'react';
 import { ScrollRestoration } from '../../navigation/ScrollRestoration';
 import { useAuth } from '../../features/auth/AuthContext';
-import { ContextPanelDrawer } from '../../features/context-panel/ContextPanelProvider';
-import { initials } from '../../utils/formatters';
+import { ContextPanelDrawer, ContextPanelProvider } from '../../features/context-panel/ContextPanelProvider';
 import { cn } from '../ui/tokens';
 import { BrandMark } from './BrandMark';
+import { UserAvatar } from '../ui/UserAvatar';
 import { GlobalSearch } from '../search/GlobalSearch';
 import { useOperations } from '../../features/operations/OperationsContext';
 import { isActionableNotification, isVisibleNotification } from '../../features/operations/notificationInbox';
@@ -78,6 +78,7 @@ export function AppShell() {
   }, [location.pathname, navigate, role]);
 
   return (
+    <ContextPanelProvider>
     <div className="relative min-h-screen overflow-hidden authenticated-bg-noise text-slate-900">
       <div
         aria-hidden="true"
@@ -116,8 +117,17 @@ export function AppShell() {
               <Settings className="h-4 w-4" />
             </NavLink>
             <div className="hidden items-center gap-2 rounded-xl border border-slate-200/60 bg-slate-50/80 px-3 py-1.5 lg:flex">
-              <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-orange-500 text-[9px] font-bold text-white">{initials(role ?? 'NA')}</div>
+              <UserAvatar
+                seed={user?.id ?? user?.email ?? role ?? 'guest'}
+                alt={user?.name ? `Avatar de ${user.name}` : 'Avatar de usuario'}
+                className="h-7 w-7"
+                imageSize={56}
+                shape="rounded"
+              />
               <div className="leading-tight">
+                {user?.name ? (
+                  <p className="max-w-[120px] truncate text-[11px] font-semibold text-slate-700">{user.name}</p>
+                ) : null}
                 <p className="text-[10px] font-medium text-slate-400">{role}</p>
               </div>
             </div>
@@ -133,11 +143,12 @@ export function AppShell() {
 
       <ScrollRestoration />
       <main className="mx-auto max-w-7xl px-4 py-5 lg:px-6">
-        <Outlet />
+        <Outlet key={location.pathname} />
       </main>
       <ContextPanelDrawer />
       </div>
     </div>
+    </ContextPanelProvider>
   );
 }
 

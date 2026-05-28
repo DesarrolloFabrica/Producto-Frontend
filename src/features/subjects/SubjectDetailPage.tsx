@@ -508,6 +508,7 @@ export function SubjectDetailPage() {
   const { subjectId } = useParams();
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
+
   const {
     projectObservations,
     updateChecklistItem,

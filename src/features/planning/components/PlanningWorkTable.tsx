@@ -1,11 +1,8 @@
-import { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Loader2 } from 'lucide-react';
+import { ArrowRight } from 'lucide-react';
 import { Card } from '../../../components/ui/Card';
 import { SkeletonTable } from '../../../components/ui/Skeleton';
 import { cn, surface, tableRow, text } from '../../../components/ui/tokens';
-import { Button } from '../../../components/ui/Button';
-import { Modal } from '../../../components/ui/Modal';
 import { formatDate } from '../../../utils/formatters';
 import { formatProgramProgress } from '../../institutional-workflow/institutionalCopy';
 import { ProgramActiveStageBadge } from '../../operations-v2/components/ProgramActiveStageBadge';
@@ -29,29 +26,13 @@ export function PlanningWorkTable({
   isLoading,
   error,
   onOpenFlow,
-  onValidateRadication,
-  onReturnRadication,
-  busyProjectId,
 }: {
   rows: PlanningWorkRow[];
   totalRows?: number;
   isLoading: boolean;
   error: string | null;
   onOpenFlow: (row: PlanningWorkRow) => void;
-  onValidateRadication: (projectId: string) => void;
-  onReturnRadication: (projectId: string, reason: string) => Promise<void>;
-  busyProjectId: string | null;
 }) {
-  const [returnModal, setReturnModal] = useState<string | null>(null);
-  const [returnReason, setReturnReason] = useState('');
-
-  const handleReturn = async () => {
-    if (!returnModal || returnReason.trim().length < 10) return;
-    await onReturnRadication(returnModal, returnReason.trim());
-    setReturnModal(null);
-    setReturnReason('');
-  };
-
   return (
     <>
       <Card variant="roleGlass" className="overflow-hidden p-0">
@@ -100,9 +81,11 @@ export function PlanningWorkTable({
                           <p className="text-[10px] font-bold uppercase text-slate-400">{row.school}</p>
                           <p className="font-bold text-slate-900">{row.program}</p>
                           <p className="text-xs text-slate-500">
-                            {row.variant === 'tracking'
-                              ? 'Programa en seguimiento'
-                              : 'Validación por programa'}
+                            {row.radicationReview
+                              ? 'Validación de radicado institucional'
+                              : row.variant === 'tracking'
+                                ? 'Programa en seguimiento'
+                                : 'Validación por programa'}
                           </p>
                         </td>
                         <td className="px-3 py-4">
@@ -136,7 +119,11 @@ export function PlanningWorkTable({
                         <td className="max-w-[12rem] px-3 py-4 text-xs text-slate-500">—</td>
                         <OperationalInboxActionCell>
                           <OperationalInboxFlowAction
-                            label={row.variant === 'tracking' ? 'Ver seguimiento' : 'Ver flujo'}
+                            label={
+                              row.radicationReview || row.variant === 'tracking'
+                                ? 'Ver seguimiento'
+                                : 'Ver flujo'
+                            }
                             onClick={() => onOpenFlow(row)}
                           />
                         </OperationalInboxActionCell>
@@ -188,74 +175,6 @@ export function PlanningWorkTable({
                     );
                   }
 
-                  if (row.kind === 'radication') {
-                    return (
-                      <tr key={row.id} className="hover:bg-orange-50/30">
-                        <td className="px-5 py-4 sm:px-6">
-                          <p className="text-[10px] font-bold uppercase text-slate-400">{row.school}</p>
-                          <p className="font-bold text-slate-900">{row.program}</p>
-                          <p className="text-xs font-medium text-orange-600">Radicación de proyecto</p>
-                        </td>
-                        <td className="px-3 py-4 text-slate-400">—</td>
-                        <td className="px-3 py-4">
-                          <span className="inline-flex rounded-full bg-orange-50 px-2.5 py-1 text-[10px] font-bold text-orange-700 ring-1 ring-orange-100">
-                            Revisión de radicado
-                          </span>
-                        </td>
-                        <td className="px-3 py-4 text-xs font-semibold text-slate-600">Product</td>
-                        <td className="px-3 py-4 text-xs font-medium text-slate-600">
-                          {row.planningRadicationCheckDueAt
-                            ? formatDate(row.planningRadicationCheckDueAt)
-                            : '—'}
-                        </td>
-                        <td className="max-w-[12rem] px-3 py-4 text-xs text-slate-500">
-                          {row.radicationNumber ? (
-                            <>
-                              <span className="font-bold text-slate-700">{row.radicationNumber}</span>
-                              {row.radicatedAt ? ` · ${formatDate(row.radicatedAt)}` : ''}
-                            </>
-                          ) : (
-                            (row.lastRadicationReturnReason ?? '—')
-                          )}
-                        </td>
-                        <td className="px-5 py-4 text-right sm:px-6">
-                          <div className="flex flex-wrap justify-end gap-2">
-                            <Link
-                              to={`/projects/${row.projectId}`}
-                              className="inline-flex items-center rounded-xl border border-slate-200 px-3 py-1.5 text-xs font-bold text-slate-700"
-                            >
-                              Ver proyecto
-                            </Link>
-                            <Button
-                              type="button"
-                              size="sm"
-                              variant="secondary"
-                              disabled={busyProjectId === row.projectId}
-                              onClick={() => {
-                                setReturnModal(row.projectId);
-                                setReturnReason('');
-                              }}
-                            >
-                              Devolver
-                            </Button>
-                            <Button
-                              type="button"
-                              size="sm"
-                              disabled={busyProjectId === row.projectId}
-                              onClick={() => onValidateRadication(row.projectId)}
-                            >
-                              {busyProjectId === row.projectId ? (
-                                <Loader2 className="h-4 w-4 animate-spin" />
-                              ) : (
-                                'Validar'
-                              )}
-                            </Button>
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  }
-
                   return (
                     <tr key={row.id} className="hover:bg-emerald-50/20">
                       <td className="px-5 py-4 sm:px-6">
@@ -275,15 +194,12 @@ export function PlanningWorkTable({
                       <td className="px-3 py-4 text-xs text-slate-500">
                         {row.radicationNumber ?? '—'} · {row.subjectsCount} materias · {row.semestersCount} sem.
                       </td>
-                      <td className="px-5 py-4 text-right sm:px-6">
-                        <Link
-                          to={`/projects/${row.projectId}`}
-                          className="inline-flex items-center gap-1 rounded-xl border border-slate-200 px-3 py-1.5 text-xs font-bold text-slate-700"
-                        >
-                          Ver solicitud
-                          <ArrowRight className="h-3.5 w-3.5" />
-                        </Link>
-                      </td>
+                      <OperationalInboxActionCell>
+                        <OperationalInboxFlowAction
+                          label="Ver trazabilidad"
+                          onClick={() => onOpenFlow(row)}
+                        />
+                      </OperationalInboxActionCell>
                     </tr>
                   );
                 })}
@@ -292,36 +208,6 @@ export function PlanningWorkTable({
           </div>
         )}
       </Card>
-
-      <Modal
-        isOpen={Boolean(returnModal)}
-        onClose={() => setReturnModal(null)}
-        title="Devolver radicado a Product"
-        description="Indique el motivo de la devolución (mínimo 10 caracteres)."
-        size="md"
-      >
-        <textarea
-          className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm"
-          rows={4}
-          value={returnReason}
-          onChange={(e) => setReturnReason(e.target.value)}
-          placeholder="Motivo de devolución…"
-        />
-        <div className="mt-4 flex justify-end gap-2">
-          <Button variant="secondary" onClick={() => setReturnModal(null)}>
-            Cancelar
-          </Button>
-          <Button
-            onClick={() => void handleReturn()}
-            disabled={
-              (busyProjectId !== null && busyProjectId !== returnModal) ||
-              returnReason.trim().length < 10
-            }
-          >
-            Devolver
-          </Button>
-        </div>
-      </Modal>
     </>
   );
 }

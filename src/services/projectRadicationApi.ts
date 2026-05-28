@@ -7,6 +7,38 @@ export type ProjectInstitutionalState =
   | 'RADICATION_RETURNED_TO_PRODUCT'
   | 'FINALIZED';
 
+export interface ProjectInstitutionalClosureDto {
+  projectId: string;
+  program: string;
+  school: string;
+  projectInstitutionalState: ProjectInstitutionalState | null;
+  radicationNumber: string | null;
+  radicatedAt: string | null;
+  scopeSubjectsApproved: number;
+  scopeSubjectsTotal: number;
+  scopeSemesters: number;
+  checks: Array<{
+    key: string;
+    label: string;
+    responsibleRole: string;
+    status: 'CHECKED' | 'PENDING' | 'RETURNED';
+    checkedAt: string | null;
+    checkedByName: string | null;
+  }>;
+  timeline: Array<{
+    id: string;
+    action: string;
+    scopeLabel: string | null;
+    actorName: string;
+    actorRole: string;
+    comment: string | null;
+    returnReason: string | null;
+    createdAt: string;
+    mergedCount?: number;
+  }>;
+  timelineRawCount: number;
+}
+
 export interface ProjectRadicationReadinessDto {
   ready: boolean;
   blockers: string[];
@@ -56,6 +88,9 @@ export interface RegisterProjectRadicationBody {
 }
 
 export const projectRadicationApi = {
+  getInstitutionalClosure(projectId: string) {
+    return apiClient.get<ProjectInstitutionalClosureDto>(`/projects/${projectId}/institutional-closure`);
+  },
   getReadiness(projectId: string) {
     return apiClient.get<ProjectRadicationReadinessDto>(`/projects/${projectId}/radication-readiness`);
   },

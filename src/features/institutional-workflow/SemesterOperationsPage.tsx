@@ -1,4 +1,8 @@
-import { useNavigate, useParams } from 'react-router-dom';
+import { Navigate, useNavigate, useParams } from 'react-router-dom';
+import { useQuery } from '@tanstack/react-query';
+import { projectRadicationApi } from '../../services/projectRadicationApi';
+import { projectRadicationKeys } from '../project-radication/ProjectRadicationPanel';
+import { useContextNavigate } from '../../navigation/useContextNavigate';
 import { AlertCircle, MessageSquare } from 'lucide-react';
 import { useRef, useState } from 'react';
 import { useAuth } from '../auth/AuthContext';
@@ -24,7 +28,12 @@ import {
   filterSemesterSubjectBlockers,
   shouldShowSemesterAcademicRequirements,
 } from './institutionalCopy';
-import { semesterSubjectsPanelPath } from './institutionalNavigation';
+import {
+  factorySubjectWorkPath,
+  pickFactoryWorkSubject,
+  semesterSubjectsPanelPath,
+} from './institutionalNavigation';
+import type { SemesterSubjectOperationalDto } from '../../services/institutionalWorkflowApi';
 import { useSemesterOperationalWorkspaceQuery } from '../queries/useSemesterOperationalWorkspaceQuery';
 import { useSemesterInstitutionalTransitionMutation } from '../queries/useSemesterInstitutionalTransitionMutation';
 import type { OperationalCheckKeyV2, SlaStatusV2 } from '../../types/operationalWorkflow';
@@ -43,8 +52,9 @@ function sortActionsForDisplay(actions: InstitutionalOperationalAction[]): Insti
 }
 
 export function SemesterOperationsPage() {
-  const { semesterId } = useParams<{ projectId: string; semesterId: string }>();
+  const { projectId, semesterId } = useParams<{ projectId: string; semesterId: string }>();
   const navigate = useNavigate();
+  const contextNavigate = useContextNavigate();
   const { role } = useAuth();
   const roleHome = homePathForRole(role);
   const [modal, setModal] = useState<ModalRequestV2>(null);
@@ -53,6 +63,36 @@ export function SemesterOperationsPage() {
   const workspaceQuery = useSemesterOperationalWorkspaceQuery(semesterId);
   const transitionMutation = useSemesterInstitutionalTransitionMutation(semesterId);
   const workspace = workspaceQuery.data;
+
+  const projectRadicationReadinessQuery = useQuery({
+    queryKey: projectRadicationKeys.readiness(projectId ?? ''),
+    queryFn: () => projectRadicationApi.getReadiness(projectId!),
+    enabled: Boolean(projectId) && (role === 'PLANEACION' || role === 'ADMIN'),
+  });
+
+  if (
+    projectId &&
+    (role === 'PLANEACION' || role === 'ADMIN') &&
+    projectRadicationReadinessQuery.data?.projectInstitutionalState === 'PENDING_PLANNING_RADICATION_CHECK'
+  ) {
+    return <Navigate to={`/projects/${projectId}/operations`} replace />;
+  }
+
+  const navigateToFactorySubjectWork = (subjects: SemesterSubjectOperationalDto[], toastMessage?: string) => {
+    const target = pickFactoryWorkSubject(subjects);
+    if (!target) {
+      subjectsSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      showToast('Revise las asignaturas del paquete para completar la producción del semestre.');
+      return;
+    }
+    contextNavigate(factorySubjectWorkPath(target), {
+      state: { fromSemesterOperations: true, semesterId: semesterId ?? undefined },
+    });
+    showToast(
+      toastMessage ??
+        'Abra cada asignatura, marque la producción interna al 100% y luego confirme la entrega del semestre.',
+    );
+  };
 
   const runTransition = async (params: {
     action: InstitutionalOperationalAction;
@@ -73,6 +113,13 @@ export function SemesterOperationsPage() {
           state: { reviewStarted: true },
         });
         showToast('Revisión académica iniciada. Elija una asignatura para continuar.');
+        return;
+      }
+      if (params.action === 'FACTORY_START_PRODUCTION') {
+        navigateToFactorySubjectWork(
+          updated.subjects ?? [],
+          'Producción iniciada. Trabaje cada asignatura hasta completar la producción interna.',
+        );
         return;
       }
     } catch (e: unknown) {
@@ -148,6 +195,12 @@ export function SemesterOperationsPage() {
   const subjectsWithObservations = workspace.subjects.filter(
     (s) => s.internalState === 'HAS_OBSERVATIONS' || (s.openObservationsCount ?? 0) > 0,
   );
+  const factoryWorkTarget = isFactoryView ? pickFactoryWorkSubject(workspace.subjects) : null;
+  const factoryNeedsSubjectWork =
+    isFactoryView &&
+    workspace.operationalState === 'IN_FACTORY_PRODUCTION' &&
+    subjectsPendingProduction > 0 &&
+    factoryWorkTarget !== null;
 
   const scrollToSubjectsWithObservations = () => {
     const first = subjectsWithObservations[0];
@@ -280,6 +333,25 @@ export function SemesterOperationsPage() {
                 Producción entregada. Pendiente validación de producción.
               </p>
             ) : null}
+            {factoryNeedsSubjectWork && factoryWorkTarget ? (
+              <div className="mt-4 space-y-2">
+                <p className="text-xs leading-relaxed text-amber-900">
+                  Complete la producción interna de cada asignatura del semestre. Cuando todas estén al 100%, podrá
+                  confirmar la entrega y avanzar a la siguiente fase.
+                </p>
+                <Button
+                  size="sm"
+                  variant="primary"
+                  className="w-full justify-center font-medium"
+                  onClick={() => navigateToFactorySubjectWork(workspace.subjects)}
+                >
+                  Trabajar asignatura
+                  {subjectsPendingProduction > 1
+                    ? ` (${subjectsPendingProduction} pendientes)`
+                    : `: ${factoryWorkTarget.subjectName}`}
+                </Button>
+              </div>
+            ) : null}
             {isSemesterProductAcademicReviewPhase(workspace.operationalState) &&
             (role === 'PRODUCT' || role === 'ADMIN') ? (
               <div className="mt-4">
@@ -322,9 +394,9 @@ export function SemesterOperationsPage() {
                   );
                 })}
               </div>
-            ) : (
+            ) : !factoryNeedsSubjectWork ? (
               <p className="mt-4 text-sm text-slate-600">No hay acciones pendientes de su rol en esta etapa.</p>
-            )}
+            ) : null}
           </section>
         </div>
 

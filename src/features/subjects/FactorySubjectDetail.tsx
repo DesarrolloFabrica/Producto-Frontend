@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent } from 'react';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { ContextBackLink } from '../../navigation/ContextBackLink';
+import { stripReturnToQuery } from '../../navigation/contextNavigation';
 import {
   AlertCircle,
   ArrowLeft,
@@ -221,7 +222,9 @@ interface FactorySubjectDetailProps {
 }
 
 export function FactorySubjectDetail({ project, subject, observations }: FactorySubjectDetailProps) {
+  const navigate = useNavigate();
   const [searchParams] = useSearchParams();
+  const backFallbackTimerRef = useRef<number | null>(null);
   const {
     projectObservations,
     observationsByProject,
@@ -287,8 +290,12 @@ export function FactorySubjectDetail({ project, subject, observations }: Factory
   );
 
   useEffect(() => {
-    setSelectedNotifyIds(new Set(correctionsReadyToNotify.map((o) => o.id)));
-  }, [readyNotifyIdsKey, correctionsReadyToNotify]);
+    const ids = readyNotifyIdsKey ? readyNotifyIdsKey.split(',').filter(Boolean) : [];
+    setSelectedNotifyIds((prev) => {
+      if (prev.size === ids.length && ids.every((id) => prev.has(id))) return prev;
+      return new Set(ids);
+    });
+  }, [readyNotifyIdsKey]);
 
   const toggleOpenSelection = useCallback((observationId: string) => {
     setSelectedOpenIds((prev) => {
@@ -361,6 +368,34 @@ export function FactorySubjectDetail({ project, subject, observations }: Factory
   const semesterId = semester?.id;
   const semesterOperationsUrl =
     semesterId && project.id ? `/projects/${project.id}/semesters/${semesterId}/operations` : null;
+  const semesterBackPath = semesterOperationsUrl
+    ? stripReturnToQuery(semesterOperationsUrl)
+    : `/projects/${project.id}/semesters/${subject.semesterNumber}`;
+
+  const handleBackToSemester = (event: MouseEvent<HTMLButtonElement>) => {
+    event.preventDefault();
+    navigate(semesterBackPath, { replace: true, state: null });
+    if (backFallbackTimerRef.current !== null) {
+      window.clearTimeout(backFallbackTimerRef.current);
+    }
+    backFallbackTimerRef.current = window.setTimeout(() => {
+      const desired = stripReturnToQuery(semesterBackPath);
+      const current = stripReturnToQuery(`${window.location.pathname}${window.location.search}`);
+      if (current !== desired) {
+        window.location.replace(desired);
+      }
+    }, 250);
+  };
+
+  useEffect(
+    () => () => {
+      if (backFallbackTimerRef.current !== null) {
+        window.clearTimeout(backFallbackTimerRef.current);
+      }
+    },
+    [],
+  );
+
   const canSendCorrections =
     openCorrections.length === 0 &&
     correctionsReadyToNotify.length === 0 &&
@@ -416,7 +451,7 @@ export function FactorySubjectDetail({ project, subject, observations }: Factory
       });
       await Promise.all([
         operationalWorkspaceQuery.refetch(),
-        queryClient.invalidateQueries({ queryKey: queryKeys.subjectWorkspace(subject.id) }),
+        queryClient.refetchQueries({ queryKey: queryKeys.subjectWorkspace(subject.id) }),
       ]);
       showToast(FACTORY_COPY.toastProductionFinished);
     } catch (updateError) {
@@ -513,12 +548,22 @@ export function FactorySubjectDetail({ project, subject, observations }: Factory
     <div className="space-y-6">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <ContextBackLink
-            fallback={semesterOperationsUrl ?? `/projects/${project.id}/semesters/${subject.semesterNumber}`}
-            className="inline-flex items-center gap-1 text-xs font-medium text-[#64748B] hover:text-[#FF6B00]"
-          >
-            <ArrowLeft className="h-3.5 w-3.5" /> Volver al semestre
-          </ContextBackLink>
+          {useInstitutionalUi && semesterOperationsUrl ? (
+            <button
+              type="button"
+              onClick={handleBackToSemester}
+              className="inline-flex items-center gap-1 text-xs font-medium text-[#64748B] hover:text-[#FF6B00]"
+            >
+              <ArrowLeft className="h-3.5 w-3.5" /> Volver al semestre
+            </button>
+          ) : (
+            <ContextBackLink
+              fallback={semesterBackPath}
+              className="inline-flex items-center gap-1 text-xs font-medium text-[#64748B] hover:text-[#FF6B00]"
+            >
+              <ArrowLeft className="h-3.5 w-3.5" /> Volver al semestre
+            </ContextBackLink>
+          )}
           <div className="mt-2 flex flex-wrap items-center gap-2">
             <h1 className="text-2xl font-bold tracking-[-0.02em] text-[#1E293B]">{subject.name}</h1>
             {subject.createdFromChange && <ChangeOriginBadge kind="subject" />}
@@ -545,9 +590,13 @@ export function FactorySubjectDetail({ project, subject, observations }: Factory
           {semesterOperationsUrl ? (
             <p className="mt-1 text-xs text-amber-800">
               Entrega del paquete:{' '}
-              <a href={semesterOperationsUrl} className="font-bold underline hover:text-amber-950">
+              <button
+                type="button"
+                onClick={handleBackToSemester}
+                className="font-bold underline hover:text-amber-950"
+              >
                 centro operacional del semestre {subject.semesterNumber}
-              </a>
+              </button>
             </p>
           ) : null}
         </div>

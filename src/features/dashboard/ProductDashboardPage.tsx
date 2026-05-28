@@ -2,6 +2,8 @@ import { useMemo, useState } from 'react';
 
 import { useLocation, useNavigate } from 'react-router-dom';
 
+import { useQuery } from '@tanstack/react-query';
+
 import { AlertTriangle, ClipboardList, FolderKanban, Plus, RefreshCw, Sparkles, Factory } from 'lucide-react';
 
 import { buildFromLocation } from '../../navigation/contextNavigation';
@@ -11,6 +13,14 @@ import { DashboardKpiGrid, DashboardShell } from '../../components/layout/Dashbo
 import { MetricCard } from '../../components/cards/MetricCard';
 
 import { ProgramOperationalTray } from '../../components/operational/ProgramOperationalTray';
+
+import { ProgramRadicationTray } from '../../components/operational/ProgramRadicationTray';
+
+import { projectRadicationApi } from '../../services/projectRadicationApi';
+
+import { projectRadicationKeys } from '../project-radication/ProjectRadicationPanel';
+
+import { projectRadicationUrl } from '../project-radication/ProjectRadicationBanner';
 
 import { Button } from '../../components/ui/Button';
 
@@ -80,16 +90,41 @@ export function ProductDashboardPage() {
 
   const trays = useMemo(() => groupProgramsByTray(allPrograms), [allPrograms]);
 
+  const radicationWorkQuery = useQuery({
+    queryKey: projectRadicationKeys.productWork(),
+    queryFn: () => projectRadicationApi.productWork(),
+    enabled: backendEnabled,
+  });
 
+  const readyForRadication = useMemo(() => {
+    const items = radicationWorkQuery.data ?? [];
+    return items.filter(
+      (item) =>
+        item.institutionalState === 'READY_FOR_PRODUCT_RADICATION' ||
+        item.institutionalState === 'RADICATION_RETURNED_TO_PRODUCT',
+    );
+  }, [radicationWorkQuery.data]);
+
+  const radicationReadyProjectIds = useMemo(
+    () => new Set(readyForRadication.map((item) => item.projectId)),
+    [readyForRadication],
+  );
+
+  const openRadication = (projectId: string) => {
+    navigate(projectRadicationUrl(projectId), {
+      state: { from: buildFromLocation(location) },
+    });
+  };
 
   const openProgramOperations = (item: ProgramOperationalWorkItemDto) => {
+    if (radicationReadyProjectIds.has(item.projectId)) {
+      openRadication(item.projectId);
+      return;
+    }
 
     navigate(item.actionUrl, {
-
       state: { from: buildFromLocation(location), programWorkItem: item },
-
     });
-
   };
 
 
@@ -116,7 +151,10 @@ export function ProductDashboardPage() {
 
     void refreshProjects();
 
-    if (backendEnabled) void trackingQuery.refetch();
+    if (backendEnabled) {
+      void trackingQuery.refetch();
+      void radicationWorkQuery.refetch();
+    }
 
   };
 
@@ -198,7 +236,9 @@ export function ProductDashboardPage() {
 
       </DashboardKpiGrid>
 
-
+      {backendEnabled && readyForRadication.length > 0 ? (
+        <ProgramRadicationTray items={readyForRadication} onOpenRadication={openRadication} />
+      ) : null}
 
       <section className="grid gap-3 md:grid-cols-2">
 

@@ -1,4 +1,5 @@
 import { ArrowRight, CalendarDays, Inbox } from 'lucide-react';
+import { OperationalRequestItemHeading } from '../../components/operational/OperationalRequestItemHeading';
 import { Card } from '../../components/ui/Card';
 import { Button } from '../../components/ui/Button';
 import { EmptyState } from '../../components/ui/EmptyState';
@@ -84,7 +85,7 @@ export function ProgramOperationalWorkTable({
             <table className="w-full min-w-[920px] text-sm">
               <thead className="bg-slate-50/90 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
                 <tr>
-                  <th className="px-5 py-2.5 text-left sm:px-6">Programa</th>
+                  <th className="px-5 py-2.5 text-left sm:px-6">Solicitud</th>
                   <th className="px-4 py-2.5 text-left sm:px-6">Avance</th>
                   <th className="px-4 py-2.5 text-left sm:px-6">Etapa</th>
                   <th className="px-4 py-2.5 text-left sm:px-6">Responsable</th>
@@ -108,8 +109,8 @@ export function ProgramOperationalWorkTable({
                         onClick={() => onOpenProgram(item)}
                       >
                         <td className="px-5 py-3 align-middle sm:px-6">
-                          <p className="font-semibold text-slate-900">{item.program}</p>
-                          <p className="mt-0.5 text-xs text-slate-500">{item.school}</p>
+                          <OperationalRequestItemHeading program={item.program} size="table" />
+                          <p className="mt-1 text-xs text-slate-500">{item.school}</p>
                         </td>
                         <td className="px-4 py-3 align-middle sm:px-6">
                           <p className="text-xs font-medium text-slate-700">
@@ -163,8 +164,8 @@ export function ProgramOperationalWorkTable({
                   >
                     <div className="flex items-start justify-between gap-2">
                       <div className="min-w-0">
-                        <p className="truncate text-sm font-semibold text-slate-900">{item.program}</p>
-                        <p className="text-xs text-slate-500">{item.school}</p>
+                        <OperationalRequestItemHeading program={item.program} size="table" />
+                        <p className="mt-1 text-xs text-slate-500">{item.school}</p>
                       </div>
                       <SlaBadgeV2 status={item.slaStatus as SlaStatusV2} />
                     </div>

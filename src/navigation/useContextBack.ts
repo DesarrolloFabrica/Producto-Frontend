@@ -2,7 +2,14 @@ import { useCallback, useMemo } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../features/auth/AuthContext';
 import { homePathForRole } from './roleNavigation';
-import { resolveBackTarget, saveScrollPosition, buildFromLocation } from './contextNavigation';
+import {
+  resolveBackTarget,
+  saveScrollPosition,
+  buildFromLocation,
+  stripReturnToQuery,
+  pathsMatchForBack,
+  parseAppPath,
+} from './contextNavigation';
 
 /**
  * Navegación de retorno contextual.
@@ -20,9 +27,18 @@ export function useContextBack(explicitFallback?: string) {
   );
 
   const goBack = useCallback(() => {
-    saveScrollPosition(buildFromLocation(location));
-    navigate(backTarget);
-  }, [navigate, backTarget, location]);
+    const current = buildFromLocation(location);
+    const cleanFallback = stripReturnToQuery(fallback);
+    let target = backTarget;
+
+    if (pathsMatchForBack(target, current)) {
+      target = cleanFallback;
+    }
+
+    saveScrollPosition(current);
+    const { pathname, search } = parseAppPath(target);
+    navigate({ pathname, search: search || undefined }, { replace: true, state: null });
+  }, [navigate, backTarget, location, fallback]);
 
   return { goBack, backTarget };
 }

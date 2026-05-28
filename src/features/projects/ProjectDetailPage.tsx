@@ -1,17 +1,15 @@
-import { useState } from 'react';
-import { useUrlTab } from '../../navigation/useUrlTab';
+import { useEffect, useState } from 'react';
+import { useLocation, useSearchParams } from 'react-router-dom';
 import { ContextLink } from '../../navigation/ContextLink';
 import { DeepLinkNotFound } from '../../components/feedback/DeepLinkNotFound';
 import { ProjectsLoadNotice } from '../../components/feedback/ProjectsLoadNotice';
 import { useEnsureProjectDetail } from '../operations/useEnsureProjectDetail';
-import { Link, useParams } from 'react-router-dom';
-import { SemesterWorkflowCard } from '../../components/cards/SemesterWorkflowCard';
+import { useParams } from 'react-router-dom';
 import { StatusBadge } from '../../components/status/StatusBadge';
 import { Card } from '../../components/ui/Card';
 import { PageHeader } from '../../components/ui/PageHeader';
 import { ProjectChangeTrackingPanel } from '../../components/change-tracking/ProjectChangeTrackingPanel';
 import { ChangeOriginBadge, ChangeOriginHint } from '../../components/change-tracking/ChangeOriginBadge';
-import { Tabs } from '../../components/ui/Tabs';
 import { EditProjectDrawer } from '../../components/forms/EditProjectDrawer';
 import { ProjectInfoDrawer } from '../../components/forms/ProjectInfoDrawer';
 import { Modal } from '../../components/ui/Modal';
@@ -20,7 +18,7 @@ import { SubjectMatterExpertPendingBanner } from '../../components/projects/Subj
 import { formatProjectExpectedDelivery } from '../../utils/projectSme';
 import { useAuth } from '../auth/AuthContext';
 import { formatDate } from '../../utils/formatters';
-import { ArrowRight, BookOpen, CalendarDays, CheckCircle2, ClipboardCheck, Eye, FileText, MessageSquare, Plus, Minus, Loader2 } from 'lucide-react';
+import { ArrowRight, BookOpen, CalendarDays, ClipboardCheck, Eye, Plus, Loader2 } from 'lucide-react';
 import { Button } from '../../components/ui/Button';
 import { useToast } from '../../components/ui/ToastProvider';
 import { priorityLabels } from '../../utils/status';
@@ -37,14 +35,44 @@ import {
 import {
   ProjectRadicationPanel,
   ProjectRadicationScopeLockHint,
+  projectRadicationKeys,
+  scrollToRadicationSection,
 } from '../project-radication/ProjectRadicationPanel';
+import { ProjectInstitutionalClosurePanel } from '../institutional-workflow/components/ProjectInstitutionalClosurePanel';
 import { useQuery } from '@tanstack/react-query';
 import { projectRadicationApi } from '../../services/projectRadicationApi';
 
-const tabs = [
-  { id: 'summary', label: 'Resumen' },
-  { id: 'semesters', label: 'Semestres', flow: true },
-];
+/** Scroll al panel cuando se llega con /projects/:id#radication (RR no hace scroll al hash). */
+function useScrollToRadicationOnHash(enabled: boolean, panelReady: boolean) {
+  const location = useLocation();
+
+  useEffect(() => {
+    if (!enabled || location.hash !== '#radication') return;
+
+    const tryScroll = () => scrollToRadicationSection('auto');
+
+    if (panelReady && tryScroll()) return undefined;
+
+    const retry = window.setTimeout(() => tryScroll(), panelReady ? 0 : 200);
+    const retryLate = window.setTimeout(() => tryScroll(), 500);
+    return () => {
+      window.clearTimeout(retry);
+      window.clearTimeout(retryLate);
+    };
+  }, [enabled, panelReady, location.pathname, location.hash]);
+}
+
+/** Redirige ?tab=summary (vista antigua) a la URL unificada sin query. */
+function useLegacySummaryTabRedirect(projectId: string | undefined) {
+  const [searchParams, setSearchParams] = useSearchParams();
+
+  useEffect(() => {
+    if (!projectId || searchParams.get('tab') !== 'summary') return;
+    const next = new URLSearchParams(searchParams);
+    next.delete('tab');
+    setSearchParams(next, { replace: true });
+  }, [projectId, searchParams, setSearchParams]);
+}
 
 export function ProjectDetailPage() {
   const { projectId } = useParams();
@@ -54,9 +82,15 @@ export function ProjectDetailPage() {
   const { role } = useAuth();
   const { project, isLoading, error, notFound } = useEnsureProjectDetail(projectId);
   useDismissNotificationsOnVisit({ projectId: project?.id });
-  const [activeTab, setActiveTab] = useUrlTab(['summary', 'semesters'] as const, 'summary');
+  useLegacySummaryTabRedirect(projectId);
   const [showInfoDrawer, setShowInfoDrawer] = useState(false);
   const [showAddSemesterModal, setShowAddSemesterModal] = useState(false);
+
+  const institutionalReadinessQuery = useQuery({
+    queryKey: projectRadicationKeys.readiness(projectId ?? ''),
+    queryFn: () => projectRadicationApi.getReadiness(projectId!),
+    enabled: Boolean(projectId) && role !== 'FABRICA',
+  });
 
   if (isLoading) {
     return (
@@ -91,6 +125,9 @@ export function ProjectDetailPage() {
 
   const projectInsight = analyzeProductProject(project, projectObservations);
 
+  const isInstitutionalFinalized =
+    institutionalReadinessQuery.data?.projectInstitutionalState === 'FINALIZED';
+
   return (
     <div className="space-y-6">
       <PageHeader
@@ -108,7 +145,6 @@ export function ProjectDetailPage() {
         }}
       />
 
-      {/* Executive Summary Card */}
       <Card className="overflow-hidden rounded-[20px] border-none bg-white shadow-[0_10px_25px_-5px_rgba(0,0,0,0.02)]">
         <div className="p-6 sm:p-7">
           <div className="flex flex-wrap items-start justify-between gap-6">
@@ -127,27 +163,36 @@ export function ProjectDetailPage() {
                 <InfoCompact label="Progreso">{project.progress}%</InfoCompact>
               </div>
             </div>
-              <div className="flex w-full min-w-[200px] flex-col gap-3 sm:w-auto">
-                <div className="relative h-2 overflow-hidden rounded-[100px] bg-slate-100">
-                  <div className="absolute left-0 top-0 h-full rounded-[100px] bg-linear-to-r from-orange-400 to-orange-500" style={{ width: `${project.progress}%` }} />
-                </div>
-                <Button variant="secondary" className="w-full py-2.5 text-xs font-bold" onClick={() => setShowInfoDrawer(true)}>
-                  <Eye className="h-3.5 w-3.5" /> Ver información
-                </Button>
+            <div className="flex w-full min-w-[200px] flex-col gap-3 sm:w-auto">
+              <div className="relative h-2 overflow-hidden rounded-[100px] bg-slate-100">
+                <div
+                  className="absolute left-0 top-0 h-full rounded-[100px] bg-linear-to-r from-orange-400 to-orange-500"
+                  style={{ width: `${project.progress}%` }}
+                />
               </div>
+              <Button
+                variant="secondary"
+                className="w-full py-2.5 text-xs font-bold"
+                onClick={() => setShowInfoDrawer(true)}
+              >
+                <Eye className="h-3.5 w-3.5" /> Ver información
+              </Button>
+            </div>
           </div>
         </div>
       </Card>
 
       <ProjectChangeTrackingPanel project={project} />
 
-      <Tabs tabs={tabs} activeTab={activeTab} onChange={setActiveTab} />
-
-      {activeTab === 'summary' && (
-        <Summary project={project} projectInsight={projectInsight} projectId={project.id} />
-      )}
-      {activeTab === 'semesters' && (
-        <Semesters project={project} onAddSemester={() => setShowAddSemesterModal(true)} />
+      {isInstitutionalFinalized ? (
+        <ProjectInstitutionalClosurePanel projectId={project.id} />
+      ) : (
+        <ProjectSemestersWorkspace
+          project={project}
+          projectId={project.id}
+          projectInsight={projectInsight}
+          onAddSemester={() => setShowAddSemesterModal(true)}
+        />
       )}
 
       <ProjectInfoDrawer isOpen={showInfoDrawer} onClose={() => setShowInfoDrawer(false)} project={project} />
@@ -173,177 +218,34 @@ function InfoCompact({ label, children }: { label: string; children: React.React
   );
 }
 
-function Info({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div>
-      <p className="mb-1 text-[10px] font-semibold uppercase tracking-[0.1em] text-slate-400">{label}</p>
-      <div className="text-sm font-medium text-slate-700">{children}</div>
-    </div>
-  );
-}
-
-function Summary({
+function ProjectSemestersWorkspace({
   project,
-  projectInsight,
   projectId,
+  projectInsight,
+  onAddSemester,
 }: {
   project: ReturnType<typeof useOperations>['projects'][number];
-  projectInsight: ReturnType<typeof analyzeProductProject>;
   projectId: string;
+  projectInsight: ReturnType<typeof analyzeProductProject>;
+  onAddSemester: () => void;
 }) {
   const { role } = useAuth();
-  const hasSyllabus = project.links.some((l) => l.type === 'SYLLABUS');
-  const syllabusLink = project.links.find((l) => l.type === 'SYLLABUS');
+  const showRadication = role === 'PRODUCT' || role === 'ADMIN';
 
-  return (
-    <section className="tab-content-active space-y-5">
-      {(role === 'PRODUCT' || role === 'ADMIN') && <ProjectRadicationPanel projectId={projectId} />}
-
-      {/* Informacion base */}
-      <Card className="rounded-[20px] border-none bg-white shadow-[0_4px_6px_-1px_rgba(0,0,0,0.02),0_2px_4px_-1px_rgba(0,0,0,0.01)]">
-        <div className="p-6 sm:p-7">
-          <p className="text-[10px] font-black uppercase tracking-widest text-orange-500">Solicitud</p>
-          <h2 className="mt-1 text-lg font-black tracking-tight text-slate-900">Información base</h2>
-
-          <div className="mt-6 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
-            <Info label="Escuela">{project.school}</Info>
-            <Info label="Programa">{project.program}</Info>
-            <Info label="Modalidad">{project.modality}</Info>
-            <Info label="Prioridad">{priorityLabels[project.priority]}</Info>
-            <Info label="Fecha entrega Fábrica">{formatProjectExpectedDelivery(project)}</Info>
-            <Info label="Responsable Product">{project.productOwner}</Info>
-          </div>
-
-          <div className="mt-6 grid gap-5 sm:grid-cols-2">
-            <div>
-              <p className="mb-1 text-[10px] font-semibold uppercase tracking-[0.1em] text-slate-400">Syllabus</p>
-              <div className="flex items-center gap-2">
-                {hasSyllabus ? (
-                  <>
-                    <CheckCircle2 className="h-4 w-4 text-emerald-500" />
-                    <span className="text-sm font-medium text-slate-700">Sí</span>
-                    {syllabusLink && (
-                      <a href={syllabusLink.url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-xs font-bold text-orange-600 hover:text-orange-700">
-                        <FileText className="h-3.5 w-3.5" /> Abrir link
-                      </a>
-                    )}
-                  </>
-                ) : (
-                  <span className="text-sm font-medium text-slate-500">Sin syllabus registrado</span>
-                )}
-              </div>
-            </div>
-            <Info label="Semestres seleccionados">{project.semesters.map((s) => `Semestre ${s.semesterNumber}`).join(', ')}</Info>
-          </div>
-
-          {project.observations && (
-            <div className="mt-6">
-              <p className="mb-1 text-[10px] font-semibold uppercase tracking-[0.1em] text-slate-400">Observaciones iniciales</p>
-              <p className="rounded-[12px] bg-slate-50 p-4 text-sm font-medium leading-relaxed text-slate-600">{project.observations}</p>
-            </div>
-          )}
-        </div>
-      </Card>
-
-      {/* Avance general */}
-      <Card className="rounded-[20px] border-none bg-white shadow-[0_4px_6px_-1px_rgba(0,0,0,0.02),0_2px_4px_-1px_rgba(0,0,0,0.01)]">
-        <div className="p-6 sm:p-7">
-          <p className="text-[10px] font-black uppercase tracking-widest text-orange-500">Estado</p>
-          <h2 className="mt-1 text-lg font-black tracking-tight text-slate-900">Avance general</h2>
-
-          <div className="mt-6 flex items-center gap-4">
-            <div className="flex-1">
-              <div className="relative h-2 overflow-hidden rounded-[100px] bg-slate-100">
-                <div
-                  className={cn(
-                    'absolute left-0 top-0 h-full rounded-[100px]',
-                    projectInsight.isFullyApproved
-                      ? 'bg-linear-to-r from-emerald-400 to-emerald-500'
-                      : 'bg-linear-to-r from-orange-400 to-orange-500',
-                  )}
-                  style={{ width: `${project.progress}%` }}
-                />
-              </div>
-            </div>
-            <span
-              className={cn(
-                'text-sm font-black',
-                projectInsight.isFullyApproved ? 'text-emerald-600' : 'text-orange-600',
-              )}
-            >
-              {project.progress}%
-            </span>
-          </div>
-
-          <div className="mt-4 flex flex-wrap items-center gap-3">
-            <StatusBadge status={projectInsight.displayStatus as any} />
-            <span className="text-sm font-medium text-slate-600">{projectInsight.reviewLabel}</span>
-          </div>
-
-          {projectInsight.isFullyApproved && (
-            <p className="mt-4 rounded-[12px] bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-800">
-              Todas las materias fueron aprobadas. Ya no requiere revisión activa; puedes cerrar la solicitud como completada.
-            </p>
-          )}
-        </div>
-      </Card>
-
-      {/* Próximos pasos */}
-      <Card className="rounded-[20px] border-none bg-white shadow-[0_4px_6px_-1px_rgba(0,0,0,0.02),0_2px_4px_-1px_rgba(0,0,0,0.01)]">
-        <div className="p-6 sm:p-7">
-          <p className="text-[10px] font-black uppercase tracking-widest text-orange-500">
-            {projectInsight.isFullyApproved ? 'Cierre' : 'Revisión'}
-          </p>
-          <h2 className="mt-1 text-lg font-black tracking-tight text-slate-900">
-            {projectInsight.isFullyApproved ? 'Solicitud completada' : 'Próximos pasos'}
-          </h2>
-
-          {projectInsight.isFullyApproved ? (
-            <div className="mt-6">
-              <NextStepCard
-                icon={CheckCircle2}
-                title="Cerrar solicitud"
-                description={`${projectInsight.subjectsApproved} materia${projectInsight.subjectsApproved !== 1 ? 's' : ''} aprobada${projectInsight.subjectsApproved !== 1 ? 's' : ''}. Marca la entrega al LMS cuando corresponda.`}
-              />
-            </div>
-          ) : (
-            <div className="mt-6 grid gap-3 sm:grid-cols-2">
-              <NextStepCard icon={ClipboardCheck} title="Revisar contenido entregado" description="Valida los entregables de Fábrica por asignatura y tema." />
-              <NextStepCard icon={BookOpen} title="Validar checklist de asignaturas" description="Revisa cada item del checklist y marca aprobado o rechazado." />
-              <NextStepCard icon={MessageSquare} title="Registrar observaciones" description="Si algo falta o necesita corrección, deja observaciones claras." />
-              <NextStepCard icon={CheckCircle2} title="Cerrar solicitud" description="Cuando todo esté aprobado, cierra la solicitud como completada." />
-            </div>
-          )}
-        </div>
-      </Card>
-    </section>
-  );
-}
-
-function NextStepCard({ icon: Icon, title, description }: { icon: typeof ClipboardCheck; title: string; description: string }) {
-  return (
-    <div className="group rounded-[16px] border border-slate-100 bg-white p-4 shadow-sm transition-all hover:border-orange-200 hover:bg-orange-50/30 hover:shadow-md">
-      <div className="flex items-start gap-3">
-        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-slate-100 text-slate-500 transition-all group-hover:bg-orange-500 group-hover:text-white">
-          <Icon className="h-4 w-4" />
-        </div>
-        <div>
-          <p className="text-sm font-bold text-slate-900">{title}</p>
-          <p className="mt-1 text-xs font-medium leading-relaxed text-slate-600">{description}</p>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function Semesters({ project, onAddSemester }: { project: ReturnType<typeof useOperations>['projects'][number]; onAddSemester: () => void }) {
-  const { role } = useAuth();
-  const scopeLockedQuery = useQuery({
-    queryKey: ['project-radication-readiness', project.id],
-    queryFn: () => projectRadicationApi.getReadiness(project.id),
-    enabled: role === 'PRODUCT' || role === 'ADMIN',
+  const readinessQuery = useQuery({
+    queryKey: projectRadicationKeys.readiness(projectId),
+    queryFn: () => projectRadicationApi.getReadiness(projectId),
+    enabled: showRadication,
   });
-  const scopeLocked = Boolean(scopeLockedQuery.data?.institutionalScopeLockedAt);
+
+  const scopeLocked = Boolean(readinessQuery.data?.institutionalScopeLockedAt);
+  const radicationPanelReady =
+    !readinessQuery.isLoading && readinessQuery.data?.projectInstitutionalState != null;
+  useScrollToRadicationOnHash(showRadication, radicationPanelReady);
+  const radicationBySemester = new Map(
+    (readinessQuery.data?.bySemester ?? []).map((sem) => [sem.semesterNumber, sem]),
+  );
+
   const existingNumbers = project.semesters.map((s) => s.semesterNumber);
   const availableSemesters = Array.from({ length: 10 }, (_, i) => i + 1).filter((n) => !existingNumbers.includes(n));
   const canAddSemester = availableSemesters.length > 0 && !scopeLocked;
@@ -354,8 +256,9 @@ function Semesters({ project, onAddSemester }: { project: ReturnType<typeof useO
   });
 
   return (
-    <div className="tab-content-active space-y-5">
-      {/* Header con boton Agregar semestre */}
+    <section className="space-y-5">
+      {showRadication && <ProjectRadicationPanel projectId={projectId} />}
+
       <div className="flex items-center justify-between">
         <div>
           <p className="text-[10px] font-black uppercase tracking-widest text-orange-500">Semestres a virtualizar</p>
@@ -367,9 +270,9 @@ function Semesters({ project, onAddSemester }: { project: ReturnType<typeof useO
           </Button>
         )}
       </div>
-      {scopeLocked && <ProjectRadicationScopeLockHint projectId={project.id} />}
 
-      {/* Lista de semestres */}
+      {scopeLocked && <ProjectRadicationScopeLockHint projectId={projectId} />}
+
       {subjectsBySemester.length === 0 ? (
         <Card className="rounded-[20px] border-none bg-white p-8 text-center shadow-sm">
           <BookOpen className="mx-auto h-10 w-10 text-slate-300" />
@@ -385,12 +288,17 @@ function Semesters({ project, onAddSemester }: { project: ReturnType<typeof useO
         <div className="space-y-4">
           {subjectsBySemester.map(({ semester, subjects }) => {
             const totalChecklist = subjects.reduce((acc, s) => acc + s.checklist.length, 0);
-            const semesterProgress = subjects.length > 0
-              ? Math.round(subjects.reduce((acc, s) => acc + (s.progress ?? 0), 0) / subjects.length)
-              : 0;
+            const semesterProgress =
+              subjects.length > 0
+                ? Math.round(subjects.reduce((acc, s) => acc + (s.progress ?? 0), 0) / subjects.length)
+                : 0;
+            const radicationSem = radicationBySemester.get(semester.semesterNumber);
 
             return (
-              <Card key={semester.id} className="rounded-[20px] border-none bg-white shadow-[0_4px_6px_-1px_rgba(0,0,0,0.02),0_2px_4px_-1px_rgba(0,0,0,0.01)]">
+              <Card
+                key={semester.id}
+                className="rounded-[20px] border-none bg-white shadow-[0_4px_6px_-1px_rgba(0,0,0,0.02),0_2px_4px_-1px_rgba(0,0,0,0.01)]"
+              >
                 <div className="p-6 sm:p-7">
                   <div className="flex items-start justify-between gap-4">
                     <div>
@@ -413,7 +321,10 @@ function Semesters({ project, onAddSemester }: { project: ReturnType<typeof useO
 
                   <div className="mt-4 flex items-center gap-3">
                     <div className="relative h-2 flex-1 overflow-hidden rounded-[100px] bg-slate-100">
-                      <div className="absolute left-0 top-0 h-full rounded-[100px] bg-linear-to-r from-orange-400 to-orange-500" style={{ width: `${semesterProgress}%` }} />
+                      <div
+                        className="absolute left-0 top-0 h-full rounded-[100px] bg-linear-to-r from-orange-400 to-orange-500"
+                        style={{ width: `${semesterProgress}%` }}
+                      />
                     </div>
                     <span className="text-xs font-black text-orange-600">{semesterProgress}%</span>
                   </div>
@@ -427,10 +338,17 @@ function Semesters({ project, onAddSemester }: { project: ReturnType<typeof useO
                       <ClipboardCheck className="h-3.5 w-3.5 text-orange-400" />
                       {totalChecklist} entregables
                     </span>
+                    {radicationSem && radicationSem.total > 0 && (
+                      <span className="inline-flex items-center gap-1.5 text-slate-500">
+                        Alcance: {radicationSem.approved}/{radicationSem.total} aprobadas
+                      </span>
+                    )}
                   </div>
 
                   {semester.observations && (
-                    <p className="mt-4 rounded-[12px] bg-slate-50 p-3 text-xs font-medium text-slate-600">{semester.observations}</p>
+                    <p className="mt-4 rounded-[12px] bg-slate-50 p-3 text-xs font-medium text-slate-600">
+                      {semester.observations}
+                    </p>
                   )}
 
                   {subjects.length > 0 && (
@@ -457,7 +375,7 @@ function Semesters({ project, onAddSemester }: { project: ReturnType<typeof useO
           <p className="mt-1 text-xs font-medium text-slate-500">No hay más semestres disponibles para agregar.</p>
         </Card>
       )}
-    </div>
+    </section>
   );
 }
 
@@ -465,7 +383,12 @@ interface AddSemesterModalProps {
   isOpen: boolean;
   onClose: () => void;
   project: VirtualizationProject;
-  onAdd: (payload: { semesterNumber: number; factoryExpectedDate: string; subjects: { name: string; topics?: string[] }[]; changeReason?: string }) => Promise<void>;
+  onAdd: (payload: {
+    semesterNumber: number;
+    factoryExpectedDate: string;
+    subjects: { name: string; topics?: string[] }[];
+    changeReason?: string;
+  }) => Promise<void>;
   onSuccess: () => void;
   onError: (message: string) => void;
 }
@@ -537,18 +460,27 @@ function AddSemesterModal({ isOpen, onClose, project, onAdd, onSuccess, onError 
     onClose();
   };
 
-  const inputClass = 'w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-bold text-slate-900 focus:border-orange-300 focus:ring-2 focus:ring-orange-100 focus:outline-none transition-all';
+  const inputClass =
+    'w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-bold text-slate-900 focus:border-orange-300 focus:ring-2 focus:ring-orange-100 focus:outline-none transition-all';
   const labelClass = 'block mb-2 text-[10px] font-black uppercase tracking-widest text-slate-400';
 
   return (
-    <Modal isOpen={isOpen} onClose={handleClose} title="Agregar semestre" description="Define el semestre, la fecha de entrega y cuántas asignaturas incluirá. Las materias de un semestre no se pueden ampliar después de crearlo." size="lg">
+    <Modal
+      isOpen={isOpen}
+      onClose={handleClose}
+      title="Agregar semestre"
+      description="Define el semestre, la fecha de entrega y cuántas asignaturas incluirá. Las materias de un semestre no se pueden ampliar después de crearlo."
+      size="lg"
+    >
       <div className="space-y-5">
         {errors.length > 0 && (
           <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4">
             <p className="text-xs font-bold text-rose-700">Corrige los siguientes errores:</p>
             <ul className="mt-2 space-y-1">
               {errors.map((err, i) => (
-                <li key={i} className="text-[11px] font-medium text-rose-600">• {err}</li>
+                <li key={i} className="text-[11px] font-medium text-rose-600">
+                  • {err}
+                </li>
               ))}
             </ul>
           </div>
@@ -584,7 +516,9 @@ function AddSemesterModal({ isOpen, onClose, project, onAdd, onSuccess, onError 
             value={expectedDate}
             onChange={(e) => setExpectedDate(e.target.value)}
           />
-          <p className="mt-1 text-[10px] font-medium text-slate-400">Esta fecha será la entrega operativa para este semestre.</p>
+          <p className="mt-1 text-[10px] font-medium text-slate-400">
+            Esta fecha será la entrega operativa para este semestre.
+          </p>
         </div>
 
         <div>
@@ -614,12 +548,11 @@ function AddSemesterModal({ isOpen, onClose, project, onAdd, onSuccess, onError 
           </>
         )}
 
-        <div className="flex justify-end gap-3 pt-4 border-t border-slate-100">
-          <Button type="button" variant="secondary" onClick={handleClose}>Cancelar</Button>
-          <Button
-            disabled={saving || !canSubmitSemester}
-            onClick={handleSubmit}
-          >
+        <div className="flex justify-end gap-3 border-t border-slate-100 pt-4">
+          <Button type="button" variant="secondary" onClick={handleClose}>
+            Cancelar
+          </Button>
+          <Button disabled={saving || !canSubmitSemester} onClick={handleSubmit}>
             {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
             {saving ? 'Guardando...' : 'Agregar semestre'}
           </Button>

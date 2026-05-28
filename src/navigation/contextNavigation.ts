@@ -4,7 +4,42 @@ import { homePathForRole, isPathAllowedForRole } from './roleNavigation';
 
 export type NavigationState = {
   from?: string;
+  fromSemesterOperations?: boolean;
+  semesterId?: string;
 };
+
+/** Quita returnTo de una ruta para evitar cadenas de retorno que bloquean la navegación. */
+export function stripReturnToQuery(path: string): string {
+  const hashIndex = path.indexOf('#');
+  const hash = hashIndex >= 0 ? path.slice(hashIndex) : '';
+  const withoutHash = hashIndex >= 0 ? path.slice(0, hashIndex) : path;
+  const queryIndex = withoutHash.indexOf('?');
+  if (queryIndex < 0) return `${withoutHash}${hash}`;
+  const pathname = withoutHash.slice(0, queryIndex);
+  const params = new URLSearchParams(withoutHash.slice(queryIndex + 1));
+  params.delete('returnTo');
+  const qs = params.toString();
+  return `${pathname}${qs ? `?${qs}` : ''}${hash}`;
+}
+
+export function pathsMatchForBack(a: string, b: string): boolean {
+  return stripReturnToQuery(a) === stripReturnToQuery(b);
+}
+
+/** Separa pathname y search para navigate() sin arrastrar ?returnTo=. */
+export function parseAppPath(path: string): { pathname: string; search: string } {
+  const stripped = stripReturnToQuery(path);
+  const hashIndex = stripped.indexOf('#');
+  const withoutHash = hashIndex >= 0 ? stripped.slice(0, hashIndex) : stripped;
+  const queryIndex = withoutHash.indexOf('?');
+  if (queryIndex < 0) {
+    return { pathname: withoutHash || '/', search: '' };
+  }
+  return {
+    pathname: withoutHash.slice(0, queryIndex) || '/',
+    search: withoutHash.slice(queryIndex),
+  };
+}
 
 const scrollPositions = new Map<string, number>();
 
@@ -23,7 +58,7 @@ export function appendReturnTo(destination: string, returnTo: string): string {
   const queryIndex = withoutHash.indexOf('?');
   const path = queryIndex >= 0 ? withoutHash.slice(0, queryIndex) : withoutHash;
   const params = new URLSearchParams(queryIndex >= 0 ? withoutHash.slice(queryIndex + 1) : '');
-  params.set('returnTo', returnTo);
+  params.set('returnTo', stripReturnToQuery(returnTo));
   const qs = params.toString();
   return `${path}${qs ? `?${qs}` : ''}${hash}`;
 }
@@ -37,7 +72,7 @@ export function resolveBackTarget(
 
   const state = location.state as NavigationState | null;
   if (state?.from && state.from.startsWith('/') && isPathAllowedForRole(state.from, role)) {
-    return state.from;
+    return stripReturnToQuery(state.from);
   }
 
   const returnTo = new URLSearchParams(location.search).get('returnTo');
@@ -45,16 +80,16 @@ export function resolveBackTarget(
     try {
       const decoded = decodeURIComponent(returnTo);
       if (decoded.startsWith('/') && isPathAllowedForRole(decoded, role)) {
-        return decoded;
+        return stripReturnToQuery(decoded);
       }
     } catch {
       if (returnTo.startsWith('/') && isPathAllowedForRole(returnTo, role)) {
-        return returnTo;
+        return stripReturnToQuery(returnTo);
       }
     }
   }
 
-  return safeFallback;
+  return stripReturnToQuery(safeFallback);
 }
 
 export function saveScrollPosition(key: string, scrollY = window.scrollY): void {

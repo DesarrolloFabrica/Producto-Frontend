@@ -3,6 +3,7 @@ import type { Role } from '../../types/domain';
 import type { AuthUser } from '../../services/authApi';
 import { authApi } from '../../services/authApi';
 import { resetNotificationReadDedup } from '../notifications/notificationReadDedup';
+import { clearBootPending, markBootPending } from '../boot/appBootStorage';
 import { resetProjectsBootstrap } from '../operations/projectsBootstrapState';
 import { queryClient } from '../queries/queryClient';
 
@@ -41,6 +42,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       localStorage.removeItem(USER_KEY);
       localStorage.removeItem(OPS_V2_STORAGE_KEY);
       sessionStorage.removeItem(ENTRY_REDIRECT_KEY);
+      clearBootPending();
     } catch {
       // ignore
     }
@@ -111,6 +113,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         localStorage.setItem(TOKEN_KEY, accessToken);
         localStorage.setItem(USER_KEY, JSON.stringify(nextUser));
         sessionStorage.removeItem(ENTRY_REDIRECT_KEY);
+        markBootPending();
       } catch {
         // ignore
       }

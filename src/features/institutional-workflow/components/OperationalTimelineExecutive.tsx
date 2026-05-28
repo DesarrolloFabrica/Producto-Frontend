@@ -4,7 +4,7 @@ import type { OperationalTransitionV2 } from '../../../types/operationalWorkflow
 import { History } from 'lucide-react';
 import { EmptyState } from '../../../components/ui/EmptyState';
 import { cn } from '../../../components/ui/tokens';
-import { actionTimelineLabel } from '../institutionalTimelineLabels';
+import { closureTimelineLabel } from '../institutionalTimelineLabels';
 
 function formatTimelineDate(iso: string): { date: string; time: string } {
   const d = new Date(iso);
@@ -105,7 +105,7 @@ export function OperationalTimelineExecutive({ items, compact = false }: Operati
         {display.map((ev, index) => {
           const tone = actionTone(ev.action);
           const Icon = tone.icon;
-          const title = actionTimelineLabel(ev.action);
+          const title = ev.durationLabel ?? closureTimelineLabel(ev.action);
           const { date, time } = formatTimelineDate(ev.occurredAt);
           const isLast = index === display.length - 1;
 

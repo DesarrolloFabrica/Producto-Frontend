@@ -1144,7 +1144,7 @@ interface OperationsContextValue extends OperationsState {
   loadProjectObservations: (projectId: string) => Promise<void>;
   loadSubjectObservations: (subjectId: string) => Promise<void>;
   loadSubjectWorkspace: (subjectId: string) => Promise<void>;
-  loadNotifications: () => Promise<void>;
+  loadNotifications: (options?: { offset?: number; append?: boolean }) => Promise<void>;
   loadNotificationSummary: () => Promise<void>;
   refreshWorkflowContext: (
     options: {

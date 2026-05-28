@@ -6,8 +6,6 @@ import { DashboardShell } from '../../components/layout/DashboardShell';
 import { PageHeader } from '../../components/ui/PageHeader';
 import { Button } from '../../components/ui/Button';
 import { Card } from '../../components/ui/Card';
-import { useToast } from '../../components/ui/ToastProvider';
-import { projectRadicationApi } from '../../services/projectRadicationApi';
 import { buildFromLocation } from '../../navigation/contextNavigation';
 import { PlanningEmptyState } from './components/PlanningEmptyState';
 import { PlanningKpiCards } from './components/PlanningKpiCards';
@@ -43,7 +41,6 @@ export function PlanningDashboardPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
   const location = useLocation();
-  const { showToast } = useToast();
   const queryClient = useQueryClient();
   const {
     panel,
@@ -64,7 +61,6 @@ export function PlanningDashboardPage() {
   });
   const advanced = parseInboxAdvancedFilters(searchParams);
   const pageParam = parseInboxPage(searchParams);
-  const [busyProjectId, setBusyProjectId] = useState<string | null>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
 
   const {
@@ -139,38 +135,16 @@ export function PlanningDashboardPage() {
   };
 
   const openOperationalFlow = (row: typeof visibleRows[number]) => {
-    const url = 'actionUrl' in row ? row.actionUrl : null;
+    const url =
+      row.kind === 'finalized'
+        ? row.actionUrl
+        : 'actionUrl' in row
+          ? row.actionUrl
+          : null;
     if (!url) return;
     navigate(url, {
       state: { from: buildFromLocation(location) },
     });
-  };
-
-  const handleValidateRadication = async (projectId: string) => {
-    setBusyProjectId(projectId);
-    try {
-      await projectRadicationApi.validate(projectId);
-      showToast('Radicado validado y solicitud finalizada');
-      await invalidatePlanningDashboard(queryClient);
-    } catch (e: unknown) {
-      showToast(e instanceof Error ? e.message : 'Error al validar', 'error');
-    } finally {
-      setBusyProjectId(null);
-    }
-  };
-
-  const handleReturnRadication = async (projectId: string, returnReason: string) => {
-    setBusyProjectId(projectId);
-    try {
-      await projectRadicationApi.returnRadication(projectId, { returnReason });
-      showToast('Radicado devuelto a Product');
-      await invalidatePlanningDashboard(queryClient);
-    } catch (e: unknown) {
-      showToast(e instanceof Error ? e.message : 'Error al devolver', 'error');
-      throw e;
-    } finally {
-      setBusyProjectId(null);
-    }
   };
 
   const showFilteredEmpty =
@@ -188,9 +162,6 @@ export function PlanningDashboardPage() {
     isLoading,
     error,
     onOpenFlow: openOperationalFlow,
-    onValidateRadication: (id: string) => void handleValidateRadication(id),
-    onReturnRadication: handleReturnRadication,
-    busyProjectId,
   };
 
   const showTable = !showEmpty && !showEmptyAll;

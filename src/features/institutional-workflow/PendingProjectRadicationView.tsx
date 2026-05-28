@@ -22,10 +22,10 @@ export function PendingProjectRadicationView({ workspace }: Props) {
             Product debe registrar el radicado cuando todas las materias del alcance inicial estén listas.
           </p>
           <Link
-            to={`/projects/${workspace.projectId}?tab=summary`}
+            to={`/projects/${workspace.projectId}#radication`}
             className="mt-4 inline-flex text-sm font-bold text-orange-600 hover:text-orange-700"
           >
-            Ver progreso de la solicitud →
+            Ir a radicar solicitud →
           </Link>
         </div>
       </div>

@@ -28,6 +28,8 @@ const PLANNING_VALIDATION_STATES = {
 export type PlanningProgramRow = {
   kind: 'program';
   variant: 'pending' | 'tracking';
+  /** Proyecto en validación de radicado por Planeación (solo bandeja / seguimiento). */
+  radicationReview?: boolean;
   id: string;
   projectId: string;
   program: string;
@@ -82,6 +84,7 @@ export type PlanningWorkRow =
       productOwnerName: string;
       subjectsCount: number;
       semestersCount: number;
+      actionUrl: string;
     };
 
 export function parsePlanningFilter(raw: string | null): PlanningDashboardFilter {
@@ -132,8 +135,15 @@ export function mapProgramWorkItem(
   };
 }
 
-export function mapProgramTrackingWorkItem(item: ProgramOperationalWorkItemDto): PlanningWorkRow {
-  return mapProgramWorkItem(item, 'tracking');
+export function mapProgramTrackingWorkItem(
+  item: ProgramOperationalWorkItemDto,
+  options?: { radicationReview?: boolean },
+): PlanningWorkRow {
+  const row = mapProgramWorkItem(item, 'tracking');
+  if (options?.radicationReview) {
+    return { ...row, radicationReview: true };
+  }
+  return row;
 }
 
 export function mapRadicationWorkItem(item: ProjectRadicationWorkItemDto): PlanningWorkRow {
@@ -199,6 +209,7 @@ export function mapFinalizedProject(item: PlanningFinalizedProject): PlanningWor
     productOwnerName: item.productOwnerName,
     subjectsCount: item.subjectsCount,
     semestersCount: item.semestersCount,
+    actionUrl: `/projects/${item.projectId}/operations`,
   };
 }
 
@@ -226,7 +237,7 @@ export function filterPlanningRows(
           programHasSemesterState(row, PLANNING_VALIDATION_STATES.lms),
       );
     case 'radication':
-      return rows.filter((row) => row.kind === 'radication');
+      return rows.filter((row) => row.kind === 'program' && row.radicationReview);
     case 'tracking':
       return rows.filter((row) => row.kind === 'program' && row.variant === 'tracking');
     case 'returned':
@@ -236,10 +247,7 @@ export function filterPlanningRows(
     case 'all':
     default:
       return rows.filter(
-        (row) =>
-          row.kind === 'program' ||
-          row.kind === 'radication' ||
-          row.kind === 'returned-program',
+        (row) => row.kind === 'program' || row.kind === 'returned-program',
       );
   }
 }
@@ -271,6 +279,7 @@ function planningRowStage(row: PlanningWorkRow): string {
   if (row.kind === 'finalized') return 'Finalizada';
   if (row.kind === 'radication') return 'Radicación';
   if (row.kind === 'program') {
+    if (row.radicationReview) return 'Radicación';
     return row.variant === 'tracking' ? 'Seguimiento' : 'Validación';
   }
   if (row.kind === 'returned-program') return 'Devuelta';

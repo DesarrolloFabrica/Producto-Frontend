@@ -26,6 +26,12 @@ import {
 } from '../queries/useInstitutionalProgramsWorkQuery';
 import type { SlaStatusV2 } from '../../types/operationalWorkflow';
 import type { InstitutionalOperationalState, Role } from '../../types/domain';
+import { ProjectRadicationBanner } from '../project-radication/ProjectRadicationBanner';
+import { projectRadicationApi } from '../../services/projectRadicationApi';
+import { projectRadicationKeys } from '../project-radication/ProjectRadicationPanel';
+import { useQuery } from '@tanstack/react-query';
+import { PlanningProjectRadicationReviewPanel } from '../planning/components/PlanningProjectRadicationReviewPanel';
+import { ProjectInstitutionalClosurePanel } from './components/ProjectInstitutionalClosurePanel';
 
 type LocationState = {
   from?: string;
@@ -137,6 +143,21 @@ export function ProjectProgramOperationsPage() {
     return null;
   }, [institutionalProgram, factoryProgram]);
 
+  const planningRadicationReview =
+    (role === 'PLANEACION' || role === 'ADMIN') && Boolean(projectId);
+
+  const radicationReadinessQuery = useQuery({
+    queryKey: projectRadicationKeys.readiness(projectId ?? ''),
+    queryFn: () => projectRadicationApi.getReadiness(projectId!),
+    enabled: planningRadicationReview && Boolean(projectId),
+  });
+
+  const isPlanningRadicationReview =
+    radicationReadinessQuery.data?.projectInstitutionalState === 'PENDING_PLANNING_RADICATION_CHECK';
+
+  const isInstitutionalFinalized =
+    radicationReadinessQuery.data?.projectInstitutionalState === 'FINALIZED';
+
   const isLoading =
     (listsLoading && !displayProgram) ||
     (shouldFetchProjectProgram && projectProgramQuery.isLoading && !displayProgram);
@@ -195,6 +216,26 @@ export function ProjectProgramOperationsPage() {
             />
           </section>
 
+          {isInstitutionalFinalized && projectId ? (
+            <ProjectInstitutionalClosurePanel projectId={projectId} />
+          ) : null}
+
+          {isPlanningRadicationReview && projectId ? (
+            <PlanningProjectRadicationReviewPanel projectId={projectId} />
+          ) : null}
+
+          {(role === 'PRODUCT' || role === 'ADMIN') && projectId && !isPlanningRadicationReview && !isInstitutionalFinalized ? (
+            <ProjectRadicationBanner
+              projectId={projectId}
+              macroProgress={{
+                completedSemesters: displayProgram.data.completedSemesters,
+                totalSemesters: displayProgram.data.totalSemesters,
+                completedSubjects: displayProgram.data.completedSubjects,
+                totalSubjects: displayProgram.data.totalSubjects,
+              }}
+            />
+          ) : null}
+
           <Card className="space-y-3 p-5">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
@@ -207,11 +248,14 @@ export function ProjectProgramOperationsPage() {
             </div>
           </Card>
 
+          {!isInstitutionalFinalized ? (
           <Card className="overflow-hidden p-0">
             <div className="border-b border-slate-200/60 px-5 py-3.5 sm:px-6">
               <h2 className="text-sm font-semibold text-slate-900">Semestres del programa</h2>
               <p className="mt-0.5 text-xs text-slate-500">
-                Cada semestre mantiene su flujo operacional independiente.
+                {isPlanningRadicationReview
+                  ? 'Resumen del alcance. El cierre se valida en el panel superior.'
+                  : 'Cada semestre mantiene su flujo operacional independiente.'}
               </p>
             </div>
             <div className="divide-y divide-slate-100">
@@ -240,22 +284,21 @@ export function ProjectProgramOperationsPage() {
                       {institutionalStateLabel(semester.operationalState)}
                     </p>
                   </div>
-                  <Link
-                    to={
-                      semester.semesterId
-                        ? semesterOperationsPath(displayProgram.data.projectId, semester.semesterId)
-                        : semester.actionUrl
-                    }
-                    state={{ from: location.pathname }}
-                    className="inline-flex shrink-0 items-center gap-1.5 rounded-xl border border-slate-200/80 bg-white px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"
-                  >
-                    Ir al semestre
-                    <ArrowRight className="h-3.5 w-3.5" />
-                  </Link>
+                  {!isPlanningRadicationReview && semester.semesterId ? (
+                    <Link
+                      to={semesterOperationsPath(displayProgram.data.projectId, semester.semesterId)}
+                      state={{ from: location.pathname }}
+                      className="inline-flex shrink-0 items-center gap-1.5 rounded-xl border border-slate-200/80 bg-white px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                    >
+                      Ir al semestre
+                      <ArrowRight className="h-3.5 w-3.5" />
+                    </Link>
+                  ) : null}
                 </div>
               ))}
             </div>
           </Card>
+          ) : null}
         </>
       ) : (
         <>

@@ -7,6 +7,9 @@ export {
   resolveBackTarget,
   restoreScrollForKey,
   saveScrollPosition,
+  stripReturnToQuery,
+  pathsMatchForBack,
+  parseAppPath,
   type NavigationState,
 } from './contextNavigation';
 export { ContextBackLink } from './ContextBackLink';

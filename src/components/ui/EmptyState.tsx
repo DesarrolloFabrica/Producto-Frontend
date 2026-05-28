@@ -1,4 +1,5 @@
 import type { LucideIcon } from 'lucide-react';
+import { AppLogo } from '../branding/AppLogo';
 import { Card, type CardVariant } from './Card';
 import { cn, text } from './tokens';
 
@@ -12,6 +13,7 @@ interface EmptyStateProps {
   className?: string;
   cardVariant?: CardVariant;
   variant?: EmptyStateVariant;
+  brandMark?: boolean;
 }
 
 export function EmptyState({
@@ -22,6 +24,7 @@ export function EmptyState({
   className,
   cardVariant = 'default',
   variant = 'default',
+  brandMark = false,
 }: EmptyStateProps) {
   const isCompact = variant === 'compact';
   const isOperational = variant === 'operational' || variant === 'default';
@@ -35,6 +38,14 @@ export function EmptyState({
         className,
       )}
     >
+      {brandMark ? (
+        <AppLogo
+          variant="mark"
+          size="sm"
+          className="mb-4 opacity-[0.35]"
+          aria-hidden
+        />
+      ) : null}
       <div
         className={cn(
           'mb-4 flex items-center justify-center rounded-2xl bg-slate-50/80 text-slate-300',

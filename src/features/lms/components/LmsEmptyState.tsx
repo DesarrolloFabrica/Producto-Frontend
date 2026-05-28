@@ -1,4 +1,5 @@
 import { History, RefreshCw, RotateCcw } from 'lucide-react';
+import { AppLogo } from '../../../components/branding/AppLogo';
 import { Card } from '../../../components/ui/Card';
 import { Button } from '../../../components/ui/Button';
 import type { LmsDashboardFilter } from '../lmsTypes';
@@ -33,6 +34,7 @@ export function LmsEmptyState({
 
   return (
     <Card variant="roleGlass" className="border-dashed border-orange-200/50 p-8 text-center">
+      <AppLogo variant="mark" size="sm" className="mx-auto mb-4 opacity-[0.35]" aria-hidden />
       <p className="text-base font-bold text-slate-900">{title}</p>
       <p className="mx-auto mt-2 max-w-lg text-sm font-medium text-slate-500">{description}</p>
       <div className="mt-6 flex flex-wrap items-center justify-center gap-2">

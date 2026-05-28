@@ -121,11 +121,18 @@ function SummaryTab({
       normalizeSubjectOperationalState({ subject, observations: openProductObs, projectStatus: project.status }) ===
       'IN_PRODUCTION',
   ).length;
-  const subjectsInReview = project.subjects.filter(
+  const institutionalFactoryFlow = project.subjects.some((subject) => subject.factoryProductionStatus != null);
+  const subjectsInternallyComplete = project.subjects.filter(
     (subject) =>
-      normalizeSubjectOperationalState({ subject, observations: openProductObs, projectStatus: project.status }) ===
-      'IN_REVIEW',
+      subject.factoryProductionStatus === 'COMPLETED' || (subject.progress ?? 0) >= 100,
   ).length;
+  const subjectsInReview = institutionalFactoryFlow
+    ? 0
+    : project.subjects.filter(
+        (subject) =>
+          normalizeSubjectOperationalState({ subject, observations: openProductObs, projectStatus: project.status }) ===
+          'IN_REVIEW',
+      ).length;
   const approvedSubjects = project.subjects.filter(
     (subject) =>
       normalizeSubjectOperationalState({ subject, observations: openProductObs, projectStatus: project.status }) ===
@@ -200,7 +207,15 @@ function SummaryTab({
 
         <div className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
           <SummaryMetric label="En producción" value={`${subjectsInProduction} de ${totalSubjects}`} helper="materias activas" />
-          <SummaryMetric label="En revisión Product" value={`${subjectsInReview} de ${totalSubjects}`} helper="enviadas a Product" />
+          {institutionalFactoryFlow ? (
+            <SummaryMetric
+              label="Producción interna completa"
+              value={`${subjectsInternallyComplete} de ${totalSubjects}`}
+              helper="listas para entrega del semestre"
+            />
+          ) : (
+            <SummaryMetric label="En revisión Product" value={`${subjectsInReview} de ${totalSubjects}`} helper="enviadas a Product" />
+          )}
           <SummaryMetric label="Aprobadas" value={`${approvedSubjects} de ${totalSubjects}`} helper="validadas por Product" />
           <SummaryMetric label="Con correcciones" value={`${correctionSubjects}`} helper="materias con observaciones" />
         </div>

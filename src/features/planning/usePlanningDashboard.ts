@@ -30,8 +30,6 @@ import {
 
   mapProgramWorkItem,
 
-  mapRadicationWorkItem,
-
   mapReturnedPrograms,
 
 } from './planningTypes';
@@ -94,14 +92,20 @@ export function usePlanningDashboard(filter: PlanningDashboardFilter, advanced: 
 
     );
 
-    const radicationRows = (radicationQuery.data ?? []).map(mapRadicationWorkItem);
+    const radicationByProject = new Map(
+      (radicationQuery.data ?? []).map((item) => [item.projectId, item] as const),
+    );
 
     const returnedRows = mapReturnedPrograms(summaryQuery.data?.returnedPreview ?? []);
 
     const finalizedRows = (summaryQuery.data?.finalizedProjects ?? []).map(mapFinalizedProject);
 
     const trackingRows = (trackingProgramsQuery.data ?? [])
-      .map(mapProgramTrackingWorkItem)
+      .map((item) =>
+        mapProgramTrackingWorkItem(item, {
+          radicationReview: radicationByProject.has(item.projectId),
+        }),
+      )
       .filter((row) => !pendingProgramRows.some((pending) => pending.projectId === row.projectId));
 
 
@@ -112,19 +116,7 @@ export function usePlanningDashboard(filter: PlanningDashboardFilter, advanced: 
 
 
 
-    return [
-
-      ...pendingProgramRows,
-
-      ...radicationRows,
-
-      ...dedupedReturned,
-
-      ...trackingRows,
-
-      ...finalizedRows,
-
-    ];
+    return [...pendingProgramRows, ...dedupedReturned, ...trackingRows, ...finalizedRows];
 
   }, [workProgramsQuery.data, radicationQuery.data, summaryQuery.data, trackingProgramsQuery.data]);
 

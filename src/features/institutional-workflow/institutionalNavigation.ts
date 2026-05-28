@@ -1,3 +1,5 @@
+import type { SemesterSubjectOperationalDto } from '../../services/institutionalWorkflowApi';
+
 /** Rutas del flujo institucional semester-first. */
 
 export function semesterOperationsPath(projectId: string, semesterId: string): string {
@@ -31,4 +33,30 @@ export function resolveInstitutionalWorkHref(item: {
   if (item.actionUrl?.startsWith('/')) return item.actionUrl;
   if (item.semesterId) return semesterOperationsPath(item.projectId, item.semesterId);
   return `/subjects/${item.subjectId}/operations`;
+}
+
+export function factorySubjectHasOpenObservations(subject: SemesterSubjectOperationalDto): boolean {
+  return subject.internalState === 'HAS_OBSERVATIONS' || (subject.openObservationsCount ?? 0) > 0;
+}
+
+export function isFactorySubjectNeedsWork(subject: SemesterSubjectOperationalDto): boolean {
+  if (factorySubjectHasOpenObservations(subject)) return true;
+  return subject.internalState !== 'FACTORY_PRODUCTION_COMPLETE';
+}
+
+/** Primera asignatura a trabajar: observaciones abiertas, luego producción incompleta. */
+export function pickFactoryWorkSubject(
+  subjects: SemesterSubjectOperationalDto[],
+): SemesterSubjectOperationalDto | null {
+  if (subjects.length === 0) return null;
+  const withObservations = subjects.find(factorySubjectHasOpenObservations);
+  if (withObservations) return withObservations;
+  const pendingProduction = subjects.find((s) => s.internalState !== 'FACTORY_PRODUCTION_COMPLETE');
+  return pendingProduction ?? null;
+}
+
+export function factorySubjectWorkPath(subject: SemesterSubjectOperationalDto): string {
+  return factorySubjectHasOpenObservations(subject)
+    ? subjectFactoryCorrectionsPath(subject.subjectId)
+    : subjectChecklistPath(subject.subjectId);
 }

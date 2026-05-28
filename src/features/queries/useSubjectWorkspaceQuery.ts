@@ -70,7 +70,7 @@ export function useSubjectWorkspaceQuery(subjectId: string | undefined, enabled 
     enabled: Boolean(subjectId) && enabled,
     staleTime: projectDetailStaleTime,
     gcTime: queryGcTime,
-    refetchOnMount: false,
+    refetchOnMount: true,
     refetchOnWindowFocus: false,
     placeholderData: () =>
       buildWorkspacePlaceholder(

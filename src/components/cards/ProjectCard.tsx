@@ -8,6 +8,7 @@ import { Card } from '../ui/Card';
 import { ProgressBar } from '../ui/ProgressBar';
 import { useContextPanel } from '../../features/context-panel/ContextPanelProvider';
 import { cn, surface, radius } from '../ui/tokens';
+import { UserAvatar } from '../ui/UserAvatar';
 
 const statusAccent: Record<VirtualizationProject['status'], string> = {
   PENDING_SYLLABUS: 'bg-amber-400',
@@ -30,14 +31,6 @@ const statusCardTone: Record<VirtualizationProject['status'], string> = {
   FEEDBACK_PENDING: 'bg-rose-50 text-rose-800 ring-1 ring-rose-200/80',
   CLOSED: 'bg-slate-100 text-slate-700 ring-1 ring-slate-200/80',
 };
-
-const ownerInitials = (name: string) =>
-  name
-    .split(' ')
-    .map((w) => w[0])
-    .join('')
-    .slice(0, 2)
-    .toUpperCase();
 
 export function ProjectCard({ project }: { project: VirtualizationProject }) {
   const { openContextPanel } = useContextPanel();
@@ -68,18 +61,26 @@ export function ProjectCard({ project }: { project: VirtualizationProject }) {
       <div className="border-t border-[#F1F5F9] bg-[#F8FAFC]/50 p-4">
         <div className="grid gap-2 sm:grid-cols-2">
           <div className="flex items-center gap-2.5 rounded-[8px] bg-[#F8FAFC] px-2.5 py-2">
-            <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[#FF6B00]/10 text-[9px] font-bold text-[#FF6B00]">
-              {ownerInitials(project.productOwner)}
-            </span>
+            <UserAvatar
+              seed={`Product:${project.productOwner}`}
+              alt={`Product: ${project.productOwner}`}
+              className="h-6 w-6 shrink-0"
+              imageSize={48}
+              shape="circle"
+            />
             <div className="min-w-0">
               <p className="truncate text-[11px] font-medium text-[#1E293B]">{project.productOwner}</p>
               <p className="text-[8px] font-normal text-[#64748B]">Product</p>
             </div>
           </div>
           <div className="flex items-center gap-2.5 rounded-[8px] bg-[#F8FAFC] px-2.5 py-2">
-            <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[#6366F1]/10 text-[9px] font-bold text-[#6366F1]">
-              {ownerInitials(project.factoryOwner)}
-            </span>
+            <UserAvatar
+              seed={`Fábrica:${project.factoryOwner}`}
+              alt={`Fábrica: ${project.factoryOwner}`}
+              className="h-6 w-6 shrink-0"
+              imageSize={48}
+              shape="circle"
+            />
             <div className="min-w-0">
               <p className="truncate text-[11px] font-medium text-[#1E293B]">{project.factoryOwner}</p>
               <p className="text-[8px] font-normal text-[#64748B]">Fábrica</p>

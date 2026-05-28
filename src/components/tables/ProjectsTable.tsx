@@ -1,4 +1,6 @@
 import { ContextLink } from '../../navigation/ContextLink';
+import { OperationalRequestItemHeading } from '../operational/OperationalRequestItemHeading';
+import { UserAvatar } from '../ui/UserAvatar';
 import { ArrowRight, CalendarDays, Eye } from 'lucide-react';
 import type { VirtualizationProject } from '../../types/domain';
 import { formatProjectExpectedDelivery } from '../../utils/projectSme';
@@ -30,33 +32,16 @@ const statusCardTone: Record<VirtualizationProject['status'], string> = {
   CLOSED: 'bg-slate-100 text-slate-600 ring-1 ring-slate-200/70',
 };
 
-const ownerInitials = (name: string) =>
-  name
-    .split(' ')
-    .map((w) => w[0])
-    .join('')
-    .slice(0, 2)
-    .toUpperCase();
-
-function OwnerAvatar({
-  name,
-  role,
-  tone,
-}: {
-  name: string;
-  role: string;
-  tone: string;
-}) {
+function OwnerAvatar({ name, role }: { name: string; role: string }) {
   return (
-    <span
+    <UserAvatar
+      seed={`${role}:${name}`}
+      alt={`${role}: ${name}`}
       title={`${role}: ${name}`}
-      className={cn(
-        'inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[8px] font-bold ring-1 ring-white',
-        tone,
-      )}
-    >
-      {ownerInitials(name)}
-    </span>
+      className="h-6 w-6 shrink-0 ring-2 ring-white"
+      imageSize={48}
+      shape="circle"
+    />
   );
 }
 
@@ -89,7 +74,7 @@ export function ProjectsTable({
         <table className="w-full text-left text-[10px] font-semibold uppercase tracking-wide text-slate-400">
           <thead>
             <tr>
-              <th className="px-4 py-2 sm:px-5">Proyecto</th>
+              <th className="px-4 py-2 sm:px-5">Solicitud</th>
               <th className="px-3 py-2">Estado</th>
               <th className="px-3 py-2">Prioridad</th>
               <th className="px-3 py-2">Avance</th>
@@ -131,11 +116,12 @@ function ProjectRow({
             onClick={onQuickView}
             className="max-w-full text-left transition-colors hover:text-orange-700"
           >
-            <p className="truncate text-[10px] font-medium uppercase tracking-wide text-orange-700/90">
+            <OperationalRequestItemHeading program={project.program} size="table" />
+            <p className="mt-1 truncate text-[10px] text-slate-500">
               {project.school}
+              <span className="mx-1 text-slate-300">·</span>
+              {project.modality}
             </p>
-            <p className="truncate text-sm font-semibold text-slate-900">{project.program}</p>
-            <p className="truncate text-[10px] text-slate-500">{project.modality}</p>
           </button>
         </div>
         <div className="px-3 py-2.5">
@@ -169,8 +155,8 @@ function ProjectRow({
           </span>
         </div>
         <div className="flex items-center gap-1 px-3 py-2.5">
-          <OwnerAvatar name={project.productOwner} role="Product" tone="bg-orange-100 text-orange-700" />
-          <OwnerAvatar name={project.factoryOwner} role="Fábrica" tone="bg-indigo-100 text-indigo-700" />
+          <OwnerAvatar name={project.productOwner} role="Product" />
+          <OwnerAvatar name={project.factoryOwner} role="Fábrica" />
         </div>
         <div className="flex items-center justify-end gap-1.5 px-4 py-2.5 sm:px-5">
           <button
@@ -196,8 +182,8 @@ function ProjectRow({
         <div className="pl-2">
           <div className="flex items-start justify-between gap-2">
             <button type="button" onClick={onQuickView} className="min-w-0 flex-1 text-left">
-              <p className="truncate text-[10px] font-medium uppercase text-orange-700">{project.school}</p>
-              <p className="truncate text-sm font-semibold text-slate-900">{project.program}</p>
+              <OperationalRequestItemHeading program={project.program} size="table" />
+              <p className="mt-1 truncate text-[10px] text-slate-500">{project.school}</p>
             </button>
             <span
               className={cn(
@@ -215,8 +201,8 @@ function ProjectRow({
           </div>
           <div className="mt-2.5 flex items-center justify-between gap-2">
             <div className="flex items-center gap-1">
-              <OwnerAvatar name={project.productOwner} role="Product" tone="bg-orange-100 text-orange-700" />
-              <OwnerAvatar name={project.factoryOwner} role="Fábrica" tone="bg-indigo-100 text-indigo-700" />
+              <OwnerAvatar name={project.productOwner} role="Product" />
+              <OwnerAvatar name={project.factoryOwner} role="Fábrica" />
             </div>
             <div className="flex items-center gap-1.5">
               <button

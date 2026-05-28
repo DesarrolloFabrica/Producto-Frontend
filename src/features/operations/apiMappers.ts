@@ -389,6 +389,8 @@ export function mapSubjectWorkspaceProjectFromApi(api: ApiSubjectWorkspace): Vir
         semesterNumber: subject.semesterNumber,
         expectedDeliveryDate: subject.expectedDeliveryDate ?? null,
         progress: subject.progress,
+        factoryProductionStatus: subject.factoryProductionStatus,
+        factoryProductionCompletedAt: subject.factoryProductionCompletedAt ?? null,
         openObservationsCount: subject.openObservationsCount ?? 0,
         correctionSentCount: subject.correctionSentCount ?? 0,
         createdFromChange: Boolean(subject.createdFromChange),
