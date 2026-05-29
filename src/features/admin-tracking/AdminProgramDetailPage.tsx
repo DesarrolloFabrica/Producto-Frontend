@@ -20,13 +20,11 @@ import { PageHeader } from '../../components/ui/PageHeader';
 import { Skeleton } from '../../components/ui/Skeleton';
 import { cn, surface, tableRow, text } from '../../components/ui/tokens';
 import { ContextBackLink } from '../../navigation/ContextBackLink';
-import { homePathForRole } from '../../navigation/roleNavigation';
+import { ADMIN_DASHBOARD_PATH, ADMIN_SEMESTER_DETAIL_PATH } from './adminNavigation';
 import { formatDate } from '../../utils/formatters';
 import type { ApiChecklistItem, ApiSubjectDetail } from '../../services/types/projectsApi.types';
 import type { InstitutionalOperationalState } from '../../types/domain';
-import { useAuth } from '../auth/AuthContext';
 import { institutionalStateLabel } from '../institutional-workflow/institutionalCopy';
-import { semesterOperationsPath } from '../institutional-workflow/institutionalNavigation';
 import {
   institutionalPipelineStepIndex,
   OperationalPipelineInstitutional,
@@ -36,8 +34,7 @@ import { OperationalStateBadgeV2 } from '../operations-v2/components/Operational
 import { ProgramActiveStageBadge } from '../operations-v2/components/ProgramActiveStageBadge';
 import { SlaBadgeV2 } from '../operations-v2/components/SlaBadgeV2';
 import { OperationalInboxPagination } from '../operations-v2/components/OperationalInboxPagination';
-import { PlanningProjectRadicationReviewPanel } from '../planning/components/PlanningProjectRadicationReviewPanel';
-import { ProjectRadicationBanner } from '../project-radication/ProjectRadicationBanner';
+import { AdminRadicationReadOnlyPanel } from './components/AdminRadicationReadOnlyPanel';
 import type { SlaStatusV2 } from '../../types/operationalWorkflow';
 import type {
   OperationalWorkItemDto,
@@ -82,8 +79,31 @@ type ChecklistRow = ApiChecklistItem & {
 type SubjectRow = {
   semesterNumber: number;
   factoryExpectedDate: string | null;
+  continuationDate: string | null;
+  stageDueAt: string | null;
   subject: ApiSubjectDetail;
 };
+
+function normalizeDateValue(value: string | null | undefined): string | null {
+  if (!value?.trim()) return null;
+  return value.trim();
+}
+
+/** Entrega operativa: continuidad/plazo SLA, no el fallback de fábrica del API. */
+function resolveSubjectEntregaDate(row: SubjectRow): string | null {
+  const factoryDate = normalizeDateValue(row.factoryExpectedDate);
+  const subjectDate = normalizeDateValue(row.subject.expectedDeliveryDate);
+
+  if (subjectDate && factoryDate && subjectDate !== factoryDate) {
+    return subjectDate;
+  }
+
+  return (
+    normalizeDateValue(row.continuationDate) ??
+    normalizeDateValue(row.stageDueAt) ??
+    null
+  );
+}
 
 function collectChecklistRows(project: {
   semesters: Array<{ semesterNumber: number; subjects: ApiSubjectDetail[] }>;
@@ -115,17 +135,27 @@ function collectChecklistRows(project: {
   return rows;
 }
 
-function collectSubjectRows(project: {
-  semesters: Array<{
-    semesterNumber: number;
-    factoryExpectedDate: string | null;
-    subjects: ApiSubjectDetail[];
-  }>;
-}): SubjectRow[] {
+function collectSubjectRows(
+  project: {
+    semesters: Array<{
+      semesterNumber: number;
+      factoryExpectedDate: string | null;
+      continuationDate: string | null;
+      subjects: ApiSubjectDetail[];
+    }>;
+  },
+  programSemesters: OperationalWorkItemDto[] = [],
+): SubjectRow[] {
+  const stageDueBySemester = new Map(
+    programSemesters.map((semester) => [semester.semesterNumber, semester.stageDueAt ?? null]),
+  );
+
   return project.semesters.flatMap((semester) =>
     semester.subjects.map((subject) => ({
       semesterNumber: semester.semesterNumber,
       factoryExpectedDate: semester.factoryExpectedDate,
+      continuationDate: semester.continuationDate,
+      stageDueAt: stageDueBySemester.get(semester.semesterNumber) ?? null,
       subject,
     })),
   );
@@ -134,13 +164,11 @@ function collectSubjectRows(project: {
 export function AdminProgramDetailPage() {
   const { projectId } = useParams<{ projectId: string }>();
   const location = useLocation();
-  const { role } = useAuth();
-  const roleHome = homePathForRole(role);
   const locationState = (location.state ?? {}) as {
     from?: string;
     programWorkItem?: ProgramOperationalWorkItemDto;
   };
-  const backTarget = locationState.from ?? roleHome;
+  const backTarget = locationState.from ?? ADMIN_DASHBOARD_PATH;
 
   const { program: programQuery, project, radication, isLoading, error } = useAdminProjectDetail(projectId);
   const program = programQuery ?? locationState.programWorkItem ?? null;
@@ -161,7 +189,10 @@ export function AdminProgramDetailPage() {
   const isInstitutionalFinalized = radication?.projectInstitutionalState === 'FINALIZED';
 
   const checklistRows = useMemo(() => (project ? collectChecklistRows(project) : []), [project]);
-  const subjectRows = useMemo(() => (project ? collectSubjectRows(project) : []), [project]);
+  const subjectRows = useMemo(
+    () => (project ? collectSubjectRows(project, program?.semesters ?? []) : []),
+    [project, program?.semesters],
+  );
   const semesters = program?.semesters ?? [];
 
   const paginatedSemesters = useMemo(
@@ -433,7 +464,7 @@ export function AdminProgramDetailPage() {
                           </div>
                           {semester.semesterId && program ? (
                             <Link
-                              to={semesterOperationsPath(program.projectId, semester.semesterId)}
+                              to={ADMIN_SEMESTER_DETAIL_PATH(program.projectId, semester.semesterId)}
                               state={{ from: location.pathname }}
                               className="inline-flex shrink-0 items-center gap-1 rounded-lg border border-white/60 bg-white/90 px-3 py-1.5 text-[11px] font-semibold text-slate-700 shadow-sm hover:bg-white"
                             >
@@ -479,36 +510,37 @@ export function AdminProgramDetailPage() {
                             <th className="px-4 py-2.5">Sem.</th>
                             <th className="px-3 py-2.5">Materia</th>
                             <th className="px-3 py-2.5">Estado</th>
-                            <th className="px-3 py-2.5">Entrega</th>
-                            <th className="px-3 py-2.5">Fábrica</th>
+                            <th className="px-3 py-2.5">Plazo operativo</th>
+                            <th className="px-3 py-2.5">Entrega fábrica</th>
                             <th className="px-3 py-2.5">%</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100/80">
-                          {paginatedSubjects.map(({ semesterNumber, factoryExpectedDate, subject }) => (
-                            <tr key={subject.id} className={tableRow}>
+                          {paginatedSubjects.map((row) => {
+                            const entregaDate = resolveSubjectEntregaDate(row);
+                            return (
+                            <tr key={row.subject.id} className={tableRow}>
                               <td className="px-4 py-2.5 font-mono text-xs text-slate-500">
-                                {semesterNumber}
+                                {row.semesterNumber}
                               </td>
                               <td className="px-3 py-2.5 text-xs font-medium text-slate-900">
-                                {subject.name}
+                                {row.subject.name}
                               </td>
                               <td className="px-3 py-2.5">
-                                <StatusBadge status={subject.status} size="sm" />
+                                <StatusBadge status={row.subject.status} size="sm" />
                               </td>
                               <td className="px-3 py-2.5 text-xs text-slate-600">
-                                {subject.expectedDeliveryDate
-                                  ? formatDate(subject.expectedDeliveryDate)
-                                  : '—'}
+                                {entregaDate ? formatDate(entregaDate) : '—'}
                               </td>
                               <td className="px-3 py-2.5 text-xs text-slate-600">
-                                {factoryExpectedDate ? formatDate(factoryExpectedDate) : '—'}
+                                {row.factoryExpectedDate ? formatDate(row.factoryExpectedDate) : '—'}
                               </td>
                               <td className="px-3 py-2.5 text-xs font-semibold text-slate-700">
-                                {subject.progress}%
+                                {row.subject.progress}%
                               </td>
                             </tr>
-                          ))}
+                            );
+                          })}
                         </tbody>
                       </table>
                     </div>
@@ -594,11 +626,8 @@ export function AdminProgramDetailPage() {
               {isInstitutionalFinalized && projectId ? (
                 <ProjectInstitutionalClosurePanel projectId={projectId} />
               ) : null}
-              {isPlanningRadicationReview && projectId ? (
-                <PlanningProjectRadicationReviewPanel projectId={projectId} />
-              ) : null}
-              {projectId && program && !isPlanningRadicationReview && !isInstitutionalFinalized ? (
-                <ProjectRadicationBanner
+              {projectId && program && !isInstitutionalFinalized ? (
+                <AdminRadicationReadOnlyPanel
                   projectId={projectId}
                   macroProgress={{
                     completedSemesters: program.completedSemesters,

@@ -19,7 +19,7 @@ export function FactoryWorkSummary({
   const sortLabel = getSortLabel(query.sort);
 
   const countLabel =
-    total === 1 ? '1 materia encontrada' : `${total} materias encontradas`;
+    total === 1 ? '1 programa encontrado' : `${total} programas encontrados`;
 
   return (
     <div className="rounded-[16px] border border-slate-200/60 bg-white/90 px-4 py-3 shadow-[0_2px_12px_rgba(15,23,42,0.04)]">

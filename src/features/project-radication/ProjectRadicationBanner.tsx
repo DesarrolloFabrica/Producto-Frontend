@@ -38,7 +38,7 @@ export function ProjectRadicationBanner({
   macroProgress,
 }: ProjectRadicationBannerProps) {
   const { role } = useAuth();
-  const showRadication = role === 'PRODUCT' || role === 'ADMIN';
+  const showRadication = role === 'PRODUCT';
   const macroComplete = isMacroScopeComplete(macroProgress);
 
   const readinessQuery = useQuery({

@@ -5,8 +5,14 @@ import { ProjectsSummary } from '../../components/summary/ProjectsSummary';
 import { PageHeader } from '../../components/ui/PageHeader';
 import { ProjectsLoadNotice } from '../../components/feedback/ProjectsLoadNotice';
 import { useOperations } from '../../features/operations/OperationsContext';
+import { useProductProgramsTrackingQuery } from '../queries/useInstitutionalProgramsWorkQuery';
+import {
+  buildLegacyProgramWorkItems,
+  mergeProductProgramSources,
+} from '../product-work/productProgramWork';
 import { ProductWorkPagination } from '../product-work/components/ProductWorkPagination';
 import { useAuth } from '../auth/AuthContext';
+import { buildProjectResponsibleRoleMap } from './projectListDisplay';
 import { FactoryProjectsList } from './FactoryProjectsList';
 import {
   ProjectsListFilterSummary,
@@ -29,8 +35,10 @@ function parseProjectStatus(value: string | null): ProjectStatus | undefined {
 }
 
 export function ProjectsPage() {
-  const { projects, isLoadingProjects, projectsError, refreshProjects, backendEnabled } = useOperations();
+  const { projects, projectObservations, isLoadingProjects, projectsError, refreshProjects, backendEnabled } =
+    useOperations();
   const { role } = useAuth();
+  const trackingQuery = useProductProgramsTrackingQuery(backendEnabled && role === 'PRODUCT');
   const [searchParams, setSearchParams] = useSearchParams();
 
   const query = useMemo((): ProjectsListQuery => {
@@ -58,6 +66,15 @@ export function ProjectsPage() {
     const start = (safePage - 1) * pageSize;
     return filteredProjects.slice(start, start + pageSize);
   }, [filteredProjects, safePage, pageSize]);
+
+  const responsibleRoleByProjectId = useMemo(() => {
+    if (role !== 'PRODUCT') return undefined;
+    const legacyPrograms = buildLegacyProgramWorkItems(projects, projectObservations);
+    const programs = backendEnabled
+      ? mergeProductProgramSources(trackingQuery.data ?? [], legacyPrograms)
+      : legacyPrograms;
+    return buildProjectResponsibleRoleMap(programs);
+  }, [role, projects, projectObservations, backendEnabled, trackingQuery.data]);
 
   const updateParams = (patch: Record<string, string | undefined>, opts?: { resetPage?: boolean }) => {
     const next = new URLSearchParams(searchParams);
@@ -119,6 +136,8 @@ export function ProjectsPage() {
             projects={pagedProjects}
             totalCount={filteredProjects.length}
             portfolioTotal={projects.length}
+            responsibleRoleByProjectId={responsibleRoleByProjectId}
+            viewerRole={role}
           />
           {filteredProjects.length > 0 ? (
             <ProductWorkPagination

@@ -47,8 +47,8 @@ export function AppLogo({
         />
         {children ?? (
           <div className="hidden leading-none sm:block">
-            <p className="text-sm font-black tracking-tight text-slate-950">Operación Académica</p>
-            <p className="mt-1 text-[9px] font-black uppercase tracking-[0.28em] text-slate-400">CUN</p>
+            <p className="text-sm font-black tracking-tight text-slate-900">Operación Académica</p>
+            <p className="mt-1 text-[9px] font-bold uppercase tracking-[0.32em] text-slate-400/90">CUN</p>
           </div>
         )}
       </div>

@@ -31,7 +31,7 @@ export function normalizeFactorySubjectsQuery(query: FactorySubjectsQuery = {}):
   return normalized;
 }
 
-/** Marca cache de Fábrica como stale sin refetch agresivo. */
+/** Marca cache de Fábrica como stale y refresca consultas activas (bandeja y centro operacional). */
 export function markFactoryQueriesStale(queryClient: QueryClient) {
-  void queryClient.invalidateQueries({ queryKey: queryKeys.factory.all(), refetchType: 'none' });
+  void queryClient.invalidateQueries({ queryKey: queryKeys.factory.all() });
 }

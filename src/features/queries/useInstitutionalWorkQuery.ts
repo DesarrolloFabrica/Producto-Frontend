@@ -12,7 +12,7 @@ function workQueryKey(role: Role | null) {
 }
 
 async function fetchInstitutionalWork(role: Role | null) {
-  if (role === 'PLANEACION' || role === 'ADMIN') return institutionalWorkflowApi.planningWork();
+  if (role === 'PLANEACION') return institutionalWorkflowApi.planningWork();
   if (role === 'LMS') return institutionalWorkflowApi.lmsWork();
   if (role === 'FABRICA') return institutionalWorkflowApi.factoryWork();
   if (role === 'PRODUCT') return institutionalWorkflowApi.productWork();

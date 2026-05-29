@@ -2,6 +2,8 @@ import type { SemesterSubjectOperationalDto } from '../../services/institutional
 
 /** Rutas del flujo institucional semester-first. */
 
+export type SemesterHubTab = 'asignaturas' | 'operaciones';
+
 export function semesterOperationsPath(projectId: string, semesterId: string): string {
   return `/projects/${projectId}/semesters/${semesterId}/operations`;
 }
@@ -9,6 +11,41 @@ export function semesterOperationsPath(projectId: string, semesterId: string): s
 /** Panel de tarjetas por asignatura (revisión Product). Usa número de semestre, no UUID. */
 export function semesterSubjectsPanelPath(projectId: string, semesterNumber: number): string {
   return `/projects/${projectId}/semesters/${semesterNumber}`;
+}
+
+/** Hub unificado de semestre (Product y Fábrica): asignaturas o flujo operacional en la misma URL. */
+export function semesterHubPath(
+  projectId: string,
+  semesterNumber: number,
+  tab: SemesterHubTab = 'asignaturas',
+): string {
+  const base = semesterSubjectsPanelPath(projectId, semesterNumber);
+  return tab === 'operaciones' ? `${base}?tab=operaciones` : base;
+}
+
+/** Atajo Product: flujo operacional del semestre vía hub (sin UUID en URL). */
+export function productSemesterOperationsPath(projectId: string, semesterNumber: number): string {
+  return semesterHubPath(projectId, semesterNumber, 'operaciones');
+}
+
+/** Atajo Fábrica: flujo operacional del semestre vía hub (sin UUID en URL). */
+export function factorySemesterOperationsPath(projectId: string, semesterNumber: number): string {
+  return semesterHubPath(projectId, semesterNumber, 'operaciones');
+}
+
+/** Abre la asignatura en el panel de checklist (fase 7 Product). */
+export function productSubjectChecklistReviewPath(subjectId: string): string {
+  return `/subjects/${subjectId}?panel=checklist`;
+}
+
+/** Abre la asignatura en el panel de temas / gránulos (fase 7 Product). */
+export function productSubjectTopicsPath(subjectId: string): string {
+  return `/subjects/${subjectId}?panel=topics`;
+}
+
+/** Abre la asignatura en el panel de cierre (aprobación). */
+export function productSubjectClosurePath(subjectId: string): string {
+  return `/subjects/${subjectId}?panel=cierre`;
 }
 
 export function subjectChecklistPath(subjectId: string): string {
@@ -53,6 +90,15 @@ export function pickFactoryWorkSubject(
   if (withObservations) return withObservations;
   const pendingProduction = subjects.find((s) => s.internalState !== 'FACTORY_PRODUCTION_COMPLETE');
   return pendingProduction ?? null;
+}
+
+/** Primera asignatura pendiente de revisión académica (menor avance de checklist). */
+export function pickProductChecklistSubject(
+  subjects: SemesterSubjectOperationalDto[],
+): SemesterSubjectOperationalDto | null {
+  if (subjects.length === 0) return null;
+  const sorted = [...subjects].sort((a, b) => (a.progress ?? 0) - (b.progress ?? 0));
+  return sorted[0] ?? null;
 }
 
 export function factorySubjectWorkPath(subject: SemesterSubjectOperationalDto): string {

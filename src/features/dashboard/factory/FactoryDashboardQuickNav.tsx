@@ -48,7 +48,7 @@ export function FactoryDashboardQuickNav({
             type="search"
             value={search}
             onChange={(e) => onSearchChange(e.target.value)}
-            placeholder="Buscar materia o programa..."
+            placeholder="Buscar programa o escuela..."
             className="w-full rounded-[12px] border border-slate-200/80 bg-white py-2 pl-9 pr-3 text-sm text-[#1E293B] placeholder:text-[#94A3B8] focus:border-[#FF6B00] focus:outline-none focus:ring-2 focus:ring-[#FF6B00]/20"
           />
         </div>

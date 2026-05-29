@@ -16,7 +16,7 @@ export function shouldShowSemesterAcademicRequirements(
   role: Role | undefined,
   operationalState: InstitutionalOperationalState,
 ): boolean {
-  if (role !== 'PRODUCT' && role !== 'ADMIN') return false;
+  if (role !== 'PRODUCT') return false;
   return isSemesterProductAcademicReviewPhase(operationalState);
 }
 

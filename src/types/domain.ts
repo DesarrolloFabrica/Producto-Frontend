@@ -208,9 +208,22 @@ export interface AuditLog {
   action: string;
   userName: string;
   role: Role;
+  roleLabel?: string;
+  entityTypeLabel?: string;
   previousValue: string;
   newValue: string;
   createdAt: string;
+  projectId?: string;
+  subjectId?: string;
+  semesterId?: string;
+  program?: string;
+  school?: string;
+  semesterNumber?: number;
+  subjectName?: string;
+  scope?: string;
+  summary?: string;
+  changeLabel?: string;
+  details?: Array<{ label: string; value: string }>;
 }
 
 export interface Notification {

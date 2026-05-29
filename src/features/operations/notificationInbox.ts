@@ -126,6 +126,13 @@ export function isActionableNotification(
 ): boolean {
   if (notification.read) return false;
 
+  if (context?.role === 'ADMIN') {
+    if (notification.type === 'CRITICAL' || notification.type === 'DEADLINE') return true;
+    if (notification.type === 'ACTION') return true;
+    if (notification.roleTarget) return true;
+    return false;
+  }
+
   if (isRoleActionableInfoEvent(notification, context?.role)) {
     if (context?.projects?.length && isNotificationObsolete(notification, context.projects)) {
       return false;

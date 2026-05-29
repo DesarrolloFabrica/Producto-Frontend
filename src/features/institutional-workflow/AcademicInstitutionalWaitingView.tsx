@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom';
-import { Clock3, GitBranch } from 'lucide-react';
+import { Clock3, ArrowLeft } from 'lucide-react';
 import type { OperationalWorkspaceDto } from '../../services/institutionalWorkflowApi';
 import { InstitutionalStateBadge } from '../../components/status/InstitutionalStateBadge';
 import { OperationalPipelineInstitutional } from './components/OperationalPipelineInstitutional';
@@ -8,6 +8,7 @@ import { SlaBadgeV2 } from '../operations-v2/components/SlaBadgeV2';
 import type { SlaStatusV2 } from '../../types/operationalWorkflow';
 import { Card } from '../../components/ui/Card';
 import type { InstitutionalOperationalState } from '../../types/domain';
+import { semesterHubPath } from './institutionalNavigation';
 
 function progressBullets(state: InstitutionalOperationalState): string[] {
   const preFactory = [
@@ -35,7 +36,7 @@ function progressBullets(state: InstitutionalOperationalState): string[] {
   if (inLms) {
     return ['Producción completada', state === 'PENDING_PLANNING_LMS_VALIDATION' ? 'Planeación validando LMS' : 'LMS en carga o pendiente', 'Product será notificado automáticamente'];
   }
-  return ['Flujo institucional en progreso', 'Revisión académica aún no habilitada', 'Consulte el centro operacional para detalle'];
+  return ['Flujo institucional en progreso', 'Revisión académica aún no habilitada', 'Consulte el flujo operacional del semestre para más detalle'];
 }
 
 type AcademicInstitutionalWaitingViewProps = {
@@ -63,6 +64,7 @@ export function AcademicInstitutionalWaitingView({
     returnReason: t.returnReason,
     durationLabel: null,
   }));
+  const semesterHubUrl = semesterHubPath(workspace.projectId, workspace.semesterNumber);
 
   return (
     <div className="space-y-6">
@@ -96,13 +98,13 @@ export function AcademicInstitutionalWaitingView({
           ))}
         </ul>
 
-        <div className="mt-6 flex flex-wrap gap-3">
+        <div className="mt-6">
           <Link
-            to={`/projects/${workspace.projectId}/semesters/${workspace.semesterId}/operations`}
-            className="inline-flex items-center justify-center gap-1.5 rounded-[12px] bg-linear-to-br from-[#FF6B00] to-[#FF852D] px-4 py-2 text-xs font-bold text-white shadow-[0_4px_14px_0_rgba(255,107,0,0.39)]"
+            to={semesterHubUrl}
+            className="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-600 underline-offset-2 hover:text-orange-600 hover:underline"
           >
-            <GitBranch className="h-4 w-4" />
-            Ver flujo operacional
+            <ArrowLeft className="h-3.5 w-3.5" />
+            Volver al semestre
           </Link>
         </div>
       </Card>

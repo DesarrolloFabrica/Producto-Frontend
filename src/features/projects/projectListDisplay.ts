@@ -1,4 +1,5 @@
-import type { VirtualizationProject } from '../../types/domain';
+import type { ProgramOperationalWorkItemDto } from '../../services/institutionalWorkflowApi';
+import type { Role, VirtualizationProject } from '../../types/domain';
 
 export function isProjectCompleted(project: VirtualizationProject): boolean {
   return project.status === 'CLOSED';
@@ -31,4 +32,43 @@ export function resolveProjectListProgress(project: VirtualizationProject): numb
 export function projectListProgressLabel(project: VirtualizationProject, progress: number): string {
   if (isProjectCompleted(project) || progress >= 100) return 'Completo';
   return `${progress}%`;
+}
+
+export function buildProjectResponsibleRoleMap(
+  programs: ProgramOperationalWorkItemDto[],
+): Map<string, Role> {
+  const map = new Map<string, Role>();
+  for (const program of programs) {
+    if (program.currentResponsibleRole) {
+      map.set(program.projectId, program.currentResponsibleRole);
+    }
+  }
+  return map;
+}
+
+function resolveProjectResponsibleRoleFallback(project: VirtualizationProject): Role | null {
+  switch (project.status) {
+    case 'PENDING_SYLLABUS':
+    case 'PENDING_SUBJECT_MATTER_EXPERT':
+    case 'IN_REVIEW':
+    case 'FEEDBACK_PENDING':
+      return 'PRODUCT';
+    case 'READY_FOR_PRODUCTION':
+    case 'IN_PRODUCTION':
+      return 'FABRICA';
+    case 'DELIVERED_TO_LMS':
+      return 'LMS';
+    case 'CLOSED':
+      return null;
+    default:
+      return 'PRODUCT';
+  }
+}
+
+export function resolveProjectResponsibleRole(
+  project: VirtualizationProject,
+  roleByProjectId?: Map<string, Role>,
+): Role | null {
+  if (isProjectCompleted(project)) return null;
+  return roleByProjectId?.get(project.id) ?? resolveProjectResponsibleRoleFallback(project);
 }

@@ -113,7 +113,7 @@ export function GlobalSearch() {
   return (
     <div ref={containerRef} className="relative">
       <div className="relative">
-        <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
+        <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
         <input
           ref={inputRef}
           type="text"
@@ -121,12 +121,14 @@ export function GlobalSearch() {
           onChange={(e) => { setQuery(e.target.value); setIsOpen(true); }}
           onFocus={() => setIsOpen(true)}
           placeholder="Buscar..."
-          className="w-56 rounded-xl border border-slate-200/60 bg-slate-50/80 py-2 pl-9 pr-3 text-xs font-medium text-slate-700 placeholder:text-slate-400 focus:border-orange-200 focus:bg-white focus:outline-none focus:ring-1 focus:ring-orange-500/10"
+          className="header-glass-inset w-52 rounded-xl py-2 pl-9 pr-17 text-xs font-medium text-slate-700 placeholder:text-slate-400 focus:outline-none lg:w-56"
         />
-        <kbd className="absolute right-2.5 top-1/2 -translate-y-1/2 rounded-md bg-slate-100 px-1.5 py-0.5 text-[9px] font-medium text-slate-400">Ctrl+K</kbd>
+        <kbd className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 rounded-md border border-white/60 bg-white/50 px-1.5 py-0.5 text-[9px] font-semibold tracking-wide text-slate-400 backdrop-blur-sm">
+          Ctrl+K
+        </kbd>
       </div>
       {isOpen && query.trim() && (
-        <div className="absolute right-0 top-full z-50 mt-1.5 w-96 overflow-hidden rounded-xl border border-slate-200/60 bg-white shadow-lg">
+        <div className="glass-elevated absolute right-0 top-full z-50 mt-2 w-96 overflow-hidden rounded-2xl">
           <div className="max-h-96 overflow-y-auto">
             {isSearching ? (
               <div className="p-6 text-center">

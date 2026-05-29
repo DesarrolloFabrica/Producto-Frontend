@@ -230,7 +230,7 @@ function ProjectSemestersWorkspace({
   onAddSemester: () => void;
 }) {
   const { role } = useAuth();
-  const showRadication = role === 'PRODUCT' || role === 'ADMIN';
+  const showRadication = role === 'PRODUCT';
 
   const readinessQuery = useQuery({
     queryKey: projectRadicationKeys.readiness(projectId),

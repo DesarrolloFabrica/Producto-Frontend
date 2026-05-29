@@ -22,7 +22,7 @@ import { Skeleton, SkeletonKpiGrid } from '../../components/ui/Skeleton';
 import { cn, surface } from '../../components/ui/tokens';
 import { useToast } from '../../components/ui/ToastProvider';
 import { getApiErrorMessage } from '../operations/apiMappers';
-import { semesterOperationsPath, semesterSubjectsPanelPath } from './institutionalNavigation';
+import { productSemesterOperationsPath, semesterOperationsPath, semesterSubjectsPanelPath } from './institutionalNavigation';
 import {
   filterSubjectOperationalActions,
   isSemesterScopedOperationalState,
@@ -111,12 +111,12 @@ export function SubjectOperationsPage() {
 
   if (
     workspace.institutionalFlowActive &&
-    (role === 'PRODUCT' || role === 'ADMIN') &&
+    role === 'PRODUCT' &&
     workspace.semesterId
   ) {
     return (
       <Navigate
-        to={semesterOperationsPath(workspace.projectId, workspace.semesterId)}
+        to={productSemesterOperationsPath(workspace.projectId, workspace.semesterNumber)}
         replace
       />
     );

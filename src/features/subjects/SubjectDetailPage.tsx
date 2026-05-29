@@ -59,7 +59,12 @@ import type { OperationalObservation } from '../../types/domain';
 import { useOperationalWorkspaceQuery } from '../queries/useOperationalWorkspaceQuery';
 import { homePathForRole } from '../../navigation/roleNavigation';
 import { useSubjectWorkspaceQuery } from '../queries/useSubjectWorkspaceQuery';
-import { semesterOperationsPath } from '../institutional-workflow/institutionalNavigation';
+import { semesterHubPath, semesterSubjectsPanelPath } from '../institutional-workflow/institutionalNavigation';
+import {
+  ProductSubjectReviewPanelTabs,
+  type ProductReviewPanel,
+} from './components/ProductSubjectReviewPanelTabs';
+import { InstitutionalBreadcrumb } from '../../components/navigation/InstitutionalBreadcrumb';
 import { CHECKLIST_CATEGORIES, getCategoryForItem } from './checklistCategories';
 
 type ProductReviewStatus = 'pendiente' | 'aprobado' | 'rechazado';
@@ -532,7 +537,7 @@ export function SubjectDetailPage() {
   const workspaceQuery = useSubjectWorkspaceQuery(subjectId, backendEnabled);
   const operationalQuery = useOperationalWorkspaceQuery(
     subjectId,
-    backendEnabled && (role === 'PRODUCT' || role === 'ADMIN'),
+    backendEnabled && role === 'PRODUCT',
   );
   const opWorkspace = operationalQuery.data;
   const academicChecklistEnabledEarly = opWorkspace?.academicChecklistEnabled === true;
@@ -541,7 +546,10 @@ export function SubjectDetailPage() {
     if (searchParams.get('review') !== 'started') return;
     if (!opWorkspace?.institutionalFlowActive || !opWorkspace.semesterId) return;
     if (academicChecklistEnabledEarly) return;
-    navigate(semesterOperationsPath(opWorkspace.projectId, opWorkspace.semesterId), { replace: true });
+    navigate(semesterHubPath(opWorkspace.projectId, opWorkspace.semesterNumber), {
+      replace: true,
+      state: { reviewStarted: true },
+    });
   }, [
     searchParams,
     opWorkspace?.institutionalFlowActive,
@@ -707,7 +715,7 @@ export function SubjectDetailPage() {
       <div className="space-y-6">
         <div>
           <ContextBackLink
-            fallback="/projects"
+            fallback={subject ? semesterSubjectsPanelPath(project.id, subject.semesterNumber) : '/projects'}
             className="inline-flex items-center gap-1 text-xs font-medium text-[#64748B] hover:text-[#FF6B00]"
           >
             <ArrowLeft className="h-3.5 w-3.5" /> Volver
@@ -737,7 +745,7 @@ export function SubjectDetailPage() {
   }
 
   const institutionalGateLoading =
-    backendEnabled && (role === 'PRODUCT' || role === 'ADMIN') && operationalQuery.isLoading;
+    backendEnabled && role === 'PRODUCT' && operationalQuery.isLoading;
   const usesInstitutionalUi = Boolean(opWorkspace?.institutionalFlowActive);
   const academicChecklistEnabled = academicChecklistEnabledEarly;
 
@@ -755,15 +763,24 @@ export function SubjectDetailPage() {
     );
   }
 
-  if ((role === 'PRODUCT' || role === 'ADMIN') && usesInstitutionalUi && !academicChecklistEnabled) {
+  if (role === 'PRODUCT' && usesInstitutionalUi && !academicChecklistEnabled) {
+    const semesterBackPath = semesterSubjectsPanelPath(project.id, subject.semesterNumber);
     const institutionalShell = (
       <div className="space-y-6">
+        <InstitutionalBreadcrumb
+          items={[
+            { label: 'Solicitudes', to: '/projects' },
+            { label: project.program, to: `/projects/${project.id}` },
+            { label: `Semestre ${subject.semesterNumber}`, to: semesterBackPath },
+            { label: subject.name },
+          ]}
+        />
         <div>
           <ContextBackLink
-            fallback="/projects"
+            fallback={semesterBackPath}
             className="inline-flex items-center gap-1 text-xs font-medium text-[#64748B] hover:text-[#FF6B00]"
           >
-            <ArrowLeft className="h-3.5 w-3.5" /> Volver
+            <ArrowLeft className="h-3.5 w-3.5" /> Volver al semestre
           </ContextBackLink>
           <PageHeader
             eyebrow="Asignatura"
@@ -797,7 +814,7 @@ export function SubjectDetailPage() {
       : null;
 
   const canBulkApprove =
-    (role === 'PRODUCT' || role === 'ADMIN') &&
+    role === 'PRODUCT' &&
     academicChecklistEnabled &&
     isSubjectReviewableForBulkApprove(subject.status);
 
@@ -839,6 +856,20 @@ export function SubjectDetailPage() {
     });
 
   const needsTopicDefinition = academicChecklistEnabled && topics.length === 0;
+  const showReviewTabs = academicChecklistEnabled;
+  const panelParam = searchParams.get('panel');
+  const activeReviewPanel: ProductReviewPanel =
+    panelParam === 'checklist' || panelParam === 'topics' || panelParam === 'cierre'
+      ? panelParam
+      : needsTopicDefinition
+        ? 'topics'
+        : 'checklist';
+
+  const setActiveReviewPanel = (panel: ProductReviewPanel) => {
+    const next = new URLSearchParams(searchParams);
+    next.set('panel', panel);
+    navigate({ search: `?${next.toString()}` }, { replace: true });
+  };
 
   const pendingObservationSendCount = countPendingProductObservations(combinedObservations, subject.id);
 
@@ -1124,8 +1155,18 @@ export function SubjectDetailPage() {
     return productStatus === checklistFilter;
   });
 
+  const semesterBackPath = semesterSubjectsPanelPath(project.id, subject.semesterNumber);
+
   return (
     <div className="space-y-6">
+      <InstitutionalBreadcrumb
+        items={[
+          { label: 'Solicitudes', to: '/projects' },
+          { label: project.program, to: `/projects/${project.id}` },
+          { label: `Semestre ${subject.semesterNumber}`, to: semesterBackPath },
+          { label: subject.name },
+        ]}
+      />
       <PageHeader
         prominentEyebrow
         eyebrow={`${project.program} · Semestre ${subject.semesterNumber}`}
@@ -1142,7 +1183,7 @@ export function SubjectDetailPage() {
         }
         action={
           <ContextBackLink
-            fallback={`/projects/${project.id}/semesters/${subject.semesterNumber}`}
+            fallback={semesterBackPath}
             className="inline-flex items-center gap-1.5 rounded-2xl border border-orange-200 bg-white px-4 py-2.5 text-xs font-bold text-slate-700 shadow-sm transition-all hover:border-orange-300 hover:text-orange-700"
           >
             <ArrowLeft className="h-3.5 w-3.5" /> Volver al semestre
@@ -1188,6 +1229,28 @@ export function SubjectDetailPage() {
         </div>
       </Card>
 
+      {showReviewTabs ? (
+        <Card variant="subjectPanel" className="border-indigo-200/70 bg-indigo-50/40 p-4 sm:p-5">
+          <p className="text-[10px] font-bold uppercase tracking-wider text-indigo-700">Fase 7 · Revisión académica</p>
+          <p className="mt-1 text-sm font-semibold text-slate-900">Valide entregables, defina temas y cierre la asignatura</p>
+          <p className="mt-1 text-xs leading-relaxed text-slate-600">
+            Use las pestañas para avanzar: primero los entregables del checklist, luego los gránulos académicos y, al
+            final, la aprobación de la asignatura.
+          </p>
+        </Card>
+      ) : null}
+
+      {showReviewTabs ? (
+        <ProductSubjectReviewPanelTabs
+          activePanel={activeReviewPanel}
+          onChange={setActiveReviewPanel}
+          checklistPending={pendingChecklist}
+          topicsPending={needsTopicDefinition}
+          closurePending={!subjectIsApproved && (academicApprovalBlockers.length > 0 || canApproveSubject)}
+        />
+      ) : null}
+
+      {(!showReviewTabs || activeReviewPanel === 'cierre') && (
       <Card variant="subjectPanel" className="p-5 sm:p-6">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
           <div>
@@ -1239,6 +1302,7 @@ export function SubjectDetailPage() {
           </div>
         </div>
       </Card>
+      )}
 
       {academicChecklistEnabled && pendingObservationSendCount > 0 && (
         <div className="sticky bottom-4 z-20 rounded-2xl border border-orange-200 bg-white/95 p-4 shadow-lg backdrop-blur">
@@ -1260,7 +1324,7 @@ export function SubjectDetailPage() {
         </div>
       )}
 
-      {needsTopicDefinition && (
+      {(!showReviewTabs || activeReviewPanel === 'topics') && needsTopicDefinition && (
         <AcademicTopicsDefinitionPanel
           inputClass={inputClass}
           saving={savingTopics}
@@ -1268,6 +1332,7 @@ export function SubjectDetailPage() {
         />
       )}
 
+      {(!showReviewTabs || activeReviewPanel === 'checklist') && (
       <Card variant="subjectPanel" className="p-0 overflow-hidden">
         <div className="border-b border-slate-100 bg-gradient-to-r from-orange-50/30 to-white px-5 py-4">
           <div className="flex items-center justify-between gap-3">
@@ -1360,8 +1425,9 @@ export function SubjectDetailPage() {
           )}
         </div>
       </Card>
+      )}
 
-      {topics.length > 0 && (
+      {(!showReviewTabs || activeReviewPanel === 'topics') && topics.length > 0 && (
         <Card variant="subjectPanel" className="p-0 overflow-hidden">
           <div className="border-b border-slate-100 bg-gradient-to-r from-orange-50/30 to-white px-5 py-4">
             <div className="flex items-center justify-between gap-3">
@@ -1419,6 +1485,7 @@ export function SubjectDetailPage() {
         </Card>
       )}
 
+      {(!showReviewTabs || activeReviewPanel === 'cierre') && (
       <div ref={observationsSectionRef}>
       <Card variant="subjectPanel" className="p-5 sm:p-6">
         <div className="flex items-center justify-between gap-3 border-b border-orange-100/90 pb-4">
@@ -1697,6 +1764,7 @@ export function SubjectDetailPage() {
         </div>
       </Card>
       </div>
+      )}
 
       <DeliverableObservationsDrawer
         isOpen={Boolean(observationDrawerItem)}

@@ -4,7 +4,7 @@ import { institutionalWorkflowApi } from '../../services/institutionalWorkflowAp
 import { queryKeys } from './queryKeys';
 
 function programsQueryKey(role: Role | null) {
-  if (role === 'PLANEACION' || role === 'ADMIN') return queryKeys.institutionalWork.planningPrograms();
+  if (role === 'PLANEACION') return queryKeys.institutionalWork.planningPrograms();
   if (role === 'LMS') return queryKeys.institutionalWork.lmsPrograms();
   if (role === 'FABRICA') return queryKeys.institutionalWork.factoryPrograms();
   if (role === 'PRODUCT') return queryKeys.institutionalWork.productPrograms();
@@ -12,7 +12,7 @@ function programsQueryKey(role: Role | null) {
 }
 
 async function fetchInstitutionalProgramsWork(role: Role | null) {
-  if (role === 'PLANEACION' || role === 'ADMIN') return institutionalWorkflowApi.planningWorkPrograms();
+  if (role === 'PLANEACION') return institutionalWorkflowApi.planningWorkPrograms();
   if (role === 'LMS') return institutionalWorkflowApi.lmsWorkPrograms();
   if (role === 'FABRICA') return institutionalWorkflowApi.factoryProgramsWork();
   if (role === 'PRODUCT') return institutionalWorkflowApi.productProgramsWork();

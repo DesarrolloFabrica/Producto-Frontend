@@ -4,6 +4,7 @@ import type { OperationalWorkspaceDto } from '../../services/institutionalWorkfl
 import type { ApiProjectDetail, ApiProjectListItem, ApiSubjectDetail, ApiSubjectSummary } from '../../services/types/projectsApi.types';
 import type { ApiSubjectWorkspace } from '../../services/subjectsApi';
 import { isLightSubjectWorkspace, mapProjectDetailFromApi } from '../operations/apiMappers';
+import { useOperations } from '../operations/OperationsContext';
 import { markFactoryQueriesStale } from './factoryQueryUtils';
 import { invalidateSemesterWorkflowQueries } from './invalidateSemesterWorkflowQueries';
 import { queryKeys } from './queryKeys';
@@ -221,6 +222,7 @@ function optimisticOperationalWorkspace(
 
 export function useUpdateSubjectProductionStatusMutation() {
   const queryClient = useQueryClient();
+  const { applyProjectDetailFromApi } = useOperations();
 
   return useMutation({
     mutationFn: async (input: {
@@ -293,6 +295,7 @@ export function useUpdateSubjectProductionStatusMutation() {
       );
     },
     onSuccess: async (project, variables) => {
+      applyProjectDetailFromApi(project);
       queryClient.setQueryData(queryKeys.project(project.id), project);
       queryClient.setQueryData<ApiSubjectWorkspace>(
         queryKeys.subjectWorkspace(variables.subjectId),

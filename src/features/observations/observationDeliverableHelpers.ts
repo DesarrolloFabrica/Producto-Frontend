@@ -97,3 +97,20 @@ export function filterObservationsVisibleToFactory(
     (obs) => !(obs.role === 'PRODUCT' && obs.notificationStatus === 'PENDING'),
   );
 }
+
+/** Observación no resuelta visible para Fábrica (excluye ABIERTA en borrador). */
+export function isFactoryVisibleUnresolvedObservation(obs: OperationalObservation): boolean {
+  if (obs.status === 'RESUELTA') return false;
+  if (obs.status === 'ABIERTA' && obs.notificationStatus === 'PENDING') return false;
+  return true;
+}
+
+export function countFactoryVisibleOpenObservations(
+  observations: OperationalObservation[],
+): number {
+  return observations.filter(
+    (obs) =>
+      (obs.status === 'ABIERTA' || obs.status === 'EN_CORRECCION') &&
+      isFactoryVisibleUnresolvedObservation(obs),
+  ).length;
+}

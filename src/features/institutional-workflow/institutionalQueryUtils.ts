@@ -27,7 +27,7 @@ export async function invalidateInstitutionalWorkflowQueries(
     tasks.push(queryClient.invalidateQueries({ queryKey: queryKeys.project(options.projectId) }));
   }
 
-  if (options.role === 'PLANEACION' || options.role === 'ADMIN') {
+  if (options.role === 'PLANEACION') {
     tasks.push(
       queryClient.invalidateQueries({ queryKey: queryKeys.institutionalWork.planning() }),
       queryClient.invalidateQueries({ queryKey: queryKeys.planning.dashboardSummary() }),

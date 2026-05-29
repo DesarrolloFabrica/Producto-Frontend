@@ -26,6 +26,8 @@ export function stateToneV2(state: OperationalStateV2): { bg: string; text: stri
 export function roleLabelV2(role: OperationalRoleV2): string {
   if (role === 'PLANEACION') return 'Planeación';
   if (role === 'FABRICA') return 'Fábrica';
+  if (role === 'PRODUCT') return 'Producto';
+  if (role === 'LMS') return 'LMS';
   return role;
 }
 
@@ -44,23 +46,7 @@ export function getAvailableActionsV2(params: {
   const actions: OperationalActionV2[] = [];
 
   if (role === 'ADMIN') {
-    // Admin can see everything; in V2 mock it also can perform everything for demos.
-    actions.push(
-      'PLANNING_VALIDATE_INITIAL',
-      'PLANNING_RETURN_INITIAL',
-      'FACTORY_START_PRODUCTION',
-      'FACTORY_DELIVER_CONTENT',
-      'PLANNING_VALIDATE_PRODUCTION',
-      'PLANNING_RETURN_PRODUCTION',
-      'LMS_START_UPLOAD',
-      'LMS_CONFIRM_UPLOAD',
-      'PLANNING_VALIDATE_LMS',
-      'PLANNING_RETURN_LMS',
-      'PRODUCT_START_ACADEMIC_REVIEW',
-      'PRODUCT_OPEN_ACADEMIC_CHECKLIST',
-      'PRODUCT_REQUEST_CHANGES',
-      'PRODUCT_APPROVE_ACADEMIC',
-    );
+    return view;
   } else if (role === 'PLANEACION') {
     if (s === 'PENDING_PLANNING_INITIAL_VALIDATION') actions.push('PLANNING_VALIDATE_INITIAL', 'PLANNING_RETURN_INITIAL');
     if (s === 'RETURNED_TO_PRODUCT_FROM_PLANNING') actions.push('PLANNING_VALIDATE_INITIAL');

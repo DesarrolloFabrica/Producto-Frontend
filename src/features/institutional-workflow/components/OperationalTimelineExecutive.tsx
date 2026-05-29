@@ -60,11 +60,11 @@ function actionTone(action: string): {
 }
 
 type OperationalTimelineExecutiveProps = {
-  items: OperationalTransitionV2[];
+  items?: OperationalTransitionV2[];
   compact?: boolean;
 };
 
-export function OperationalTimelineExecutive({ items, compact = false }: OperationalTimelineExecutiveProps) {
+export function OperationalTimelineExecutive({ items = [], compact = false }: OperationalTimelineExecutiveProps) {
   if (items.length === 0) {
     return (
       <section className="border-t border-slate-200/60 pt-6">

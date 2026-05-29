@@ -6,12 +6,14 @@ import {
   isProjectCompleted,
   projectListProgressLabel,
   resolveProjectListProgress,
+  resolveProjectResponsibleRole,
 } from '../../features/projects/projectListDisplay';
-import type { VirtualizationProject } from '../../types/domain';
+import type { Role, VirtualizationProject } from '../../types/domain';
 import { formatProjectExpectedDelivery } from '../../utils/projectSme';
 import { projectStatusLabels } from '../../utils/status';
 import { Card } from '../ui/Card';
 import { useContextPanel } from '../../features/context-panel/ContextPanelProvider';
+import { AdminResponsibleRoleBadge } from '../../features/admin-tracking/components/AdminResponsibleRoleBadge';
 import { cn, surface, tableRow } from '../ui/tokens';
 
 const statusAccent: Record<VirtualizationProject['status'], string> = {
@@ -100,14 +102,44 @@ function OwnerAvatar({ name, role }: { name: string; role: string }) {
   );
 }
 
+function ProjectResponsibleCell({
+  project,
+  responsibleRoleByProjectId,
+  viewerRole,
+}: {
+  project: VirtualizationProject;
+  responsibleRoleByProjectId?: Map<string, Role>;
+  viewerRole?: Role | null;
+}) {
+  const responsibleRole = resolveProjectResponsibleRole(project, responsibleRoleByProjectId);
+  if (!responsibleRole) {
+    return <span className="text-[11px] text-slate-400">—</span>;
+  }
+
+  const isViewerResponsible = Boolean(viewerRole && viewerRole === responsibleRole);
+
+  return (
+    <div className="space-y-1">
+      <AdminResponsibleRoleBadge role={responsibleRole} compact />
+      {isViewerResponsible ? (
+        <p className="text-[10px] font-medium text-emerald-700">Acción pendiente</p>
+      ) : null}
+    </div>
+  );
+}
+
 export function ProjectsTable({
   projects,
   totalCount,
   portfolioTotal,
+  responsibleRoleByProjectId,
+  viewerRole,
 }: {
   projects: VirtualizationProject[];
   totalCount?: number;
   portfolioTotal?: number;
+  responsibleRoleByProjectId?: Map<string, Role>;
+  viewerRole?: Role | null;
 }) {
   const { openContextPanel } = useContextPanel();
   const activeTotal = totalCount ?? projects.length;
@@ -140,6 +172,7 @@ export function ProjectsTable({
                 >
                   <th className="px-5 py-3 sm:px-6">Solicitud</th>
                   <th className="px-3 py-3">Estado</th>
+                  <th className="px-3 py-3">Responsable</th>
                   <th className="px-3 py-3">Avance</th>
                   <th className="px-3 py-3">Entrega</th>
                   <th className="px-3 py-3">Equipo</th>
@@ -152,6 +185,8 @@ export function ProjectsTable({
                     key={project.id}
                     project={project}
                     onQuickView={() => openContextPanel('project', project.id)}
+                    responsibleRoleByProjectId={responsibleRoleByProjectId}
+                    viewerRole={viewerRole}
                   />
                 ))}
               </tbody>
@@ -164,6 +199,8 @@ export function ProjectsTable({
                 key={project.id}
                 project={project}
                 onQuickView={() => openContextPanel('project', project.id)}
+                responsibleRoleByProjectId={responsibleRoleByProjectId}
+                viewerRole={viewerRole}
               />
             ))}
           </div>
@@ -176,9 +213,13 @@ export function ProjectsTable({
 function ProjectTableRow({
   project,
   onQuickView,
+  responsibleRoleByProjectId,
+  viewerRole,
 }: {
   project: VirtualizationProject;
   onQuickView: () => void;
+  responsibleRoleByProjectId?: Map<string, Role>;
+  viewerRole?: Role | null;
 }) {
   return (
     <tr className={cn('relative', tableRow)}>
@@ -202,6 +243,13 @@ function ProjectTableRow({
       </td>
       <td className="px-3 py-3.5 align-middle">
         <ProjectStatusPill project={project} />
+      </td>
+      <td className="px-3 py-3.5 align-middle">
+        <ProjectResponsibleCell
+          project={project}
+          responsibleRoleByProjectId={responsibleRoleByProjectId}
+          viewerRole={viewerRole}
+        />
       </td>
       <td className="px-3 py-3.5 align-middle">
         <ProjectProgressCell project={project} />
@@ -244,9 +292,13 @@ function ProjectTableRow({
 function ProjectMobileRow({
   project,
   onQuickView,
+  responsibleRoleByProjectId,
+  viewerRole,
 }: {
   project: VirtualizationProject;
   onQuickView: () => void;
+  responsibleRoleByProjectId?: Map<string, Role>;
+  viewerRole?: Role | null;
 }) {
   return (
     <div className="relative p-3">
@@ -270,6 +322,13 @@ function ProjectMobileRow({
             {projectListProgressLabel(project, resolveProjectListProgress(project))} avance
           </span>
           <span>{formatProjectExpectedDelivery(project)}</span>
+        </div>
+        <div className="mt-2">
+          <ProjectResponsibleCell
+            project={project}
+            responsibleRoleByProjectId={responsibleRoleByProjectId}
+            viewerRole={viewerRole}
+          />
         </div>
         <div className="mt-2.5 flex items-center justify-between gap-2">
           <div className="flex items-center gap-1">

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent } fr
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { ContextBackLink } from '../../navigation/ContextBackLink';
 import { stripReturnToQuery } from '../../navigation/contextNavigation';
+import { InstitutionalBreadcrumb } from '../../components/navigation/InstitutionalBreadcrumb';
 import {
   AlertCircle,
   ArrowLeft,
@@ -13,10 +14,8 @@ import {
   RefreshCcw,
   Send,
 } from 'lucide-react';
-import { StatusBadge } from '../../components/status/StatusBadge';
 import { Card } from '../../components/ui/Card';
 import { getApiErrorMessage } from '../operations/apiMappers';
-import { calculateSubjectProgress } from '../operations/progress';
 import {
   filterObservationsVisibleToFactory,
   getFactoryCorrectionPhase,
@@ -47,7 +46,8 @@ import type {
 } from '../../types/domain';
 import { ChangeOriginBadge, ChangeOriginHint } from '../../components/change-tracking/ChangeOriginBadge';
 import { FACTORY_COPY, institutionalStateLabel } from '../institutional-workflow/institutionalCopy';
-import { isSubjectFactoryProductionComplete } from './factoryProductionStatus';
+import { semesterHubPath } from '../institutional-workflow/institutionalNavigation';
+import { isSubjectFactoryProductionComplete, resolveFactorySubjectDisplayProgress, factorySubjectStatusBadgeTone, resolveFactorySubjectStatusBadgeLabel } from './factoryProductionStatus';
 
 type FlowStepId = 'PENDIENTE' | 'EN_PRODUCCION' | 'ENTREGA_SEMESTRE';
 type GeneralProductionState = FlowStepId | 'INTERNA_COMPLETA' | 'APROBADA';
@@ -357,20 +357,12 @@ export function FactorySubjectDetail({ project, subject, observations }: Factory
     : useInstitutionalUi
       ? getInstitutionalFactoryCta(institutionalOperationalState!)
       : getOperationalCta(operationalState);
-  const progress = isFactoryComplete
-    ? 100
-    : backendEnabled
-      ? subject.progress ?? 0
-      : subject.checklist.length > 0
-        ? calculateSubjectProgress(subject)
-        : mapSubjectToProgress(subject.status);
-  const semester = project.semesters.find((item) => item.semesterNumber === subject.semesterNumber);
-  const semesterId = semester?.id;
-  const semesterOperationsUrl =
-    semesterId && project.id ? `/projects/${project.id}/semesters/${semesterId}/operations` : null;
-  const semesterBackPath = semesterOperationsUrl
-    ? stripReturnToQuery(semesterOperationsUrl)
-    : `/projects/${project.id}/semesters/${subject.semesterNumber}`;
+  const progress = resolveFactorySubjectDisplayProgress(subject);
+  const semesterId =
+    operationalWorkspaceQuery.data?.semesterId ??
+    project.semesters.find((item) => item.semesterNumber === subject.semesterNumber)?.id;
+  const semesterHubUrl = semesterHubPath(project.id, subject.semesterNumber);
+  const semesterBackPath = stripReturnToQuery(semesterHubUrl);
 
   const handleBackToSemester = (event: MouseEvent<HTMLButtonElement>) => {
     event.preventDefault();
@@ -546,9 +538,19 @@ export function FactorySubjectDetail({ project, subject, observations }: Factory
 
   return (
     <div className="space-y-6">
+      <InstitutionalBreadcrumb
+        items={[
+          { label: 'Solicitudes', to: '/projects' },
+          { label: project.program, to: `/projects/${project.id}` },
+          { label: 'Centro operacional', to: `/projects/${project.id}/operations` },
+          { label: `Semestre ${subject.semesterNumber}`, to: semesterHubUrl },
+          { label: subject.name },
+        ]}
+      />
+
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
-          {useInstitutionalUi && semesterOperationsUrl ? (
+          {useInstitutionalUi ? (
             <button
               type="button"
               onClick={handleBackToSemester}
@@ -574,7 +576,14 @@ export function FactorySubjectDetail({ project, subject, observations }: Factory
           </p>
         </div>
         <div className="flex flex-col items-end gap-2">
-          <StatusBadge status={subject.status} />
+          <span
+            className={cn(
+              'inline-flex shrink-0 items-center rounded-[12px] px-3 py-1.5 text-[9px] font-semibold uppercase tracking-[0.05em] ring-1',
+              factorySubjectStatusBadgeTone(subject),
+            )}
+          >
+            {resolveFactorySubjectStatusBadgeLabel(subject)}
+          </span>
           <span className="rounded-[10px] bg-slate-100 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide text-slate-600">
             {operationalLabel}
           </span>
@@ -587,18 +596,16 @@ export function FactorySubjectDetail({ project, subject, observations }: Factory
       {useInstitutionalUi && (
         <div className="rounded-[14px] border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
           <p className="font-semibold">{FACTORY_COPY.institutionalSubjectBanner}</p>
-          {semesterOperationsUrl ? (
-            <p className="mt-1 text-xs text-amber-800">
-              Entrega del paquete:{' '}
-              <button
-                type="button"
-                onClick={handleBackToSemester}
-                className="font-bold underline hover:text-amber-950"
-              >
-                centro operacional del semestre {subject.semesterNumber}
-              </button>
-            </p>
-          ) : null}
+          <p className="mt-1 text-xs text-amber-800">
+            Entrega del paquete:{' '}
+            <button
+              type="button"
+              onClick={handleBackToSemester}
+              className="font-bold underline hover:text-amber-950"
+            >
+              hub del semestre {subject.semesterNumber}
+            </button>
+          </p>
         </div>
       )}
 

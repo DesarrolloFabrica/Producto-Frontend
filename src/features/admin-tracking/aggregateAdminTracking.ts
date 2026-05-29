@@ -6,8 +6,9 @@ import {
   isInstitutionalReturnedState,
 } from '../institutional-workflow/components/OperationalPipelineInstitutional';
 import type { AdminInstitutionalTrackingData, AdminProgramTrackingRow, AdminTrackingKpis } from './adminTrackingTypes';
+import { ADMIN_PROGRAM_DETAIL_PATH } from './adminNavigation';
 
-export const ADMIN_PROGRAM_DETAIL_PATH = (projectId: string) => `/admin/programs/${projectId}`;
+export { ADMIN_PROGRAM_DETAIL_PATH };
 
 function slaRank(status: SlaStatus): number {
   if (status === 'OVERDUE' || status === 'FINALIZED_OVERDUE') return 0;

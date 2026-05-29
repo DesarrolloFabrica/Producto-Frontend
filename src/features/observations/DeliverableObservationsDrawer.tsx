@@ -128,7 +128,7 @@ export function DeliverableObservationsDrawer({
           </div>
         )}
 
-        {(role === 'PRODUCT' || role === 'ADMIN') && (
+        {role === 'PRODUCT' && (
           <div className="mt-auto border-t border-slate-100 pt-4">
             {hasPendingDraft ? (
               <p className="mb-3 rounded-xl border border-amber-200 bg-amber-50/80 px-3 py-2 text-xs font-medium text-amber-900">

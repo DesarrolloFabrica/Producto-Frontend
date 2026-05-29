@@ -7,7 +7,7 @@ import {
   formatSemesterSubjectBlocker,
   semesterSubjectInternalStateMeta,
 } from '../institutionalCopy';
-import { subjectChecklistPath, subjectFactoryCorrectionsPath, subjectOperationsPath } from '../institutionalNavigation';
+import { subjectChecklistPath, subjectFactoryCorrectionsPath, subjectOperationsPath, productSubjectChecklistReviewPath } from '../institutionalNavigation';
 
 const toneStyles = {
   slate: 'border-slate-200 bg-slate-50 text-slate-700',
@@ -76,6 +76,8 @@ interface SemesterSubjectsTableProps {
   factoryCorrectionsMode?: boolean;
   /** Planeación / LMS: seguimiento en centro operacional de asignatura (no checklist Product). */
   institutionalReaderMode?: boolean;
+  /** Vista ejecutiva: sin enlaces ni acciones. */
+  readOnly?: boolean;
 }
 
 export function SemesterSubjectsTable({
@@ -84,6 +86,7 @@ export function SemesterSubjectsTable({
   checklistReviewMode = false,
   factoryCorrectionsMode = false,
   institutionalReaderMode = false,
+  readOnly = false,
 }: SemesterSubjectsTableProps) {
   if (subjects.length === 0) {
     return (
@@ -101,7 +104,7 @@ export function SemesterSubjectsTable({
             {showRequirements ? (
               <th className="px-5 py-3.5 text-left">Requisitos académicos</th>
             ) : null}
-            <th className="px-5 py-3.5 text-right">Acción</th>
+            {!readOnly ? <th className="px-5 py-3.5 text-right">Acción</th> : null}
           </tr>
         </thead>
         <tbody className="divide-y divide-slate-100">
@@ -118,9 +121,11 @@ export function SemesterSubjectsTable({
             const obsCount = subject.openObservationsCount ?? 0;
             const actionHref = hasObservations && factoryCorrectionsMode
               ? subjectFactoryCorrectionsPath(subject.subjectId)
-              : institutionalReaderMode
-                ? subjectOperationsPath(subject.subjectId)
-                : subjectChecklistPath(subject.subjectId);
+              : checklistReviewMode && !institutionalReaderMode
+                ? productSubjectChecklistReviewPath(subject.subjectId)
+                : institutionalReaderMode
+                  ? subjectOperationsPath(subject.subjectId)
+                  : subjectChecklistPath(subject.subjectId);
             const actionLabel =
               checklistReviewMode && !institutionalReaderMode
                 ? 'Revisar checklist'
@@ -193,6 +198,7 @@ export function SemesterSubjectsTable({
                     )}
                   </td>
                 ) : null}
+                {!readOnly ? (
                 <td className="px-5 py-4 text-right align-top">
                   <ContextLink
                     to={actionHref}
@@ -211,6 +217,7 @@ export function SemesterSubjectsTable({
                     <ArrowRight className="h-3.5 w-3.5" />
                   </ContextLink>
                 </td>
+                ) : null}
               </tr>
             );
           })}

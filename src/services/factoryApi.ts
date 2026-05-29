@@ -20,6 +20,8 @@ export interface ApiFactorySubjectWorkItem {
   expectedDeliveryDate: string | null;
   priority: string;
   operationalState: ApiSubjectOperationalState;
+  institutionalOperationalState?: string;
+  currentResponsibleRole?: string;
   openObservationsCount: number;
   correctionSentCount: number;
   lastActivity: string | null;

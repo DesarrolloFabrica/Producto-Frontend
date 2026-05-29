@@ -1,4 +1,4 @@
-import { createContext, useContext, useReducer, useCallback, useMemo, type ReactNode } from 'react';
+import { createContext, useContext, useReducer, useCallback, useMemo, useRef, useEffect, type ReactNode } from 'react';
 import type { ApiProjectDetail, ApiProjectListItem } from '../../services/types/projectsApi.types';
 import { queryClient } from '../queries/queryClient';
 import { markFactoryQueriesStale } from '../queries/factoryQueryUtils';
@@ -679,7 +679,10 @@ function operationsReducer(state: OperationsState, action: OperationsAction): Op
         const projects = state.projects.map((project) => {
           if (project.id !== action.payload.projectId) return project;
           if (action.payload.observation.role !== 'PRODUCT') return recalcProject(project, nextObservations);
-          // Product observations require factory feedback loop.
+          const isSentToFactory =
+            action.payload.observation.notificationStatus !== 'PENDING';
+          if (!isSentToFactory) return recalcProject(project, nextObservations);
+          // Product observations sent to Fábrica require factory feedback loop.
           const nextProject = project.status === 'CLOSED' ? project : { ...project, status: 'FEEDBACK_PENDING' as const };
           return recalcProject(nextProject, nextObservations);
         });
@@ -1258,6 +1261,13 @@ export function OperationsProvider({ children }: { children: ReactNode }) {
     }),
   );
 
+  const notificationsRef = useRef(state.notifications);
+  const notificationSummaryRef = useRef(state.notificationSummary);
+  useEffect(() => {
+    notificationsRef.current = state.notifications;
+    notificationSummaryRef.current = state.notificationSummary;
+  }, [state.notifications, state.notificationSummary]);
+
   const loadProjects = useCallback(async () => {
     if (!state.backendEnabled) return;
     dispatch({ type: 'LOAD_PROJECTS_START' });
@@ -1405,10 +1415,10 @@ export function OperationsProvider({ children }: { children: ReactNode }) {
       readDays: NOTIFICATION_READ_RETENTION_DAYS,
     };
     try {
-      if (options?.append && state.notifications.length >= NOTIFICATION_MAX_LOADED) {
+      if (options?.append && notificationsRef.current.length >= NOTIFICATION_MAX_LOADED) {
         dispatch({ type: 'LOAD_NOTIFICATIONS_SUCCESS', payload: {
-          notifications: state.notifications,
-          summary: state.notificationSummary,
+          notifications: notificationsRef.current,
+          summary: notificationSummaryRef.current,
           hasMore: false,
           append: true,
         }});
@@ -1448,7 +1458,7 @@ export function OperationsProvider({ children }: { children: ReactNode }) {
         });
       }
     }
-  }, [state.backendEnabled, state.notifications, state.notificationSummary, queryClient]);
+  }, [state.backendEnabled, queryClient]);
 
   const refreshWorkflowContext = useCallback(
     async (options: {

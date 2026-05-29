@@ -38,6 +38,8 @@ type InboxView = 'attention' | 'activity' | 'cleared';
 const EMPTY_INBOX_TITLE = 'Sin notificaciones disponibles';
 const EMPTY_INBOX_DESCRIPTION =
   'No hay notificaciones para tu usuario o rol. Si esperabas ver alertas, confirma que tu sesión coincide con el destinatario (rol o usuario) en el sistema.';
+const EMPTY_INBOX_DESCRIPTION_ADMIN =
+  'No hay alertas recientes en el sistema. Cuando los roles operativos reciban novedades, aparecerán aquí para supervisión.';
 
 export function NotificationsPage() {
   const { role, user } = useAuth();
@@ -63,7 +65,7 @@ export function NotificationsPage() {
   useEffect(() => {
     if (!backendEnabled) return;
     void loadNotifications();
-  }, [backendEnabled, loadNotifications]);
+  }, [backendEnabled]);
 
   useEffect(() => {
     setPage(1);
@@ -177,6 +179,8 @@ export function NotificationsPage() {
     setPage(1);
   };
 
+  const isAdminSupervision = role === 'ADMIN';
+
   return (
     <div className="space-y-6">
       <PageHeader
@@ -187,11 +191,17 @@ export function NotificationsPage() {
               ? 'lms'
               : role === 'FABRICA'
                 ? 'factory'
-                : 'product'
+                : role === 'ADMIN'
+                  ? 'product'
+                  : 'product'
         }
-        eyebrow="Centro de alertas"
-        title="Bandeja operacional"
-        description="Máximo 8 novedades por página. La actividad reciente se conserva 3 días; las informativas antiguas se archivan automáticamente."
+        eyebrow={isAdminSupervision ? 'Supervisión institucional' : 'Centro de alertas'}
+        title={isAdminSupervision ? 'Alertas del sistema' : 'Bandeja operacional'}
+        description={
+          isAdminSupervision
+            ? 'Vista transversal de novedades por rol. Puedes revisar contexto y navegar al programa, sin modificar la bandeja de otros equipos.'
+            : 'Máximo 8 novedades por página. La actividad reciente se conserva 3 días; las informativas antiguas se archivan automáticamente.'
+        }
       />
 
       <OperationalHelp topic="notifications" />
@@ -220,7 +230,7 @@ export function NotificationsPage() {
         <EmptyState
           icon={Bell}
           title={EMPTY_INBOX_TITLE}
-          description={EMPTY_INBOX_DESCRIPTION}
+          description={isAdminSupervision ? EMPTY_INBOX_DESCRIPTION_ADMIN : EMPTY_INBOX_DESCRIPTION}
           cardVariant="roleGlass"
         />
       ) : null}
@@ -279,7 +289,7 @@ export function NotificationsPage() {
               </TabButton>
             </div>
 
-            {unreadInActiveTab > 0 ? (
+            {unreadInActiveTab > 0 && !isAdminSupervision ? (
               <Button
                 type="button"
                 variant="secondary"
@@ -321,7 +331,8 @@ export function NotificationsPage() {
                     key={notificationGroup.key}
                     notificationGroup={notificationGroup}
                     onOpen={handleOpenResource}
-                    onDismiss={handleDismissGroup}
+                    onDismiss={isAdminSupervision ? undefined : handleDismissGroup}
+                    showRoleTarget={isAdminSupervision}
                   />
                 ))}
               </div>
@@ -330,8 +341,9 @@ export function NotificationsPage() {
             <NotificationCompactTable
               buckets={view === 'activity' ? dateBuckets : [{ bucket: 'older' as const, label: '', groups: pagedGroups }]}
               onOpen={handleOpenResource}
-              onDismiss={handleDismissGroup}
+              onDismiss={isAdminSupervision ? undefined : handleDismissGroup}
               showDateHeaders={view === 'activity'}
+              showRoleTarget={isAdminSupervision}
             />
           )}
 
@@ -398,10 +410,12 @@ function AttentionGroupCard({
   notificationGroup,
   onOpen,
   onDismiss,
+  showRoleTarget = false,
 }: {
   notificationGroup: NotificationGroup;
   onOpen: (group: NotificationGroup) => void;
-  onDismiss: (group: NotificationGroup) => void;
+  onDismiss?: (group: NotificationGroup) => void;
+  showRoleTarget?: boolean;
 }) {
   const latest = notificationGroup.items.find((item) => !item.read) ?? notificationGroup.items[0];
   const type = latest.type ?? 'ACTION';
@@ -420,21 +434,28 @@ function AttentionGroupCard({
             <div className="min-w-0">
               <p className="text-[10px] font-bold uppercase tracking-wide text-slate-400">
                 {notificationGroup.subtitle ?? 'Operación'}
+                {showRoleTarget && latest.roleTarget ? (
+                  <span className="ml-2 rounded-md bg-slate-100 px-1.5 py-0.5 text-[9px] font-bold text-slate-600">
+                    {latest.roleTarget}
+                  </span>
+                ) : null}
               </p>
               <h3 className="mt-0.5 text-sm font-bold text-slate-900">{notificationGroup.label}</h3>
               <p className="mt-1.5 line-clamp-2 text-xs font-medium text-slate-600">
                 {getNotificationPreview(latest)}
               </p>
             </div>
-            <button
-              type="button"
-              onClick={() => onDismiss(notificationGroup)}
-              className="rounded-lg p-1 text-slate-400 transition hover:bg-white/60 hover:text-slate-600"
-              title="Descartar"
-              aria-label="Descartar"
-            >
-              <X className="h-3.5 w-3.5" />
-            </button>
+            {onDismiss ? (
+              <button
+                type="button"
+                onClick={() => onDismiss(notificationGroup)}
+                className="rounded-lg p-1 text-slate-400 transition hover:bg-white/60 hover:text-slate-600"
+                title="Descartar"
+                aria-label="Descartar"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            ) : null}
           </div>
 
           <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
@@ -464,11 +485,13 @@ function NotificationCompactTable({
   onOpen,
   onDismiss,
   showDateHeaders,
+  showRoleTarget = false,
 }: {
   buckets: Array<{ bucket: string; label: string; groups: NotificationGroup[] }>;
   onOpen: (group: NotificationGroup) => void;
-  onDismiss: (group: NotificationGroup) => void;
+  onDismiss?: (group: NotificationGroup) => void;
   showDateHeaders: boolean;
+  showRoleTarget?: boolean;
 }) {
   return (
     <Card variant="roleGlass" className="overflow-hidden p-0">
@@ -494,6 +517,7 @@ function NotificationCompactTable({
                 groups={bucket.groups}
                 onOpen={onOpen}
                 onDismiss={onDismiss}
+                showRoleTarget={showRoleTarget}
               />
             ))}
           </tbody>
@@ -508,11 +532,13 @@ function BucketRows({
   groups,
   onOpen,
   onDismiss,
+  showRoleTarget = false,
 }: {
   bucketLabel: string | null;
   groups: NotificationGroup[];
   onOpen: (group: NotificationGroup) => void;
-  onDismiss: (group: NotificationGroup) => void;
+  onDismiss?: (group: NotificationGroup) => void;
+  showRoleTarget?: boolean;
 }) {
   return (
     <>
@@ -529,6 +555,7 @@ function BucketRows({
           group={group}
           onOpen={onOpen}
           onDismiss={onDismiss}
+          showRoleTarget={showRoleTarget}
         />
       ))}
     </>
@@ -539,10 +566,12 @@ function CompactNotificationRow({
   group,
   onOpen,
   onDismiss,
+  showRoleTarget = false,
 }: {
   group: NotificationGroup;
   onOpen: (group: NotificationGroup) => void;
-  onDismiss: (group: NotificationGroup) => void;
+  onDismiss?: (group: NotificationGroup) => void;
+  showRoleTarget?: boolean;
 }) {
   const latest = group.items[0] as Notification;
   const eventLabel = getNotificationEventLabel(latest);
@@ -551,7 +580,14 @@ function CompactNotificationRow({
   return (
     <tr className={tableRow}>
       <td className="px-5 py-2.5 sm:px-6">
-        <p className="text-[10px] font-bold uppercase text-slate-400">{group.subtitle ?? '—'}</p>
+        <p className="text-[10px] font-bold uppercase text-slate-400">
+          {group.subtitle ?? '—'}
+          {showRoleTarget && latest.roleTarget ? (
+            <span className="ml-2 rounded-md bg-slate-100 px-1.5 py-0.5 text-[9px] font-bold text-slate-600">
+              {latest.roleTarget}
+            </span>
+          ) : null}
+        </p>
         <p className="text-sm font-bold text-slate-900">{group.label}</p>
       </td>
       <td className="px-3 py-2.5">
@@ -571,15 +607,17 @@ function CompactNotificationRow({
       </td>
       <td className="px-3 py-2.5">
         <div className="flex items-center justify-end gap-1">
-          <button
-            type="button"
-            onClick={() => onDismiss(group)}
-            className="rounded-lg p-1 text-slate-400 transition hover:bg-white/60 hover:text-slate-600"
-            title="Descartar"
-            aria-label="Descartar"
-          >
-            <X className="h-3.5 w-3.5" />
-          </button>
+          {onDismiss ? (
+            <button
+              type="button"
+              onClick={() => onDismiss(group)}
+              className="rounded-lg p-1 text-slate-400 transition hover:bg-white/60 hover:text-slate-600"
+              title="Descartar"
+              aria-label="Descartar"
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          ) : null}
           {group.targetUrl ? (
             <ContextLink
               to={group.targetUrl}

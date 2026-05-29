@@ -1,5 +1,5 @@
 import { Package, ArrowRight, MessageSquare, CheckCircle2, AlertTriangle, Clock3 } from 'lucide-react';
-import { Link } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import { StatusBadge } from '../../components/status/StatusBadge';
 import { Card } from '../../components/ui/Card';
 import { ProjectsLoadNotice } from '../../components/feedback/ProjectsLoadNotice';
@@ -12,6 +12,7 @@ import { cn } from '../../components/ui/tokens';
 import { useMemo, useState } from 'react';
 import { ModificationBadge } from '../../components/project/ModificationBadge';
 import { useFactoryProgramsQuery } from '../queries/useFactoryProgramsQuery';
+import { toFactoryProgramOperationsNav } from '../factory-work/factoryProgramNavigation';
 import { formatProgramProgress } from '../institutional-workflow/institutionalCopy';
 import { ProgramActiveStageBadge } from '../operations-v2/components/ProgramActiveStageBadge';
 import type { SubjectOperationalState } from '../operations/subjectOperationalState';
@@ -36,6 +37,7 @@ const FILTER_TO_STATUS: Partial<Record<FactoryFilter, SubjectOperationalState>> 
 };
 
 export function FactoryProjectsList() {
+  const location = useLocation();
   const { projects, projectObservations, notifications, isLoadingProjects, projectsError, refreshProjects, backendEnabled } =
     useOperations();
   const [activeFilter, setActiveFilter] = useState<FactoryFilter>('all');
@@ -169,7 +171,9 @@ export function FactoryProjectsList() {
           </Card>
         ) : (
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-            {factoryPrograms.map((program) => (
+            {factoryPrograms.map((program) => {
+              const operationsNav = toFactoryProgramOperationsNav(program, location.pathname);
+              return (
               <div
                 key={program.projectId}
                 className="rounded-[20px] bg-white p-5 shadow-[0_4px_20px_-5px_rgba(0,0,0,0.05)] transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_12px_30px_-10px_rgba(0,0,0,0.1)]"
@@ -204,14 +208,16 @@ export function FactoryProjectsList() {
                 </div>
                 <div className="mt-4 flex justify-end">
                   <Link
-                    to={program.actionUrl}
+                    to={operationsNav.to}
+                    state={operationsNav.state}
                     className="inline-flex items-center gap-1.5 rounded-[12px] bg-[#FF6B00] px-3 py-2 text-xs font-bold text-white shadow-lg shadow-[#FF6B00]/20 transition-all duration-200 hover:scale-105 hover:bg-[#E66000]"
                   >
                     Ver programa <ArrowRight className="h-3.5 w-3.5" />
                   </Link>
                 </div>
               </div>
-            ))}
+            );
+            })}
           </div>
         )
       ) : filtered.length === 0 ? (

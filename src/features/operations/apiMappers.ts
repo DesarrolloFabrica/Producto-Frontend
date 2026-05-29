@@ -13,6 +13,7 @@ import type {
   SubjectSummary,
   TopicChecklist,
   VirtualizationProject,
+  AuditLog,
 } from '../../types/domain';
 import type {
   ApiChecklistItem,
@@ -35,6 +36,17 @@ import type {
   ApiRelatedEntityType,
 } from '../../services/types/workflowApi.types';
 import type { ApiSubjectWorkspace } from '../../services/subjectsApi';
+import type { ApiAuditLog } from '../../services/auditApi';
+
+const AUDIT_ENTITY_LABELS: Record<string, AuditLog['entityType']> = {
+  PROJECT: 'Proyecto',
+  SUBJECT: 'Materia',
+  SEMESTER: 'Semestre',
+  OBSERVATION: 'Observacion',
+  OBSERVATION_BATCH: 'Observacion',
+  CHECKLIST_ITEM: 'Checklist',
+  TOPIC: 'Materia',
+};
 
 export interface CreateProjectFormInput {
   school: string;
@@ -543,6 +555,37 @@ export function mapNotificationFromApi(api: ApiNotification): Notification {
 
 export function mapNotificationsFromApi(api: ApiNotification[]): Notification[] {
   return api.map(mapNotificationFromApi);
+}
+
+export function mapAuditLogFromApi(api: ApiAuditLog): AuditLog {
+  return {
+    id: api.id,
+    entityType: api.entityTypeLabel ?? AUDIT_ENTITY_LABELS[api.entityType] ?? api.entityType,
+    entityName: api.entityName,
+    action: api.action,
+    userName: api.userName,
+    role: api.role,
+    roleLabel: api.roleLabel,
+    entityTypeLabel: api.entityTypeLabel,
+    previousValue: api.previousValue,
+    newValue: api.newValue,
+    createdAt: api.createdAt,
+    projectId: api.projectId,
+    subjectId: api.subjectId,
+    semesterId: api.semesterId,
+    program: api.program,
+    school: api.school,
+    semesterNumber: api.semesterNumber,
+    subjectName: api.subjectName,
+    scope: api.scope,
+    summary: api.summary,
+    changeLabel: api.changeLabel,
+    details: api.details,
+  };
+}
+
+export function mapAuditLogsFromApi(api: ApiAuditLog[]): AuditLog[] {
+  return api.map(mapAuditLogFromApi);
 }
 
 export function getApiErrorMessage(error: unknown): string {

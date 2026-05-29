@@ -207,15 +207,21 @@ export function normalizeSubjectOperationalState(params: {
   subject: SubjectSummaryLike | SubjectVirtualization;
   observations?: OperationalObservation[];
   projectStatus?: VirtualizationProject['status'];
+  forFactoryView?: boolean;
 }): SubjectOperationalState {
-  const { subject, observations = [], projectStatus } = params;
+  const { subject, observations = [], projectStatus, forFactoryView = false } = params;
   if (subject.operationalState) return subject.operationalState;
 
   const subjectObs = productObservationsForSubject(observations, subject.id);
+  const isOpenForViewer = (observation: OperationalObservation) => {
+    if (observation.status !== 'ABIERTA') return false;
+    if (forFactoryView && observation.notificationStatus === 'PENDING') return false;
+    return true;
+  };
 
   const openCount =
     ('openObservationsCount' in subject ? subject.openObservationsCount : undefined) ??
-    subjectObs.filter((o) => o.status === 'ABIERTA').length;
+    subjectObs.filter(isOpenForViewer).length;
   const correctionSentCount =
     ('correctionSentCount' in subject ? subject.correctionSentCount : undefined) ??
     subjectObs.filter((o) => o.status === 'EN_CORRECCION').length;
@@ -233,11 +239,18 @@ export function buildSubjectWorkItem(
   project: VirtualizationProject,
   subject: SubjectSummaryLike | SubjectVirtualization,
   observations: OperationalObservation[] = [],
+  options?: { forFactoryView?: boolean },
 ): SubjectWorkItem {
+  const forFactoryView = options?.forFactoryView ?? false;
   const subjectObs = getProductObservationsForSubject(project, subject.id, observations);
+  const isOpenForViewer = (observation: OperationalObservation) => {
+    if (observation.status !== 'ABIERTA') return false;
+    if (forFactoryView && observation.notificationStatus === 'PENDING') return false;
+    return true;
+  };
   const openObservationsCount =
     ('openObservationsCount' in subject ? subject.openObservationsCount : undefined) ??
-    subjectObs.filter((o) => o.status === 'ABIERTA').length;
+    subjectObs.filter(isOpenForViewer).length;
   const correctionSentCount =
     ('correctionSentCount' in subject ? subject.correctionSentCount : undefined) ??
     subjectObs.filter((o) => o.status === 'EN_CORRECCION').length;

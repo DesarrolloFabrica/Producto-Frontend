@@ -1,7 +1,7 @@
 import { createContext, useContext, useState, useCallback, useEffect, type ReactNode } from 'react';
 import { motion } from 'motion/react';
 import { useContextNavigate } from '../../navigation/useContextNavigate';
-import { X, ExternalLink, FileText, BookOpen, MessageSquare, Bell, ListChecks, Clock3, User, CheckCircle, AlertCircle } from 'lucide-react';
+import { X, ExternalLink, FileText, BookOpen, MessageSquare, Bell, ListChecks, Clock3, User } from 'lucide-react';
 import { useOperations } from '../operations/OperationsContext';
 import { StatusBadge } from '../../components/status/StatusBadge';
 import { formatDate } from '../../utils/formatters';
@@ -11,9 +11,8 @@ import type { VirtualizationProject, SubjectVirtualization, LinkResource, Operat
 import { OperationalHealth } from '../../components/operational/OperationalHealth';
 import { getSubjectOperationalPackage } from '../operations/operationalInsights';
 import { getChecklistItemInsight, getNotificationOperationalState, getNotificationRequiredAction, getSubjectBlockers, getSubjectNextAction } from '../operations/operationalRules';
-import { getProjectModificationLabel } from '../operations/modificationBadges';
-import { drawerTransition, fadeUp } from '../../components/motion/presets';
-import { ModificationBadge } from '../../components/project/ModificationBadge';
+import { drawerTransition } from '../../components/motion/presets';
+import { ProjectQuickViewPanel } from './ProjectQuickViewPanel';
 
 type ContextEntityType = 'project' | 'subject' | 'link' | 'observation' | 'notification' | 'checklist';
 
@@ -91,7 +90,15 @@ export function ContextPanelDrawer() {
     if (project) {
       const projectObservationsList = projectObservations.filter((o) => o.projectId === project.id);
         content = (
-        <ProjectContext project={project} observations={projectObservationsList} notifications={notifications} onNavigate={() => { closeContextPanel(); contextNavigate(`/projects/${project.id}`); }} />
+        <ProjectQuickViewPanel
+          project={project}
+          observations={projectObservationsList}
+          notifications={notifications}
+          onNavigate={() => {
+            closeContextPanel();
+            contextNavigate(`/projects/${project.id}`);
+          }}
+        />
       );
     }
   } else if (payload.type === 'subject') {
@@ -127,158 +134,18 @@ export function ContextPanelDrawer() {
   return (
     <div className="fixed inset-0 z-50 flex justify-end">
       <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="absolute inset-0 bg-black/15 backdrop-blur-sm" onClick={closeContextPanel} />
-      <motion.div {...drawerTransition} className="relative w-full max-w-md overflow-y-auto border-l border-slate-200/60 bg-white shadow-[0_24px_80px_rgba(15,23,42,0.18)]">
+      <motion.div {...drawerTransition} className="relative w-full max-w-lg overflow-y-auto border-l border-slate-200/60 bg-white shadow-[0_24px_80px_rgba(15,23,42,0.18)]">
         <div className="sticky top-0 z-10 flex items-center justify-between border-b border-slate-100 bg-white/90 px-4 py-3 backdrop-blur-xl">
           <div className="flex items-center gap-2">
-            <span className="rounded-lg bg-orange-50 px-2 py-0.5 text-[10px] font-medium text-orange-600">{payload.type}</span>
-            <p className="text-xs font-medium text-slate-400">Vista rápida</p>
+            <span className="rounded-lg bg-orange-50 px-2 py-0.5 text-[10px] font-semibold uppercase text-orange-700">
+              Solicitud
+            </span>
+            <p className="text-xs font-semibold text-slate-500">Resumen operacional</p>
           </div>
           <button onClick={closeContextPanel} className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 transition-all hover:bg-slate-100 hover:text-slate-600"><X className="h-4 w-4" /></button>
         </div>
         <div className="p-4">{content}</div>
       </motion.div>
-    </div>
-  );
-}
-
-function ProjectContext({ project, observations, notifications, onNavigate }: { project: VirtualizationProject; observations: OperationalObservation[]; notifications: Notification[]; onNavigate: () => void }) {
-  const openObservations = observations.filter((o) => o.status === 'ABIERTA' || o.status === 'EN_CORRECCION');
-  const pendingDeliverables = project.subjects.flatMap((s) => s.checklist).filter((item) => ['NO_EXISTE', 'PENDIENTE'].includes(item.status)).length;
-  const hasSparseDetail = project.semesters.length === 0 && project.subjects.length === 0 && project.links.length === 0;
-  const modificationLabel = getProjectModificationLabel(notifications, project.id);
-
-  const getNextAction = (): string => {
-    if (openObservations.length > 0) return 'Valida correcciones realizadas por Fabrica.';
-    if (project.status === 'IN_PRODUCTION') return 'Esperando entrega de Fabrica.';
-    if (project.status === 'IN_REVIEW' || project.status === 'DELIVERED_TO_LMS') return 'Revisa checklist pendientes.';
-    if (project.status === 'CLOSED') return 'Solicitud lista para cierre.';
-    return 'Solicitud en proceso.';
-  };
-
-  return (
-    <div className="space-y-5">
-      {/* Header */}
-      <div className="space-y-2">
-        <div>
-          <p className="text-xs font-medium text-slate-500">{project.school}</p>
-          <h2 className="mt-0.5 text-lg font-semibold text-slate-900">{project.program}</h2>
-          <p className="mt-1 text-xs font-medium text-slate-400">{project.requestType} · {project.modality}</p>
-          {modificationLabel && <div className="mt-3"><ModificationBadge label={modificationLabel} /></div>}
-        </div>
-        <div className="flex flex-wrap gap-2">
-          <StatusBadge status={project.status} />
-          <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-500">{project.priority}</span>
-        </div>
-      </div>
-
-      {/* Resumen de revision */}
-      <div className="rounded-2xl bg-slate-50 p-4">
-        <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Resumen de revision</p>
-        <div className="mt-3 grid grid-cols-2 gap-3">
-          <div className="rounded-xl bg-white p-3 shadow-sm">
-            <p className="text-xs font-medium text-slate-400">Estado</p>
-            <p className="mt-1 text-sm font-semibold text-slate-700">{project.status.replace(/_/g, ' ')}</p>
-          </div>
-          <div className="rounded-xl bg-white p-3 shadow-sm">
-            <p className="text-xs font-medium text-slate-400">Observaciones</p>
-            <p className="mt-1 text-sm font-semibold text-slate-700">{openObservations.length}</p>
-          </div>
-          <div className="rounded-xl bg-white p-3 shadow-sm">
-            <p className="text-xs font-medium text-slate-400">Materias</p>
-            <p className="mt-1 text-sm font-semibold text-slate-700">{hasSparseDetail ? 'Cargando...' : project.subjects.length}</p>
-          </div>
-          <div className="rounded-xl bg-white p-3 shadow-sm">
-            <p className="text-xs font-medium text-slate-400">Pendientes</p>
-            <p className="mt-1 text-sm font-semibold text-slate-700">{pendingDeliverables}</p>
-          </div>
-        </div>
-      </div>
-
-      {/* Proxima accion */}
-      <div className="flex items-start gap-3 rounded-xl bg-orange-50 p-3.5">
-        <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-orange-500" />
-        <div>
-          <p className="text-xs font-semibold text-orange-700">Proxima accion</p>
-          <p className="mt-1 text-sm font-medium text-orange-800">{getNextAction()}</p>
-        </div>
-      </div>
-
-      {/* Observaciones */}
-      <div className="space-y-2.5">
-        <div className="flex items-center justify-between">
-          <h3 className="text-sm font-semibold text-slate-700">Observaciones</h3>
-          <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-500">{openObservations.length}</span>
-        </div>
-        {openObservations.length === 0 ? (
-          <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-slate-200 bg-slate-50/50 py-6">
-            <CheckCircle className="h-6 w-6 text-emerald-400" />
-            <p className="mt-2 text-sm font-medium text-slate-500">Sin observaciones abiertas</p>
-          </div>
-        ) : (
-          openObservations.slice(0, 3).map((obs) => (
-            <motion.div key={obs.id} {...fadeUp} className="group rounded-xl border border-slate-100 bg-white p-3.5 transition-all hover:border-orange-100 hover:shadow-sm">
-              <div className="mb-2 flex items-center justify-between">
-                <span className="text-xs font-medium text-slate-400">{obs.relatedEntity || 'General'}</span>
-                <span className={cn('rounded-full px-2 py-0.5 text-xs font-medium', obs.status === 'ABIERTA' ? 'bg-rose-50 text-rose-600' : 'bg-amber-50 text-amber-600')}>{obs.status}</span>
-              </div>
-              <p className="text-sm font-medium text-slate-700">{obs.text.length > 100 ? `${obs.text.substring(0, 100)}...` : obs.text}</p>
-              <p className="mt-2 text-xs text-slate-400">{formatDate(obs.createdAt)}</p>
-            </motion.div>
-          ))
-        )}
-      </div>
-
-      {/* Datos base */}
-      <div className="space-y-2">
-        <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-400">Informacion</h3>
-        <div className="grid grid-cols-2 gap-2 rounded-xl bg-slate-50 p-3">
-          <div className="flex items-center gap-2">
-            <User className="h-3.5 w-3.5 text-slate-400" />
-            <div className="min-w-0">
-              <p className="text-[10px] text-slate-400">Product</p>
-              <p className="truncate text-xs font-medium text-slate-700">{project.productOwner}</p>
-            </div>
-          </div>
-          <div className="flex items-center gap-2">
-            <User className="h-3.5 w-3.5 text-slate-400" />
-            <div className="min-w-0">
-              <p className="text-[10px] text-slate-400">Fabrica</p>
-              <p className="truncate text-xs font-medium text-slate-700">{project.factoryOwner}</p>
-            </div>
-          </div>
-          <div className="flex items-center gap-2">
-            <Clock3 className="h-3.5 w-3.5 text-slate-400" />
-            <div className="min-w-0">
-              <p className="text-[10px] text-slate-400">Entrega</p>
-              <p className="truncate text-xs font-medium text-slate-700">{formatDate(project.expectedDeliveryDate)}</p>
-            </div>
-          </div>
-          <div className="flex items-center gap-2">
-            <FileText className="h-3.5 w-3.5 text-slate-400" />
-            <div className="min-w-0">
-              <p className="text-[10px] text-slate-400">Links</p>
-              <p className="truncate text-xs font-medium text-slate-700">{hasSparseDetail ? 'Cargando...' : `${project.links.length} disponibles`}</p>
-            </div>
-          </div>
-          <div className="flex items-center gap-2">
-            <BookOpen className="h-3.5 w-3.5 text-slate-400" />
-            <div className="min-w-0">
-              <p className="text-[10px] text-slate-400">Semestres</p>
-              <p className="truncate text-xs font-medium text-slate-700">{hasSparseDetail ? 'Cargando...' : project.semesters.map((s) => s.semesterNumber).join(', ')}</p>
-            </div>
-          </div>
-          <div className="flex items-center gap-2">
-            <BookOpen className="h-3.5 w-3.5 text-slate-400" />
-            <div className="min-w-0">
-              <p className="text-[10px] text-slate-400">Materias</p>
-              <p className="truncate text-xs font-medium text-slate-700">{project.subjects.length} registradas</p>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* CTA */}
-      <button onClick={onNavigate} className="sticky bottom-0 flex w-full items-center justify-center gap-2 rounded-xl bg-orange-500 py-3 text-sm font-medium text-white shadow-sm transition-all hover:bg-orange-600 hover:shadow"><ExternalLink className="h-4 w-4" /> Gestionar solicitud</button>
     </div>
   );
 }

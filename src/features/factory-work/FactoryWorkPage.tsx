@@ -1,16 +1,19 @@
 import { useMemo } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { ContextBackLink } from '../../navigation/ContextBackLink';
+import { buildFromLocation } from '../../navigation/contextNavigation';
 import { LayoutDashboard } from 'lucide-react';
 import { PageHeader } from '../../components/ui/PageHeader';
 import { type FactorySubjectsOrigin, type FactorySubjectsQuery } from '../../services/factoryApi';
-import type { SubjectOperationalState } from '../operations/subjectOperationalState';
+import type { ApiSubjectOperationalState } from '../../services/factoryApi';
 import { getApiErrorMessage } from '../operations/apiMappers';
-import { useFactorySubjectsQuery } from '../queries/useFactorySubjectsQuery';
+import { useFactoryProgramsQuery } from '../queries/useFactoryProgramsQuery';
+import { ProgramOperationalWorkTable } from '../operations-v2/ProgramOperationalWorkTable';
+import type { ProgramOperationalWorkItemDto } from '../../services/institutionalWorkflowApi';
 import { FactoryWorkFilters } from './components/FactoryWorkFilters';
-import { FactoryWorkTable } from './components/FactoryWorkTable';
 import { FactoryWorkPagination } from './components/FactoryWorkPagination';
 import { FactoryWorkSummary } from './components/FactoryWorkSummary';
+import { mapFactoryProgramsToTableItems } from './factoryProgramWork';
 
 type SortKey = NonNullable<FactorySubjectsQuery['sort']>;
 
@@ -19,9 +22,9 @@ function parseIntOr(value: string | null, fallback: number) {
   return Number.isFinite(n) && n > 0 ? Math.floor(n) : fallback;
 }
 
-function pickStatus(value: string | null): SubjectOperationalState | undefined {
+function pickStatus(value: string | null): ApiSubjectOperationalState | undefined {
   if (!value) return undefined;
-  const allowed: SubjectOperationalState[] = [
+  const allowed: ApiSubjectOperationalState[] = [
     'NOT_STARTED',
     'IN_PRODUCTION',
     'IN_REVIEW',
@@ -29,7 +32,7 @@ function pickStatus(value: string | null): SubjectOperationalState | undefined {
     'CORRECTION_SENT',
     'APPROVED',
   ];
-  return (allowed as string[]).includes(value) ? (value as SubjectOperationalState) : undefined;
+  return (allowed as string[]).includes(value) ? (value as ApiSubjectOperationalState) : undefined;
 }
 
 function pickOrigin(value: string | null): FactorySubjectsOrigin | undefined {
@@ -44,6 +47,8 @@ function pickSort(value: string | null): SortKey | undefined {
 }
 
 export function FactoryWorkPage() {
+  const navigate = useNavigate();
+  const location = useLocation();
   const [searchParams, setSearchParams] = useSearchParams();
 
   const query = useMemo(() => {
@@ -77,11 +82,14 @@ export function FactoryWorkPage() {
     return q;
   }, [searchParams]);
 
-  const subjectsQuery = useFactorySubjectsQuery(query);
-  const items = subjectsQuery.data?.items ?? [];
-  const total = subjectsQuery.data?.total ?? 0;
-  const isLoading = subjectsQuery.isInitialLoadingWithoutData;
-  const error = subjectsQuery.error ? getApiErrorMessage(subjectsQuery.error) : null;
+  const programsQuery = useFactoryProgramsQuery(query);
+  const items = useMemo(
+    () => mapFactoryProgramsToTableItems(programsQuery.data?.items ?? []),
+    [programsQuery.data?.items],
+  );
+  const total = programsQuery.data?.total ?? 0;
+  const isLoading = programsQuery.isInitialLoadingWithoutData;
+  const error = programsQuery.error ? getApiErrorMessage(programsQuery.error) : null;
 
   const page = query.page ?? 1;
   const limit = query.limit ?? 20;
@@ -107,14 +115,20 @@ export function FactoryWorkPage() {
     updateParams({ [param]: undefined }, { resetPage: true });
   };
 
-  const showPagination = (Boolean(subjectsQuery.data) || subjectsQuery.isBackgroundFetching) && total > 0;
+  const showPagination = (Boolean(programsQuery.data) || programsQuery.isBackgroundFetching) && total > 0;
+
+  const openProgram = (item: ProgramOperationalWorkItemDto) => {
+    navigate(item.actionUrl, {
+      state: { from: buildFromLocation(location) },
+    });
+  };
 
   return (
     <div className="space-y-6">
       <PageHeader
         eyebrow="Bandeja de trabajo"
-        title="Bandeja operativa"
-        description="Gestiona semestres/paquetes por estado, prioridad y fecha de entrega."
+        title="Bandeja de programas"
+        description="Gestiona solicitudes por programa, semestre y etapa operacional."
         action={
           <ContextBackLink
             fallback="/factory/dashboard"
@@ -135,12 +149,15 @@ export function FactoryWorkPage() {
         onClearAll={clearFilters}
       />
 
-      <FactoryWorkTable
+      <ProgramOperationalWorkTable
         items={items}
         isLoading={isLoading}
         error={error}
-        onClearFilters={clearFilters}
-        backToDashboardFallback="/factory/dashboard"
+        onRefresh={() => void programsQuery.refetch()}
+        onOpenProgram={openProgram}
+        sectionTitle="Programas operacionales"
+        actionLabel="Ver programa"
+        queueLabel="Centro operacional del programa"
       />
 
       {showPagination && (

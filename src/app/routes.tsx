@@ -8,7 +8,9 @@ import { useAuth } from '../features/auth/AuthContext';
 import { LoginPage } from '../features/auth/LoginPage';
 import { FactoryDashboardPage } from '../features/dashboard/FactoryDashboardPage';
 import { FactoryWorkPage } from '../features/factory-work/FactoryWorkPage';
-import { ProductOrAdminDashboardPage } from '../features/dashboard/ProductOrAdminDashboardPage';
+import { ProductDashboardPage } from '../features/dashboard/ProductDashboardPage';
+import { AdminInstitutionalTrackingPage } from '../features/admin-tracking/AdminInstitutionalTrackingPage';
+import { AdminSemesterDetailPage } from '../features/admin-tracking/AdminSemesterDetailPage';
 import { ProductWorkPage } from '../features/product-work/ProductWorkPage';
 import { NotificationsPage } from '../features/notifications/NotificationsPage';
 import { NotificationSettings } from '../components/settings/NotificationSettings';
@@ -65,7 +67,7 @@ function RoleRedirect({ expectedRole, children }: { expectedRole: Role; children
   const { role, isAuthenticated, isLoading } = useAuth();
   if (isLoading) return <RouteLoadingScreen message="Validando sesión..." />;
   if (!isAuthenticated) return <Navigate to="/login" replace />;
-  if (role !== expectedRole && role !== 'ADMIN') return <Navigate to={homePathForRole(role)} replace />;
+  if (role !== expectedRole) return <Navigate to={homePathForRole(role)} replace />;
   return <>{children}</>;
 }
 
@@ -79,10 +81,18 @@ export const router = createBrowserRouter([
         element: <RequireAuth />,
         children: [
       { index: true, element: <RoleScopeGuard><HomeRedirect /></RoleScopeGuard> },
-      { path: 'product/dashboard', element: <RoleScopeGuard><RoleRedirect expectedRole="PRODUCT"><ProductOrAdminDashboardPage /></RoleRedirect></RoleScopeGuard> },
+      { path: 'product/dashboard', element: <RoleScopeGuard><RoleRedirect expectedRole="PRODUCT"><ProductDashboardPage /></RoleRedirect></RoleScopeGuard> },
+      {
+        path: 'admin/dashboard',
+        element: <RoleScopeGuard><RoleRedirect expectedRole="ADMIN"><AdminInstitutionalTrackingPage /></RoleRedirect></RoleScopeGuard>,
+      },
       {
         path: 'admin/programs/:projectId',
         element: <RoleScopeGuard><RoleRedirect expectedRole="ADMIN"><AdminProgramDetailPage /></RoleRedirect></RoleScopeGuard>,
+      },
+      {
+        path: 'admin/programs/:projectId/semesters/:semesterId',
+        element: <RoleScopeGuard><RoleRedirect expectedRole="ADMIN"><AdminSemesterDetailPage /></RoleRedirect></RoleScopeGuard>,
       },
       { path: 'product/work', element: <RoleScopeGuard><RoleRedirect expectedRole="PRODUCT"><ProductWorkPage /></RoleRedirect></RoleScopeGuard> },
       { path: 'factory/dashboard', element: <RoleScopeGuard><RoleRedirect expectedRole="FABRICA"><FactoryDashboardPage /></RoleRedirect></RoleScopeGuard> },

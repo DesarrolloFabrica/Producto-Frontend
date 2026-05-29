@@ -49,14 +49,14 @@ export function FactoryWorkFilters({
       </div>
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <FilterField label="Buscar materia o programa" className="sm:col-span-2 xl:col-span-1">
+        <FilterField label="Buscar programa o escuela" className="sm:col-span-2 xl:col-span-1">
           <div className="relative">
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#94A3B8]" />
             <input
               type="search"
               value={query.search ?? ''}
               onChange={(e) => onChange({ search: e.target.value || undefined })}
-              placeholder="Nombre de materia o programa"
+              placeholder="Nombre de programa o escuela"
               className={cn(filterInputClass, 'pl-9')}
             />
           </div>

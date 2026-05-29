@@ -1,7 +1,9 @@
-import { useParams } from 'react-router-dom';
+import { useMemo } from 'react';
+import { useLocation, useParams } from 'react-router-dom';
 import { ContextBackLink } from '../../navigation/ContextBackLink';
 import { ContextLink } from '../../navigation/ContextLink';
 import { useUrlTab } from '../../navigation/useUrlTab';
+import { InstitutionalBreadcrumb } from '../../components/navigation/InstitutionalBreadcrumb';
 import { StatusBadge } from '../../components/status/StatusBadge';
 import { Card } from '../../components/ui/Card';
 import { Tabs } from '../../components/ui/Tabs';
@@ -18,10 +20,14 @@ import {
   normalizeSubjectOperationalState,
 } from '../../features/operations/subjectOperationalState';
 import { analyzeFactoryProject } from '../../features/operations/factoryProjectState';
+import { filterObservationsVisibleToFactory } from '../../features/observations/observationDeliverableHelpers';
 import { ModificationBadge } from '../../components/project/ModificationBadge';
 import { ProjectChangeTrackingPanel } from '../../components/change-tracking/ProjectChangeTrackingPanel';
 import { ChangeOriginBadge, ChangeOriginHint } from '../../components/change-tracking/ChangeOriginBadge';
 import { useDismissNotificationsOnVisit } from '../notifications/useDismissNotificationsOnVisit';
+import { semesterHubPath } from '../institutional-workflow/institutionalNavigation';
+import { useFactoryProgramsQuery } from '../queries/useFactoryProgramsQuery';
+import { toFactoryProgramOperationsNav } from '../factory-work/factoryProgramNavigation';
 
 const tabs = [
   { id: 'summary', label: 'Resumen' },
@@ -30,8 +36,26 @@ const tabs = [
 
 export function FactoryProjectDetail() {
   const { projectId } = useParams();
-  const { projectObservations, notifications, refreshProjects } = useOperations();
+  const location = useLocation();
+  const { projectObservations, notifications, refreshProjects, backendEnabled } = useOperations();
   const { project, isLoading, error, notFound } = useEnsureProjectDetail(projectId);
+  const factoryProgramsQuery = useFactoryProgramsQuery(
+    { page: 1, limit: 100, projectId },
+    Boolean(projectId && backendEnabled),
+  );
+  const factoryProgram = useMemo(
+    () => (factoryProgramsQuery.data?.items ?? []).find((item) => item.projectId === projectId) ?? null,
+    [factoryProgramsQuery.data?.items, projectId],
+  );
+  const operationsNav = useMemo(
+    () =>
+      factoryProgram
+        ? toFactoryProgramOperationsNav(factoryProgram, location.pathname)
+        : project
+          ? { to: `/projects/${project.id}/operations` }
+          : null,
+    [factoryProgram, location.pathname, project],
+  );
   useDismissNotificationsOnVisit({ projectId: project?.id });
   const [activeTab, setActiveTab] = useUrlTab(['summary', 'semesters'] as const, 'summary');
 
@@ -62,14 +86,26 @@ export function FactoryProjectDetail() {
     );
   }
 
-  const openProductObs = projectObservations.filter(
-    (obs) => obs.role === 'PRODUCT' && (obs.status === 'ABIERTA' || obs.status === 'EN_CORRECCION') && obs.projectId === project.id,
+  const openProductObs = filterObservationsVisibleToFactory(
+    projectObservations.filter(
+      (obs) =>
+        obs.role === 'PRODUCT' &&
+        (obs.status === 'ABIERTA' || obs.status === 'EN_CORRECCION') &&
+        obs.projectId === project.id,
+    ),
   );
   const projectInsight = analyzeFactoryProject(project, openProductObs);
   const modificationLabel = getProjectModificationLabel(notifications, project.id);
 
   return (
     <div className="space-y-6">
+      <InstitutionalBreadcrumb
+        items={[
+          { label: 'Solicitudes', to: '/projects' },
+          { label: project.program },
+        ]}
+      />
+
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <ContextBackLink
@@ -82,7 +118,17 @@ export function FactoryProjectDetail() {
           <p className="mt-1 text-[0.9rem] text-[#64748B]">{project.school} · {project.modality}</p>
           {modificationLabel && <div className="mt-3"><ModificationBadge label={modificationLabel} /></div>}
         </div>
-        <StatusBadge status={projectInsight.displayStatus as any} />
+        <div className="flex flex-col items-end gap-2">
+          <StatusBadge status={projectInsight.displayStatus as any} />
+          <ContextLink
+            to={operationsNav?.to ?? `/projects/${project.id}/operations`}
+            state={operationsNav?.state}
+            className="inline-flex items-center gap-1.5 rounded-2xl bg-[#FF6B00] px-4 py-2.5 text-xs font-black text-white shadow-lg shadow-[#FF6B00]/20 transition-all hover:bg-[#E66000]"
+          >
+            Centro operacional
+            <ArrowRight className="h-3.5 w-3.5" />
+          </ContextLink>
+        </div>
       </div>
 
       <Card className="grid gap-4 p-5 sm:grid-cols-2 lg:grid-cols-4">
@@ -97,7 +143,12 @@ export function FactoryProjectDetail() {
       <Tabs tabs={tabs} activeTab={activeTab} onChange={setActiveTab} />
 
       {activeTab === 'summary' && (
-        <SummaryTab project={project} openProductObs={openProductObs} projectInsight={projectInsight} />
+        <SummaryTab
+          project={project}
+          openProductObs={openProductObs}
+          projectInsight={projectInsight}
+          operationsNav={operationsNav}
+        />
       )}
       {activeTab === 'semesters' && <SemestersTab project={project} openProductObs={openProductObs} />}
     </div>
@@ -108,10 +159,12 @@ function SummaryTab({
   project,
   openProductObs,
   projectInsight,
+  operationsNav,
 }: {
   project: ReturnType<typeof useOperations>['projects'][number];
   openProductObs: ReturnType<typeof useOperations>['projectObservations'];
   projectInsight: ReturnType<typeof analyzeFactoryProject>;
+  operationsNav: ReturnType<typeof toFactoryProgramOperationsNav> | { to: string } | null;
 }) {
   const hasSyllabus = project.links.some((l) => l.type === 'SYLLABUS');
   const syllabusLink = project.links.find((l) => l.type === 'SYLLABUS');
@@ -143,7 +196,7 @@ function SummaryTab({
       normalizeSubjectOperationalState({ subject, observations: openProductObs, projectStatus: project.status }) ===
       'CHANGES_REQUESTED',
   ).length;
-  const firstSemesterRoute = `/projects/${project.id}/semesters/${project.semesters[0]?.semesterNumber ?? 1}`;
+  const operationsRoute = operationsNav?.to ?? `/projects/${project.id}/operations`;
 
   return (
     <section className="tab-content-active space-y-6">
@@ -255,8 +308,12 @@ function SummaryTab({
           </div>
 
           <div className="flex justify-start">
-            <ContextLink to={firstSemesterRoute} className="inline-flex items-center gap-1.5 rounded-2xl bg-[#FF6B00] px-4 py-2.5 text-sm font-black text-white shadow-lg shadow-[#FF6B00]/20 transition-all duration-200 hover:bg-[#E66000]">
-              Ver asignaturas
+            <ContextLink
+              to={operationsRoute}
+              state={operationsNav?.state}
+              className="inline-flex items-center gap-1.5 rounded-2xl bg-[#FF6B00] px-4 py-2.5 text-sm font-black text-white shadow-lg shadow-[#FF6B00]/20 transition-all duration-200 hover:bg-[#E66000]"
+            >
+              Ir al centro operacional
               <ArrowRight className="h-3.5 w-3.5" />
             </ContextLink>
           </div>
@@ -349,7 +406,7 @@ function SemestersTab({
             {subjects.length > 0 && (
               <div className="mt-5">
                 <ContextLink
-                  to={`/projects/${project.id}/semesters/${semester.semesterNumber}`}
+                  to={semesterHubPath(project.id, semester.semesterNumber)}
                   className="inline-flex items-center gap-1.5 rounded-2xl bg-gradient-to-br from-orange-400 to-orange-600 px-4 py-2.5 text-xs font-black text-white shadow-lg shadow-orange-500/30 transition-all hover:from-orange-500 hover:to-orange-700"
                 >
                   Ver asignaturas

@@ -4,6 +4,7 @@ import type {
   SubjectStatus,
   VirtualizationProject,
 } from '../../types/domain';
+import { filterObservationsVisibleToFactory } from '../observations/observationDeliverableHelpers';
 import {
   getProjectSubjects,
   normalizeSubjectOperationalState,
@@ -42,12 +43,15 @@ export function analyzeFactoryProject(
   observations: OperationalObservation[] = [],
 ): FactoryProjectInsight {
   const subjects = getProjectSubjects(project);
-  const projectObs = observations.filter((o) => o.projectId === project.id);
+  const projectObs = filterObservationsVisibleToFactory(
+    observations.filter((o) => o.projectId === project.id),
+  );
   const states = subjects.map((subject) =>
     normalizeSubjectOperationalState({
       subject,
       observations: projectObs,
       projectStatus: project.status,
+      forFactoryView: true,
     }),
   );
 
@@ -159,12 +163,15 @@ export function analyzeFactorySemester(
   observations: OperationalObservation[] = [],
 ) {
   const subjects = getProjectSubjects(project).filter((s) => s.semesterNumber === semesterNumber);
-  const projectObs = observations.filter((o) => o.projectId === project.id);
+  const projectObs = filterObservationsVisibleToFactory(
+    observations.filter((o) => o.projectId === project.id),
+  );
   const states = subjects.map((subject) =>
     normalizeSubjectOperationalState({
       subject,
       observations: projectObs,
       projectStatus: project.status,
+      forFactoryView: true,
     }),
   );
 
