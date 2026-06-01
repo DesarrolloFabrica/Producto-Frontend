@@ -120,6 +120,9 @@ jobs:
           docker build \
             --build-arg VITE_API_URL="${{ vars.VITE_API_URL }}" \
             --build-arg VITE_USE_MOCKS="${{ vars.VITE_USE_MOCKS || 'false' }}" \
+            --build-arg VITE_GOOGLE_CLIENT_ID="${{ vars.VITE_GOOGLE_CLIENT_ID }}" \
+            --build-arg VITE_GOOGLE_AUTH_ENABLED="${{ vars.VITE_GOOGLE_AUTH_ENABLED || 'false' }}" \
+            --build-arg VITE_DEV_EMAIL_LOGIN_ENABLED="${{ vars.VITE_DEV_EMAIL_LOGIN_ENABLED || 'false' }}" \
             --tag "${IMAGE}:${VERSION}" \
             --tag "${IMAGE}:sha-${GITHUB_SHA::7}" \
             --tag "${IMAGE}:latest" \
