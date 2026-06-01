@@ -22,7 +22,7 @@ const imageSizeClasses: Record<AppLogoSize, { primary: string; mark: string }> =
     mark: 'h-24 w-24',
   },
   login: {
-    primary: 'h-[5.75rem] w-auto max-w-[13.5rem] sm:h-[6.5rem] sm:max-w-[15.5rem]',
+    primary: 'h-[6.5rem] w-auto max-w-[15rem] sm:h-[7.25rem] sm:max-w-[17.25rem]',
     mark: 'h-16 w-16',
   },
 };

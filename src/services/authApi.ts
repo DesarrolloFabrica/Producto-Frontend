@@ -7,6 +7,7 @@ export type AuthUser = {
   email: string;
   role: Role;
   status: 'ACTIVE' | 'INACTIVE';
+  avatarUrl?: string | null;
 };
 
 export type LoginResponse = {
@@ -20,6 +21,12 @@ export const authApi = {
       email,
       password,
     }),
+
+  loginWithGoogle: async (credential: string) =>
+    await apiClient.post<LoginResponse>('/auth/google', { credential }),
+
+  loginWithEmailOnly: async (email: string) =>
+    await apiClient.post<LoginResponse>('/auth/dev/email', { email }),
 
   me: async () => await apiClient.get<AuthUser>('/auth/me'),
 };

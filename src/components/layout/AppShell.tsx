@@ -115,6 +115,7 @@ export function AppShell() {
               <div className="header-user-card hidden items-center gap-2.5 rounded-2xl px-3 py-1.5 lg:flex">
                 <UserAvatar
                   seed={user?.id ?? user?.email ?? role ?? 'guest'}
+                  src={user?.avatarUrl}
                   alt={user?.name ? `Avatar de ${user.name}` : 'Avatar de usuario'}
                   className="h-8 w-8 ring-2 ring-white/80 ring-offset-1 ring-offset-transparent"
                   imageSize={64}

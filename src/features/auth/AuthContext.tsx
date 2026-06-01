@@ -2,6 +2,7 @@ import { createContext, useContext, useEffect, useMemo, useState, type ReactNode
 import type { Role } from '../../types/domain';
 import type { AuthUser } from '../../services/authApi';
 import { authApi } from '../../services/authApi';
+import { extractGoogleAvatarUrl } from '../../utils/googleCredential';
 import { resetNotificationReadDedup } from '../notifications/notificationReadDedup';
 import { clearBootPending, markBootPending } from '../boot/appBootStorage';
 import { resetProjectsBootstrap } from '../operations/projectsBootstrapState';
@@ -18,21 +19,40 @@ interface AuthContextValue {
   isAuthenticated: boolean;
   isLoading: boolean;
   login: (email: string, password: string) => Promise<void>;
+  loginWithGoogle: (credential: string) => Promise<void>;
+  loginWithEmailOnly: (email: string) => Promise<void>;
   logout: () => void;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
+function readStoredUser(): AuthUser | null {
+  try {
+    const raw = localStorage.getItem(USER_KEY);
+    return raw ? (JSON.parse(raw) as AuthUser) : null;
+  } catch {
+    return null;
+  }
+}
+
+function mergeAvatarUrl(nextUser: AuthUser, previousUser: AuthUser | null): AuthUser {
+  if (nextUser.avatarUrl || !previousUser?.avatarUrl) {
+    return nextUser;
+  }
+
+  return { ...nextUser, avatarUrl: previousUser.avatarUrl };
+}
+
+function withGoogleAvatar(user: AuthUser, credential: string): AuthUser {
+  if (user.avatarUrl) return user;
+
+  const avatarUrl = extractGoogleAvatarUrl(credential);
+  return avatarUrl ? { ...user, avatarUrl } : user;
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [isLoading, setIsLoading] = useState(true);
-  const [user, setUser] = useState<AuthUser | null>(() => {
-    try {
-      const raw = localStorage.getItem(USER_KEY);
-      return raw ? (JSON.parse(raw) as AuthUser) : null;
-    } catch {
-      return null;
-    }
-  });
+  const [user, setUser] = useState<AuthUser | null>(() => readStoredUser());
 
   const role = user?.role ?? null;
 
@@ -81,9 +101,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       .me()
       .then((me) => {
         if (cancelled) return;
-        setUser(me);
+        const mergedUser = mergeAvatarUrl(me, readStoredUser());
+        setUser(mergedUser);
         try {
-          localStorage.setItem(USER_KEY, JSON.stringify(me));
+          localStorage.setItem(USER_KEY, JSON.stringify(mergedUser));
         } catch {
           // ignore
         }
@@ -102,6 +123,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
+  const persistSession = (accessToken: string, nextUser: AuthUser) => {
+    try {
+      localStorage.setItem(TOKEN_KEY, accessToken);
+      localStorage.setItem(USER_KEY, JSON.stringify(nextUser));
+      sessionStorage.removeItem(ENTRY_REDIRECT_KEY);
+      markBootPending();
+    } catch {
+      // ignore
+    }
+    setUser(nextUser);
+  };
+
   const value = useMemo<AuthContextValue>(() => ({
     user,
     role,
@@ -109,15 +142,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     isLoading,
     login: async (email: string, password: string) => {
       const { accessToken, user: nextUser } = await authApi.login(email, password);
-      try {
-        localStorage.setItem(TOKEN_KEY, accessToken);
-        localStorage.setItem(USER_KEY, JSON.stringify(nextUser));
-        sessionStorage.removeItem(ENTRY_REDIRECT_KEY);
-        markBootPending();
-      } catch {
-        // ignore
-      }
-      setUser(nextUser);
+      persistSession(accessToken, nextUser);
+    },
+    loginWithGoogle: async (credential: string) => {
+      const { accessToken, user: nextUser } = await authApi.loginWithGoogle(credential);
+      persistSession(accessToken, withGoogleAvatar(nextUser, credential));
+    },
+    loginWithEmailOnly: async (email: string) => {
+      const { accessToken, user: nextUser } = await authApi.loginWithEmailOnly(email);
+      persistSession(accessToken, nextUser);
     },
     logout,
   }), [user, role, isLoading]);

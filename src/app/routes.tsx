@@ -3,6 +3,7 @@ import { AppProviders } from './AppProviders';
 import { RouteLoadingScreen } from '../components/feedback/RouteLoadingScreen';
 import { AppShell } from '../components/layout/AppShell';
 import { AppBootGate, AppBootProvider } from '../features/boot/AppBootProvider';
+import { OperationsProvider } from '../features/operations/OperationsContext';
 import { AuditPage } from '../features/audit/AuditPage';
 import { useAuth } from '../features/auth/AuthContext';
 import { LoginPage } from '../features/auth/LoginPage';
@@ -36,11 +37,13 @@ function RequireAuth() {
   if (isLoading) return <RouteLoadingScreen message="Validando sesión..." />;
   if (!isAuthenticated) return <Navigate to="/login" replace state={{ from: location }} />;
   return (
-    <AppBootProvider>
-      <AppBootGate>
-        <AppShell />
-      </AppBootGate>
-    </AppBootProvider>
+    <OperationsProvider>
+      <AppBootProvider>
+        <AppBootGate>
+          <AppShell />
+        </AppBootGate>
+      </AppBootProvider>
+    </OperationsProvider>
   );
 }
 
