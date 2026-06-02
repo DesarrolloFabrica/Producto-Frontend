@@ -49,6 +49,7 @@ import {
 import { isProjectLate } from '../../utils/status';
 
 import { isPendingExternalSubjectMatterExpert } from '../../utils/projectSme';
+import { isReducedInstitutionalFlow } from '../../config/env';
 
 
 
@@ -63,6 +64,7 @@ export function ProductDashboardPage() {
     useOperations();
 
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const reducedFlow = isReducedInstitutionalFlow();
 
 
 
@@ -312,7 +314,11 @@ export function ProductDashboardPage() {
 
           title="Devoluciones"
 
-          description="Programas devueltos a Product desde Planeación."
+          description={
+            reducedFlow
+              ? 'Programas devueltos a Product para ajustar y reenviar a Fábrica.'
+              : 'Programas devueltos a Product desde Planeación.'
+          }
 
           count={trays.CORRECTION_SENT.length}
 
@@ -380,7 +386,10 @@ export function ProductDashboardPage() {
 
         <p className="text-[11px] font-medium text-slate-500">
 
-          {deliveredProjects} solicitud{deliveredProjects !== 1 ? 'es' : ''} ya entregada{deliveredProjects !== 1 ? 's' : ''} al LMS.
+          {deliveredProjects} solicitud{deliveredProjects !== 1 ? 'es' : ''}{' '}
+          {reducedFlow
+            ? `finalizada${deliveredProjects !== 1 ? 's' : ''}.`
+            : `ya entregada${deliveredProjects !== 1 ? 's' : ''} al LMS.`}
 
         </p>
 
@@ -395,4 +404,3 @@ export function ProductDashboardPage() {
   );
 
 }
-

@@ -1,4 +1,8 @@
-import type { ChecklistItem, SubjectStatus, SubjectVirtualization } from '../../types/domain';
+import type { ChecklistItem, OperationalObservation, SubjectStatus, SubjectVirtualization } from '../../types/domain';
+import {
+  filterObservationsForChecklistItem,
+  getEffectiveProductReviewStatus,
+} from '../observations/observationDeliverableHelpers';
 
 const SUBJECT_REVIEWABLE_STATUSES: SubjectStatus[] = ['IN_REVIEW', 'CHANGES_REQUESTED', 'SUBMITTED'];
 const SUBJECT_APPROVED_STATUSES: SubjectStatus[] = ['APPROVED', 'DELIVERED'];
@@ -44,9 +48,10 @@ export function getAcademicApprovalBlockers(params: {
   subject: Pick<SubjectVirtualization, 'checklist' | 'topicChecklists'>;
   unresolvedObservationCount?: number;
   topicsCount?: number;
+  observations?: OperationalObservation[];
 }): string[] {
   const blockers: string[] = [];
-  const { subject, unresolvedObservationCount = 0, topicsCount } = params;
+  const { subject, unresolvedObservationCount = 0, topicsCount, observations = [] } = params;
 
   const productItems = subject.checklist.filter((item) => item.ownerRole === 'PRODUCT');
   const topicItems = subject.topicChecklists.flatMap((topic) => topic.items ?? []);
@@ -56,7 +61,13 @@ export function getAcademicApprovalBlockers(params: {
     blockers.push('Debe definir los gránulos/temas antes de aprobar académicamente.');
   }
 
-  const pendingProduct = productItems.filter((item) => item.status !== 'APROBADO');
+  const pendingProduct = productItems.filter((item) => {
+    if (observations.length > 0) {
+      const itemObservations = filterObservationsForChecklistItem(observations, item.id);
+      return getEffectiveProductReviewStatus(item.status, itemObservations) !== 'aprobado';
+    }
+    return item.status !== 'APROBADO';
+  });
   if (pendingProduct.length > 0) {
     blockers.push(
       `Faltan ${pendingProduct.length} entregable(s) de Product por aprobar en el checklist general.`,
@@ -82,8 +93,6 @@ export function getAcademicApprovalBlockers(params: {
 export function isReadyForAcademicApproval(params: Parameters<typeof getAcademicApprovalBlockers>[0]): boolean {
   return getAcademicApprovalBlockers(params).length === 0;
 }
-
-/** Mensaje cuando la asignatura aún no está en revisión Product. */
 export function getSubjectNotReviewableMessage(status: SubjectStatus): string | null {
   if (isSubjectReviewableForBulkApprove(status)) return null;
 

@@ -1,7 +1,7 @@
 import { ClipboardCheck, Clock3 } from 'lucide-react';
 import type { InstitutionalOperationalState, Role } from '../../../types/domain';
 import { cn } from '../../../components/ui/tokens';
-import { institutionalStateLabel } from '../institutionalCopy';
+import { institutionalStateLabel, isSemesterAcademicallyComplete, isSemesterProductAcademicReviewPhase } from '../institutionalCopy';
 import { roleLabelV2 } from '../../operations-v2/rules/workflowRulesV2';
 import type { OperationalRoleV2 } from '../../../types/operationalWorkflow';
 
@@ -64,13 +64,16 @@ function turnActionHint(state: InstitutionalOperationalState, responsibleRole: R
         ? 'Revise la carga en LMS y valide o devuelva al equipo LMS.'
         : 'Planeación debe validar la carga en LMS.';
     case 'PENDING_PRODUCT_ACADEMIC_REVIEW':
+      return responsibleRole === 'PRODUCT'
+        ? 'Inicie la revisión académica del semestre desde Flujo operacional.'
+        : 'Producto debe iniciar la revisión académica del semestre.';
     case 'IN_PRODUCT_ACADEMIC_REVIEW':
       return responsibleRole === 'PRODUCT'
-        ? 'Revise el checklist académico y apruebe o solicite correcciones.'
-        : 'Producto debe completar la revisión académica.';
+        ? 'Revise cada asignatura: entregables, temas y aprobación académica.'
+        : 'Producto está completando la revisión académica del semestre.';
     case 'PENDING_PROJECT_RADICATION':
       return responsibleRole === 'PRODUCT'
-        ? 'Complete la radicación institucional del programa.'
+        ? 'Revisión académica completada. El cierre institucional se gestiona a nivel programa (radicación).'
         : 'Producto debe radicar el programa.';
     case 'FINALIZED':
       return 'Flujo institucional finalizado.';
@@ -95,11 +98,14 @@ export function OperationalTurnIndicator({
   const stateLabel = institutionalStateLabel(operationalState);
   const roleLabel = roleLabelV2(responsibleRole as OperationalRoleV2);
   const isFinalized = operationalState === 'FINALIZED';
-  const isYourTurn = Boolean(viewerRole && viewerRole === responsibleRole && !isFinalized);
+  const isAcademicallyComplete = isSemesterAcademicallyComplete(operationalState);
+  const isYourTurn = Boolean(
+    viewerRole && viewerRole === responsibleRole && !isFinalized && !isAcademicallyComplete,
+  );
   const hint = turnActionHint(operationalState, responsibleRole);
 
   if (variant === 'compact') {
-    if (isFinalized) {
+    if (isFinalized || isAcademicallyComplete) {
       return (
         <span
           className={cn(
@@ -107,7 +113,7 @@ export function OperationalTurnIndicator({
             className,
           )}
         >
-          Finalizado
+          {isFinalized ? 'Finalizado' : 'Revisión académica completada'}
         </span>
       );
     }
@@ -151,16 +157,41 @@ export function OperationalTurnIndicator({
   if (variant === 'inline') {
     return (
       <span className={cn('inline-flex flex-wrap items-center gap-2 text-xs', className)}>
-        {isYourTurn ? (
+        {isAcademicallyComplete ? (
+          <span className="font-semibold text-emerald-800">
+            {isFinalized ? 'Finalizado' : 'Revisión académica completada'}
+          </span>
+        ) : isYourTurn ? (
           <span className="font-semibold text-emerald-800">Acción pendiente de su equipo</span>
         ) : (
           <span className="text-slate-500">
             Responsable: <span className="font-semibold text-slate-700">{roleLabel}</span>
           </span>
         )}
-        <span className="text-slate-400">·</span>
-        <span className="text-slate-600">{stateLabel}</span>
+        {!isAcademicallyComplete ? (
+          <>
+            <span className="text-slate-400">·</span>
+            <span className="text-slate-600">{stateLabel}</span>
+          </>
+        ) : null}
       </span>
+    );
+  }
+
+  if (isAcademicallyComplete && !isFinalized) {
+    return (
+      <div
+        className={cn(
+          'rounded-xl border border-emerald-200/80 bg-emerald-50/60 px-4 py-3 text-sm text-emerald-900',
+          className,
+        )}
+      >
+        <p className="font-semibold">Revisión académica completada</p>
+        <p className="mt-1 text-xs text-emerald-800">
+          Todas las materias y observaciones de este semestre están cerradas. El radicado institucional se
+          gestiona desde el panel de cierre del programa.
+        </p>
+      </div>
     );
   }
 

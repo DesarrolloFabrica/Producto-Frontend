@@ -13,6 +13,7 @@ import { useMemo, useState } from 'react';
 import { ModificationBadge } from '../../components/project/ModificationBadge';
 import { useFactoryProgramsQuery } from '../queries/useFactoryProgramsQuery';
 import { toFactoryProgramOperationsNav } from '../factory-work/factoryProgramNavigation';
+import { isFactoryProgramFullyComplete } from '../factory-work/factoryProgramWork';
 import { formatProgramProgress } from '../institutional-workflow/institutionalCopy';
 import { ProgramActiveStageBadge } from '../operations-v2/components/ProgramActiveStageBadge';
 import type { SubjectOperationalState } from '../operations/subjectOperationalState';
@@ -51,7 +52,12 @@ export function FactoryProjectsList() {
 
   const allFactoryPrograms = factoryProgramsQuery.data?.items ?? [];
   const factoryPrograms = useMemo(() => {
-    if (activeFilter === 'all') return allFactoryPrograms;
+    if (activeFilter === 'all') {
+      return allFactoryPrograms.filter((program) => !isFactoryProgramFullyComplete(program));
+    }
+    if (activeFilter === 'completed') {
+      return allFactoryPrograms.filter((program) => isFactoryProgramFullyComplete(program));
+    }
     const status = FILTER_TO_STATUS[activeFilter];
     if (!status) return allFactoryPrograms;
     return allFactoryPrograms.filter((program) =>
@@ -90,9 +96,7 @@ export function FactoryProjectsList() {
         waiting: allFactoryPrograms.filter((p) =>
           p.semesters.some((s) => s.operationalState === 'IN_REVIEW'),
         ).length,
-        completed: allFactoryPrograms.filter((p) =>
-          p.semesters.every((s) => s.operationalState === 'APPROVED'),
-        ).length,
+        completed: allFactoryPrograms.filter((p) => isFactoryProgramFullyComplete(p)).length,
       }
     : {
         ready: factoryData.needsWork.filter((i) => i.project.status === 'READY_FOR_PRODUCTION').length,
@@ -173,10 +177,14 @@ export function FactoryProjectsList() {
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
             {factoryPrograms.map((program) => {
               const operationsNav = toFactoryProgramOperationsNav(program, location.pathname);
+              const isComplete = isFactoryProgramFullyComplete(program);
               return (
               <div
                 key={program.projectId}
-                className="rounded-[20px] bg-white p-5 shadow-[0_4px_20px_-5px_rgba(0,0,0,0.05)] transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_12px_30px_-10px_rgba(0,0,0,0.1)]"
+                className={cn(
+                  'rounded-[20px] bg-white p-5 shadow-[0_4px_20px_-5px_rgba(0,0,0,0.05)] transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_12px_30px_-10px_rgba(0,0,0,0.1)]',
+                  isComplete && 'ring-1 ring-emerald-100',
+                )}
               >
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0 flex-1">

@@ -35,7 +35,11 @@ async function parseJsonSafe(res: Response): Promise<unknown> {
   }
 }
 
-async function request<T>(method: 'GET' | 'POST' | 'PATCH', path: string, body?: unknown): Promise<T> {
+async function request<T>(
+  method: 'GET' | 'POST' | 'PATCH' | 'DELETE',
+  path: string,
+  body?: unknown,
+): Promise<T> {
   const headers: Record<string, string> = {
     Accept: 'application/json',
   };
@@ -92,4 +96,5 @@ export const apiClient = {
   get: <T>(path: string) => request<T>('GET', path),
   post: <T>(path: string, body: unknown) => request<T>('POST', path, body),
   patch: <T>(path: string, body: unknown) => request<T>('PATCH', path, body),
+  delete: <T>(path: string) => request<T>('DELETE', path),
 };

@@ -2,6 +2,7 @@ import { CheckCircle2, CornerDownLeft, Dot } from 'lucide-react';
 import type { OperationalStateV2 } from '../../../types/operationalWorkflow';
 import { cn } from '../../../components/ui/tokens';
 import { pipelineContainer, pipelineHeaderEyebrow, pipelineHeaderTitle } from '../../institutional-workflow/components/pipelineStyles';
+import { isReducedInstitutionalFlow } from '../../../config/env';
 
 type StepId =
   | 'PRODUCT_CREATE'
@@ -24,7 +25,32 @@ const STEPS: Array<{ id: StepId; label: string }> = [
   { id: 'FINALIZED', label: 'Finalizado' },
 ];
 
-function currentStep(state: OperationalStateV2): StepId {
+const REDUCED_STEPS: Array<{ id: StepId; label: string }> = [
+  { id: 'PRODUCT_CREATE', label: 'Solicitud' },
+  { id: 'FACTORY', label: 'Producción Fábrica' },
+  { id: 'PRODUCT_REVIEW', label: 'Radicación Product' },
+  { id: 'FINALIZED', label: 'Finalizado' },
+];
+
+function currentStep(state: OperationalStateV2, reduced = isReducedInstitutionalFlow()): StepId {
+  if (reduced) {
+    switch (state) {
+      case 'PENDING_FACTORY':
+      case 'IN_FACTORY_PRODUCTION':
+      case 'RETURNED_TO_FACTORY_FROM_PLANNING':
+      case 'CHANGES_REQUESTED_BY_PRODUCT':
+        return 'FACTORY';
+      case 'PENDING_PRODUCT_ACADEMIC_REVIEW':
+      case 'IN_PRODUCT_ACADEMIC_REVIEW':
+      case 'PENDING_PROJECT_RADICATION':
+        return 'PRODUCT_REVIEW';
+      case 'FINALIZED':
+        return 'FINALIZED';
+      default:
+        return 'PRODUCT_CREATE';
+    }
+  }
+
   switch (state) {
     case 'PENDING_PLANNING_INITIAL_VALIDATION':
     case 'RETURNED_TO_PRODUCT_FROM_PLANNING':
@@ -61,8 +87,10 @@ function isReturnedState(state: OperationalStateV2): boolean {
 }
 
 export function OperationalPipelineV2({ state }: { state: OperationalStateV2 }) {
-  const cur = currentStep(state);
-  const curIndex = STEPS.findIndex((s) => s.id === cur);
+  const reduced = isReducedInstitutionalFlow();
+  const steps = reduced ? REDUCED_STEPS : STEPS;
+  const cur = currentStep(state, reduced);
+  const curIndex = steps.findIndex((s) => s.id === cur);
   const returned = isReturnedState(state);
 
   return (
@@ -71,7 +99,7 @@ export function OperationalPipelineV2({ state }: { state: OperationalStateV2 }) 
       <p className={pipelineHeaderTitle}>Etapa actual resaltada. Devoluciones marcadas.</p>
 
       <div className="mt-3 flex items-center gap-2 overflow-x-auto pb-1">
-        {STEPS.map((step, idx) => {
+        {steps.map((step, idx) => {
           const done = idx < curIndex || (cur === 'FINALIZED' && idx === curIndex);
           const active = idx === curIndex;
           const muted = idx > curIndex;
@@ -100,7 +128,7 @@ export function OperationalPipelineV2({ state }: { state: OperationalStateV2 }) 
                 </div>
               </div>
 
-              {idx < STEPS.length - 1 ? (
+              {idx < steps.length - 1 ? (
                 <div className={cn('h-px w-6', idx < curIndex ? 'bg-emerald-200' : 'bg-slate-200')} />
               ) : null}
             </div>
@@ -110,4 +138,3 @@ export function OperationalPipelineV2({ state }: { state: OperationalStateV2 }) 
     </div>
   );
 }
-

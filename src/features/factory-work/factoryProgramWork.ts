@@ -152,6 +152,13 @@ function programHasSemesterState(
   return program.semesters.some((s) => s.operationalState === state);
 }
 
+export function isFactoryProgramFullyComplete(program: ApiFactoryProgramWorkItem): boolean {
+  return (
+    program.totalSemesters > 0 &&
+    program.semesters.every((s) => s.operationalState === 'APPROVED')
+  );
+}
+
 export function matchesFactoryProgramTrayFilter(
   program: ApiFactoryProgramWorkItem,
   filter: FactoryProgramTrayFilter,
@@ -168,11 +175,7 @@ export function matchesFactoryProgramTrayFilter(
     case 'CORRECTION_SENT':
       return programHasSemesterState(program, 'CORRECTION_SENT');
     case 'APPROVED':
-      return (
-        program.totalSemesters > 0 &&
-        program.completedSemesters >= program.totalSemesters &&
-        program.semesters.every((s) => s.operationalState === 'APPROVED')
-      );
+      return isFactoryProgramFullyComplete(program);
     case 'OVERDUE': {
       const sla = computeFactoryProgramSla(program);
       return sla === 'OVERDUE' || sla === 'AT_RISK';

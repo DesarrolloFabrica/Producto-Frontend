@@ -52,7 +52,7 @@ export interface CreateProjectFormInput {
   school: string;
   program: string;
   modality: string;
-  subjectMatterExpertType: 'INTERNAL' | 'EXTERNAL';
+  expectedDeliveryDate: string;
   priority: Priority;
   requestType?: string;
   observations?: string;
@@ -441,7 +441,7 @@ export function mapCreateProjectToApi(input: CreateProjectFormInput): ApiCreateP
     school: input.school.trim(),
     program: input.program.trim(),
     modality: mapModalityToApi(input.modality),
-    subjectMatterExpertType: input.subjectMatterExpertType,
+    expectedDeliveryDate: toIsoDateTime(input.expectedDeliveryDate.trim()),
     requestType: input.requestType?.trim() || 'Virtualizacion completa',
     priority: mapPriorityToApi(input.priority),
     semesters: input.semesters.map((semester) => ({
@@ -588,12 +588,37 @@ export function mapAuditLogsFromApi(api: ApiAuditLog[]): AuditLog[] {
   return api.map(mapAuditLogFromApi);
 }
 
+const BACKEND_MESSAGE_TRANSLATIONS: Record<string, string> = {
+  'Project not found': 'Solicitud no encontrada',
+  'Project owner not found': 'No se encontró el responsable de la solicitud',
+};
+
+function translateBackendMessage(message: string): string {
+  return BACKEND_MESSAGE_TRANSLATIONS[message] ?? message;
+}
+
+export function isProjectNotFoundError(message: string | null | undefined): boolean {
+  if (!message) return false;
+  const normalized = message.toLowerCase();
+  return (
+    normalized.includes('project not found') ||
+    normalized.includes('solicitud no encontrada') ||
+    normalized.includes('proyecto no encontrado')
+  );
+}
+
 export function getApiErrorMessage(error: unknown): string {
   if (error && typeof error === 'object' && 'message' in error) {
     const message = (error as { message: unknown }).message;
-    if (Array.isArray(message)) return message.join('. ');
-    if (typeof message === 'string' && message.trim()) return message;
+    if (Array.isArray(message)) {
+      return message.map((item) => translateBackendMessage(String(item))).join('. ');
+    }
+    if (typeof message === 'string' && message.trim()) {
+      return translateBackendMessage(message);
+    }
   }
-  if (error instanceof Error && error.message) return error.message;
+  if (error instanceof Error && error.message) {
+    return translateBackendMessage(error.message);
+  }
   return 'No se pudo completar la operación.';
 }

@@ -1,9 +1,9 @@
-import { useEffect } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { ContextBackLink } from '../../navigation/ContextBackLink';
 import { ContextLink } from '../../navigation/ContextLink';
 import { InstitutionalBreadcrumb } from '../../components/navigation/InstitutionalBreadcrumb';
-import { ArrowLeft, BookOpen, CalendarDays, CheckCircle2, GitBranch, MessageSquare, Package } from 'lucide-react';
+import { ArrowLeft, BookOpen, CalendarDays, CheckCircle2, GitBranch, Package } from 'lucide-react';
 import { Card } from '../../components/ui/Card';
 import { PageHeader } from '../../components/ui/PageHeader';
 import { ProgressBar } from '../../components/ui/ProgressBar';
@@ -24,12 +24,33 @@ import {
   productSubjectTopicsPath,
   subjectFactoryCorrectionsPath,
 } from '../institutional-workflow/institutionalNavigation';
-import { isSemesterProductAcademicReviewPhase } from '../institutional-workflow/institutionalCopy';
+import {
+  isSemesterFactoryProductionActive,
+  isSemesterFactoryStartPending,
+  isSemesterProductAcademicReviewPhase,
+} from '../institutional-workflow/institutionalCopy';
 import { SemesterOperationsWorkspace } from '../institutional-workflow/SemesterOperationsWorkspace';
+import { RequestProductOwnerMeta } from '../institutional-workflow/components/RequestProductOwnerMeta';
+import { FactorySemesterDeliveryBanner } from '../institutional-workflow/components/FactorySemesterDeliveryBanner';
+import {
+  FactoryObservationsMetricHighlight,
+  FactoryObservationsSemesterAlert,
+  FactorySubjectObservationBadge,
+  type FactoryObservationSubjectRef,
+} from '../institutional-workflow/components/FactoryObservationsGuidance';
+import { factorySubjectHasOpenObservations } from '../institutional-workflow/institutionalNavigation';
+import {
+  countFactoryReadySubjects,
+  resolveFactorySemesterDeliveryGuidance,
+} from '../institutional-workflow/factorySemesterDeliveryGuidance';
 import { useSemesterOperationalWorkspaceQuery } from '../queries/useSemesterOperationalWorkspaceQuery';
 import {
   countFactoryVisibleOpenObservations,
+  countProductVisibleOpenObservations,
+  countSubjectFactoryOpenObservations,
+  countSubjectProductOpenObservations,
   filterObservationsVisibleToFactory,
+  getEffectiveProductChecklistCounts,
 } from '../observations/observationDeliverableHelpers';
 import {
   getOperationalCta,
@@ -48,9 +69,11 @@ import {
 function SemesterHubTabs({
   activeTab,
   onChange,
+  openObservationsCount = 0,
 }: {
   activeTab: SemesterHubTab;
   onChange: (tab: SemesterHubTab) => void;
+  openObservationsCount?: number;
 }) {
   const tabs: { id: SemesterHubTab; label: string; icon: typeof BookOpen }[] = [
     { id: 'asignaturas', label: 'Asignaturas', icon: BookOpen },
@@ -58,7 +81,7 @@ function SemesterHubTabs({
   ];
 
   return (
-    <div className="header-nav-track inline-flex gap-0.5 rounded-2xl p-1">
+    <div className="header-nav-track flex w-fit max-w-full gap-0.5 rounded-2xl p-1">
       {tabs.map(({ id, label, icon: Icon }) => (
         <button
           key={id}
@@ -73,6 +96,11 @@ function SemesterHubTabs({
         >
           <Icon className="h-3.5 w-3.5" />
           {label}
+          {id === 'asignaturas' && openObservationsCount > 0 ? (
+            <span className="inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-amber-100 px-1 text-[9px] font-bold text-amber-800">
+              {openObservationsCount}
+            </span>
+          ) : null}
         </button>
       ))}
     </div>
@@ -89,14 +117,20 @@ export function ProjectSemesterSubjectsPage() {
   const reviewJustStarted = Boolean(
     (location.state as { reviewStarted?: boolean } | null)?.reviewStarted,
   );
+  const focusObservationsFromNav = Boolean(
+    (location.state as { focusObservations?: boolean } | null)?.focusObservations,
+  );
+  const subjectCardRefs = useRef<Record<string, HTMLDivElement | null>>({});
+  const [pendingScrollSubjectId, setPendingScrollSubjectId] = useState<string | null>(null);
   const { project, isLoading, error, notFound } = useEnsureProjectDetail(projectId);
   useDismissNotificationsOnVisit({ projectId: project?.id });
   const semesterNum = parseInt(semesterNumber ?? '0', 10);
   const preliminarySemester = project?.semesters.find((s) => s.semesterNumber === semesterNum);
-  const semesterWorkspaceQuery = useSemesterOperationalWorkspaceQuery(
-    preliminarySemester?.id,
-    Boolean(role === 'PRODUCT' && preliminarySemester?.id && backendEnabled),
-  );
+  const semesterWorkspaceSemesterId =
+    (role === 'PRODUCT' || role === 'FABRICA') && backendEnabled
+      ? preliminarySemester?.id
+      : undefined;
+  const semesterWorkspaceQuery = useSemesterOperationalWorkspaceQuery(semesterWorkspaceSemesterId);
   const semesterWorkspace = semesterWorkspaceQuery.data;
   const activeTab: SemesterHubTab =
     searchParams.get('tab') === 'operaciones' ? 'operaciones' : 'asignaturas';
@@ -109,13 +143,47 @@ export function ProjectSemesterSubjectsPage() {
     }
   };
 
-  const handleGoToSubjectsTab = (options?: { reviewStarted?: boolean }) => {
+  const handleGoToSubjectsTab = (options?: { reviewStarted?: boolean; focusObservations?: boolean }) => {
     if (!projectId) return;
-    navigate(`/projects/${projectId}/semesters/${semesterNum}`, {
-      replace: true,
-      state: options?.reviewStarted ? { reviewStarted: true } : location.state,
-    });
+    setTab('asignaturas');
+    if (options?.reviewStarted || options?.focusObservations) {
+      navigate(`/projects/${projectId}/semesters/${semesterNum}`, {
+        replace: true,
+        state: {
+          reviewStarted: options.reviewStarted ?? false,
+          focusObservations: options.focusObservations ?? false,
+        },
+      });
+    }
+    if (options?.focusObservations) {
+      const firstSubjectId =
+        semesterWorkspace?.subjects.find(factorySubjectHasOpenObservations)?.subjectId ?? null;
+      if (firstSubjectId) {
+        setPendingScrollSubjectId(firstSubjectId);
+      }
+    }
   };
+
+  useEffect(() => {
+    if (!pendingScrollSubjectId || activeTab !== 'asignaturas') return;
+    const timeoutId = window.setTimeout(() => {
+      subjectCardRefs.current[pendingScrollSubjectId]?.scrollIntoView({
+        behavior: 'smooth',
+        block: 'center',
+      });
+      setPendingScrollSubjectId(null);
+    }, 320);
+    return () => window.clearTimeout(timeoutId);
+  }, [pendingScrollSubjectId, activeTab]);
+
+  useEffect(() => {
+    if (!focusObservationsFromNav || activeTab !== 'asignaturas') return;
+    const firstSubjectId =
+      semesterWorkspace?.subjects.find(factorySubjectHasOpenObservations)?.subjectId ?? null;
+    if (firstSubjectId) {
+      setPendingScrollSubjectId(firstSubjectId);
+    }
+  }, [focusObservationsFromNav, activeTab, semesterWorkspace?.subjects]);
 
   useEffect(() => {
     if (!projectId || !backendEnabled || role !== 'FABRICA') return;
@@ -170,6 +238,27 @@ export function ProjectSemesterSubjectsPage() {
   );
   const academicReviewPendingStart =
     semesterWorkspace?.operationalState === 'PENDING_PRODUCT_ACADEMIC_REVIEW';
+  const institutionalFactoryFlow = Boolean(
+    showFactoryHub && backendEnabled && semesterWorkspace?.institutionalFlowActive,
+  );
+  const semesterFactoryStartPending = institutionalFactoryFlow &&
+    isSemesterFactoryStartPending(semesterWorkspace?.operationalState);
+  const semesterFactoryProductionActive = institutionalFactoryFlow &&
+    isSemesterFactoryProductionActive(semesterWorkspace?.operationalState);
+  const semesterSubjectCounts = countFactoryReadySubjects(
+    subjects,
+    semesterNum,
+    isSubjectFactoryProductionComplete,
+  );
+  const deliveryGuidance = resolveFactorySemesterDeliveryGuidance({
+    institutionalFlowActive: institutionalFactoryFlow,
+    semesterOperationalState: semesterWorkspace?.operationalState,
+    subjectsReady: semesterWorkspace?.metrics.subjectsReady ?? semesterSubjectCounts.ready,
+    subjectsTotal: semesterWorkspace?.metrics.subjectsTotal ?? semesterSubjectCounts.total,
+    deliverReady: semesterWorkspace?.readiness?.ready ?? false,
+    projectId: project?.id ?? '',
+    semesterNumber: semesterNum,
+  });
 
   const semesterProgress =
     subjects.length > 0
@@ -184,15 +273,55 @@ export function ProjectSemesterSubjectsPage() {
           ) / subjects.length,
         )
       : 0;
+  const semesterScopedProductObservations = projectObservations.filter(
+    (o) => o.projectId === project.id && subjects.some((s) => s.id === o.subjectId),
+  );
   const openObservations = showFactoryHub
-    ? countFactoryVisibleOpenObservations(
-        projectObservations.filter(
-          (o) => o.projectId === project.id && subjects.some((s) => s.id === o.subjectId),
-        ),
-      )
-    : projectObservations.filter(
-        (o) => o.projectId === project.id && o.status === 'ABIERTA' && subjects.some((s) => s.id === o.subjectId),
-      ).length;
+    ? countFactoryVisibleOpenObservations(semesterScopedProductObservations)
+    : countProductVisibleOpenObservations(semesterScopedProductObservations);
+
+  const semesterScopedObservations = filterObservationsVisibleToFactory(semesterScopedProductObservations);
+
+  const subjectsWithOpenObservations: FactoryObservationSubjectRef[] = showFactoryHub
+    ? semesterWorkspace?.subjects?.length
+      ? semesterWorkspace.subjects
+          .filter(factorySubjectHasOpenObservations)
+          .map((subject) => ({
+            subjectId: subject.subjectId,
+            subjectName: subject.subjectName,
+            count: subject.openObservationsCount ?? 1,
+          }))
+      : subjects
+          .map((subject) => ({
+            subjectId: subject.id,
+            subjectName: subject.name,
+            count: countSubjectFactoryOpenObservations(semesterScopedObservations, subject.id),
+          }))
+          .filter((subject) => subject.count > 0)
+    : subjects
+        .map((subject) => ({
+          subjectId: subject.id,
+          subjectName: subject.name,
+          count: Math.max(
+            countSubjectProductOpenObservations(semesterScopedProductObservations, subject.id),
+            semesterWorkspace?.subjects.find((item) => item.subjectId === subject.id)
+              ?.openObservationsCount ?? 0,
+          ),
+        }))
+        .filter((subject) => subject.count > 0);
+
+  const sortedSubjects =
+    subjectsWithOpenObservations.length > 0
+      ? [...subjects].sort((a, b) => {
+          const priority = new Map(
+            subjectsWithOpenObservations.map((item) => [item.subjectId, item.count]),
+          );
+          const aCount = priority.get(a.id) ?? 0;
+          const bCount = priority.get(b.id) ?? 0;
+          if (aCount !== bCount) return bCount - aCount;
+          return a.name.localeCompare(b.name, 'es');
+        })
+      : subjects;
 
   const showHubTabs = showProductHub || showFactoryHub;
 
@@ -240,7 +369,21 @@ export function ProjectSemesterSubjectsPage() {
         }
       />
 
-      {showHubTabs ? <SemesterHubTabs activeTab={activeTab} onChange={setTab} /> : null}
+      {role === 'FABRICA' ? (
+        <div className="-mt-4">
+          <RequestProductOwnerMeta name={project.productOwner} />
+        </div>
+      ) : null}
+
+      {showHubTabs ? (
+        <div className="w-full">
+          <SemesterHubTabs
+            activeTab={activeTab}
+            onChange={setTab}
+            openObservationsCount={showFactoryHub ? openObservations : 0}
+          />
+        </div>
+      ) : null}
 
       <Card variant="subjectPanel" className="overflow-hidden p-0">
         <div className="p-5 sm:p-6">
@@ -253,7 +396,11 @@ export function ProjectSemesterSubjectsPage() {
                 {semester ? formatDate(semester.factoryExpectedDate) : formatDate(project.expectedDeliveryDate)}
               </Info>
               <Info label="Asignaturas">{subjects.length}</Info>
-              <Info label="Observaciones abiertas">{openObservations}</Info>
+              {showFactoryHub ? (
+                <FactoryObservationsMetricHighlight count={openObservations} embedded />
+              ) : (
+                <Info label="Observaciones abiertas">{openObservations}</Info>
+              )}
             </div>
             <div className="flex min-w-[220px] flex-col gap-3">
               <div className="relative h-2.5 overflow-hidden rounded-[10px] bg-[#E2E8F0]">
@@ -273,6 +420,8 @@ export function ProjectSemesterSubjectsPage() {
           semesterId={semester.id}
           showSubjectsTable={false}
           onGoToSubjectsTab={handleGoToSubjectsTab}
+          showTopStatus={role !== 'FABRICA'}
+          requestOwnerName={project.productOwner}
         />
       ) : (
         <>
@@ -307,9 +456,9 @@ export function ProjectSemesterSubjectsPage() {
                   </p>
                   <p className="mt-1 text-xs font-medium leading-relaxed text-slate-600">
                     {inAcademicReviewPhase || reviewJustStarted
-                      ? 'Valide entregables, defina temas y apruebe cada asignatura. Use «Validar entregables» para abrir el checklist directamente.'
+                      ? 'Elija cada asignatura para validar entregables, definir temas y aprobar o solicitar correcciones.'
                       : academicReviewPendingStart
-                        ? 'Inicie la revisión desde la pestaña Flujo operacional y luego valide el checklist de cada asignatura.'
+                        ? 'Inicie la revisión desde la pestaña Flujo operacional con el botón «Iniciar revisión». Luego trabaje cada asignatura desde esta vista.'
                         : 'Revise las asignaturas de este semestre. Para consultar el pipeline institucional, use la pestaña Flujo operacional.'}
                   </p>
                   {academicReviewPendingStart ? (
@@ -327,20 +476,53 @@ export function ProjectSemesterSubjectsPage() {
             </Card>
           )}
 
-          {showFactoryHub && (
+          {showFactoryHub && !openObservations && (
             <Card variant="subjectPanel" className="p-4 sm:p-5">
               <div className="flex min-w-0 items-start gap-3">
                 <Package className="mt-0.5 h-5 w-5 shrink-0 text-orange-500" />
                 <div>
                   <p className="text-sm font-bold text-slate-900">Producción por asignatura</p>
                   <p className="text-xs font-medium text-slate-600">
-                    Gestiona cada materia desde su detalle: inicia producción, aplica correcciones o marca como
-                    completada. Para consultar el pipeline institucional, usa la pestaña Flujo operacional.
+                    {semesterFactoryStartPending
+                      ? 'Inicie la producción del semestre desde la pestaña Flujo operacional. Luego entre a cada materia para marcar la producción interna como completa.'
+                      : deliveryGuidance?.variant === 'ready_to_deliver'
+                        ? 'Todas las asignaturas están completas. Confirme la entrega del paquete semestral en Flujo operacional para avanzar a Planeación.'
+                        : semesterFactoryProductionActive
+                          ? 'Marque la producción interna de cada asignatura. Cuando todas estén al 100%, confirme la entrega del semestre en Flujo operacional.'
+                          : 'Gestiona cada materia desde su detalle: aplica correcciones o marca la producción interna como completa. El inicio del paquete semestral se realiza en Flujo operacional.'}
                   </p>
+                  {semesterFactoryStartPending ? (
+                    <button
+                      type="button"
+                      onClick={() => setTab('operaciones')}
+                      className="mt-3 inline-flex items-center gap-1.5 rounded-xl border border-orange-200 bg-white px-3 py-2 text-xs font-semibold text-orange-800 hover:bg-orange-50"
+                    >
+                      <GitBranch className="h-3.5 w-3.5" />
+                      Ir a iniciar producción
+                    </button>
+                  ) : null}
                 </div>
               </div>
             </Card>
           )}
+
+          {showFactoryHub && deliveryGuidance ? (
+            <FactorySemesterDeliveryBanner
+              guidance={deliveryGuidance}
+              onPrimaryAction={
+                deliveryGuidance.variant === 'ready_to_deliver'
+                  ? () => setTab('operaciones')
+                  : undefined
+              }
+            />
+          ) : null}
+
+          {showFactoryHub && activeTab === 'asignaturas' && openObservations > 0 ? (
+            <FactoryObservationsSemesterAlert
+              totalCount={openObservations}
+              subjects={subjectsWithOpenObservations}
+            />
+          ) : null}
 
           {subjects.length === 0 ? (
             <Card variant="subjectPanel" className="p-8 text-center">
@@ -354,37 +536,57 @@ export function ProjectSemesterSubjectsPage() {
             </Card>
           ) : (
             <div className="grid gap-4 md:grid-cols-2">
-              {subjects.map((subject) => {
+              {sortedSubjects.map((subject) => {
+                const workspaceSubject = semesterWorkspace?.subjects.find((item) => item.subjectId === subject.id);
+                const factoryVisibleObservations = showFactoryHub
+                  ? filterObservationsVisibleToFactory(projectObservations)
+                  : projectObservations;
                 const productChecklistItems = subject.checklist.filter((item) => item.ownerRole === 'PRODUCT');
-                const subjectChecklist = productChecklistItems.length;
-                const approvedChecklist = productChecklistItems.filter((item) => item.status === 'APROBADO').length;
+                const subjectProductObservations = getProductObservationsForSubject(
+                  project,
+                  subject.id,
+                  showFactoryHub ? factoryVisibleObservations : semesterScopedProductObservations,
+                );
+                const checklistCounts = getEffectiveProductChecklistCounts(
+                  productChecklistItems,
+                  subjectProductObservations,
+                );
+                const subjectChecklist = checklistCounts.total;
+                const approvedChecklist = checklistCounts.approved;
                 const subjectProgress = showFactoryHub
                   ? resolveFactorySubjectDisplayProgress(subject)
                   : subject.progress ?? 0;
                 const factoryProductionComplete = showFactoryHub && isSubjectFactoryProductionComplete(subject);
-                const factoryVisibleObservations = showFactoryHub
-                  ? filterObservationsVisibleToFactory(projectObservations)
-                  : projectObservations;
-                const subjectObservations = factoryVisibleObservations.filter(
-                  (o) => o.subjectId === subject.id && o.status === 'ABIERTA',
-                ).length;
+                const subjectOpenObservations = showFactoryHub
+                  ? workspaceSubject && factorySubjectHasOpenObservations(workspaceSubject)
+                    ? workspaceSubject.openObservationsCount ?? countSubjectFactoryOpenObservations(factoryVisibleObservations, subject.id)
+                    : countSubjectFactoryOpenObservations(factoryVisibleObservations, subject.id)
+                  : Math.max(
+                      countSubjectProductOpenObservations(semesterScopedProductObservations, subject.id),
+                      workspaceSubject?.openObservationsCount ?? 0,
+                    );
+                const hasOpenObservations = subjectOpenObservations > 0;
                 const topicCount = subject.contentTopics?.length ?? 0;
-                const productObs = getProductObservationsForSubject(
-                  project,
-                  subject.id,
-                  factoryVisibleObservations,
-                );
+                const productObs = subjectProductObservations;
                 const operationalState = normalizeSubjectOperationalState({
                   subject,
                   observations: productObs,
                   projectStatus: project.status,
                   forFactoryView: showFactoryHub,
                 });
-                const cta = factoryProductionComplete
-                  ? { label: 'Producción completa', passive: true }
-                  : getOperationalCta(operationalState);
+                const cta = hasOpenObservations
+                  ? { label: 'Ver corrección', passive: false }
+                  : factoryProductionComplete
+                    ? { label: 'Ver asignatura', passive: true }
+                    : semesterFactoryStartPending
+                      ? { label: 'Ver asignatura', passive: false }
+                      : semesterFactoryProductionActive
+                        ? operationalState === 'NOT_STARTED'
+                          ? { label: 'Continuar producción' }
+                          : getOperationalCta(operationalState)
+                        : getOperationalCta(operationalState);
                 const subjectPath =
-                  operationalState === 'CHANGES_REQUESTED' || subjectObservations > 0
+                  hasOpenObservations || operationalState === 'CHANGES_REQUESTED'
                     ? subjectFactoryCorrectionsPath(subject.id)
                     : inAcademicReviewPhase || reviewJustStarted
                       ? topicCount === 0
@@ -402,12 +604,19 @@ export function ProjectSemesterSubjectsPage() {
                       : 'Validar entregables';
 
                 return (
-                  <Card
+                  <div
                     key={subject.id}
+                    id={`factory-subject-${subject.id}`}
+                    ref={(node) => {
+                      subjectCardRefs.current[subject.id] = node;
+                    }}
+                  >
+                  <Card
                     variant="subjectPanel"
                     className={cn(
                       'relative overflow-hidden p-5 pl-6 transition-all hover:shadow-md',
-                      factoryProductionComplete && 'ring-1 ring-emerald-100',
+                      hasOpenObservations && 'border-l-[3px] border-l-amber-400 pl-[calc(1.5rem-3px)]',
+                      factoryProductionComplete && !hasOpenObservations && 'ring-1 ring-emerald-100/80',
                     )}
                   >
                     <ChangeOriginCardAccent isNew={Boolean(subject.createdFromChange)} />
@@ -419,6 +628,9 @@ export function ProjectSemesterSubjectsPage() {
                         <div className="mt-1 flex flex-wrap items-center gap-2">
                           <h3 className="text-base font-bold tracking-tight text-slate-950">{subject.name}</h3>
                           {subject.createdFromChange && <ChangeOriginBadge kind="subject" />}
+                          {showFactoryHub ? (
+                            <FactorySubjectObservationBadge count={subjectOpenObservations} />
+                          ) : null}
                         </div>
                         {subject.createdFromChange && <ChangeOriginHint kind="subject" />}
                       </div>
@@ -472,22 +684,16 @@ export function ProjectSemesterSubjectsPage() {
                         Entrega:{' '}
                         {formatDate(resolveSubjectExpectedDeliveryDate(project, subject))}
                       </span>
-                      {subjectObservations > 0 && (
-                        <span className="inline-flex items-center gap-1.5">
-                          <MessageSquare className="h-3.5 w-3.5 text-amber-500" />
-                          {subjectObservations} observaciones
-                        </span>
-                      )}
                     </div>
 
                     <div className="mt-5">
                       <ContextLink
-                        to={showFactoryHub ? subjectPath : subjectPath}
+                        to={subjectPath}
                         className={cn(
-                          'flex w-full items-center justify-center gap-1.5 rounded-2xl px-4 py-2.5 text-xs font-black shadow-lg transition-all',
-                          factoryProductionComplete
-                            ? 'border border-emerald-200 bg-emerald-50 text-emerald-800 shadow-none hover:bg-emerald-100'
-                            : 'bg-linear-to-br from-orange-400 to-orange-600 text-white shadow-orange-500/30 hover:from-orange-500 hover:to-orange-700',
+                          'flex w-full items-center justify-center gap-1.5 rounded-xl px-4 py-2 text-xs font-semibold transition-all',
+                          cta.passive
+                            ? 'border border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50'
+                            : 'bg-linear-to-br from-orange-400 to-orange-600 text-white shadow-sm shadow-orange-500/20 hover:from-orange-500 hover:to-orange-700',
                         )}
                       >
                         {showFactoryHub
@@ -498,6 +704,7 @@ export function ProjectSemesterSubjectsPage() {
                       </ContextLink>
                     </div>
                   </Card>
+                  </div>
                 );
               })}
             </div>

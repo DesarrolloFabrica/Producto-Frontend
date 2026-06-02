@@ -1,3 +1,4 @@
+import { OFFICIAL_SCHOOL_NAMES } from '../constants/officialSchools';
 import type { ActivityEvent, AuditLog, ChecklistItem, ChecklistStatus, Notification, OperationalObservation, PipelineStageSummary, SubjectVirtualization, TopicChecklist, VirtualizationProject } from '../types/domain';
 
 const checklistLabels = [
@@ -74,7 +75,7 @@ const subjectsFor = (projectId: string, semester: number, names: string[]): Subj
 export const projects: VirtualizationProject[] = [
   {
     id: 'vp-001',
-    school: 'Escuela de Ingenierias',
+    school: OFFICIAL_SCHOOL_NAMES[4],
     program: 'Ingenieria de Sistemas',
     modality: 'Virtual',
     requestType: 'Virtualizacion completa',
@@ -106,7 +107,7 @@ export const projects: VirtualizationProject[] = [
   },
   {
     id: 'vp-002',
-    school: 'Escuela de Ciencias Administrativas',
+    school: OFFICIAL_SCHOOL_NAMES[5],
     program: 'Administracion de Empresas',
     modality: 'Distancia',
     requestType: 'Actualizacion curricular',
@@ -135,7 +136,7 @@ export const projects: VirtualizationProject[] = [
   },
   {
     id: 'vp-003',
-    school: 'Escuela de Comunicacion y Bellas Artes',
+    school: OFFICIAL_SCHOOL_NAMES[0],
     program: 'Diseno Grafico',
     modality: 'Virtual',
     requestType: 'Nueva oferta virtual',

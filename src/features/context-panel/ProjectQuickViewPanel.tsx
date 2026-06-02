@@ -20,6 +20,7 @@ import { analyzeProductProject } from '../operations/productDashboardState';
 import {
   formatProgramProgress,
   institutionalStateLabel,
+  isSemesterAcademicallyComplete,
   isSemesterProductAcademicReviewPhase,
 } from '../institutional-workflow/institutionalCopy';
 import {
@@ -71,6 +72,17 @@ function resolveOperationalActionCopy(params: {
     return {
       title: 'Revisión académica pendiente',
       detail: `${params.academicReviewPending} semestre(s) requieren validación de checklist, temas y cierre de asignaturas (Fase 7).`,
+    };
+  }
+
+  if (
+    params.operationalState &&
+    isSemesterAcademicallyComplete(params.operationalState) &&
+    params.viewerRole === 'PRODUCT'
+  ) {
+    return {
+      title: 'Revisión académica completada',
+      detail: 'Las materias del semestre están aprobadas. El cierre institucional (radicación) se gestiona a nivel programa.',
     };
   }
 

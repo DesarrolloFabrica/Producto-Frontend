@@ -11,6 +11,28 @@ export function isSemesterProductAcademicReviewPhase(state: InstitutionalOperati
   return PRODUCT_ACADEMIC_REVIEW_STATES.includes(state);
 }
 
+/** Revisión académica del semestre cerrada; radicación pendiente es a nivel programa. */
+export function isSemesterAcademicallyComplete(state: InstitutionalOperationalState): boolean {
+  return state === 'PENDING_PROJECT_RADICATION' || state === 'FINALIZED';
+}
+
+export function formatSemesterSubjectProgress(params: {
+  operationalState: InstitutionalOperationalState;
+  subjectsTotal: number;
+  subjectsReady: number;
+  subjectsApproved?: number;
+}): string {
+  const total = params.subjectsTotal;
+  if (isSemesterAcademicallyComplete(params.operationalState)) {
+    return `${total}/${total} aprobadas`;
+  }
+  if (isSemesterProductAcademicReviewPhase(params.operationalState)) {
+    const approved = params.subjectsApproved ?? 0;
+    return `${approved}/${total} aprobadas`;
+  }
+  return `${params.subjectsReady}/${total} producidas`;
+}
+
 /** Columna de requisitos académicos: solo Product/Admin en fase 7. */
 export function shouldShowSemesterAcademicRequirements(
   role: Role | undefined,
@@ -68,21 +90,16 @@ export const FACTORY_COPY = {
     'Marca el avance interno de esta asignatura. La entrega formal del paquete semestral a Planeación se realiza desde el centro operacional del semestre cuando todas las materias estén completas.',
   toastProductionStarted: 'Producción iniciada.',
   toastProductionFinished: 'Producción interna marcada como completa.',
-  toastCorrectionsRedelivered: 'Producción corregida reentregada a validación operacional.',
-  redeliverProduction: 'Reentregar producción corregida',
   institutionalSubjectBanner:
     'Detalle interno del paquete semestral. Esta pantalla no avanza el flujo institucional principal.',
   internalProductionCompleteBanner:
     'Producción interna completa. La entrega formal se realiza desde el centro operacional del semestre.',
   internalProductionCompleteLabel: 'Producción interna completa',
-  correctionMarkSelected: 'Marcar seleccionadas como corregidas',
-  correctionMarkApplied: 'Marcar como corregida',
-  correctionMarkedLocally: 'Corrección marcada como lista. Aún no se notificó a Product.',
-  correctionBatchMarked: 'Correcciones marcadas como listas. Envíalas a Product cuando quieras.',
-  correctionNotifySelected: 'Enviar correcciones seleccionadas a Product',
+  correctionNotifySectionHint:
+    'Selecciona solo las correcciones que ya aplicaste e inclúyelas con el botón Enviar.',
   correctionNotifyHint:
-    'Primero marca las correcciones que ya aplicaste. Luego elige cuáles notificar a Product y envíalas en un solo paso.',
-  correctionReadyLabel: 'Lista para notificar',
+    'Aplica los cambios en la materia, selecciona las correcciones que quieras notificar y envíalas a Product.',
+  correctionReadyLabel: 'Lista para enviar',
   correctionSentLabel: 'Notificada a Product',
 } as const;
 
@@ -136,4 +153,23 @@ export function formatSemesterSubjectBlocker(message: string): string {
     return 'Definir entre 4 y 6 temas académicos';
   }
   return message;
+}
+
+/** Estados del semestre en los que Fábrica aún no ha iniciado producción del paquete. */
+export const FACTORY_SEMESTER_START_PENDING_STATES: InstitutionalOperationalState[] = [
+  'PENDING_FACTORY',
+  'RETURNED_TO_FACTORY_FROM_PLANNING',
+  'CHANGES_REQUESTED_BY_PRODUCT',
+];
+
+export function isSemesterFactoryStartPending(
+  state?: InstitutionalOperationalState | null,
+): boolean {
+  return state != null && FACTORY_SEMESTER_START_PENDING_STATES.includes(state);
+}
+
+export function isSemesterFactoryProductionActive(
+  state?: InstitutionalOperationalState | null,
+): boolean {
+  return state === 'IN_FACTORY_PRODUCTION';
 }

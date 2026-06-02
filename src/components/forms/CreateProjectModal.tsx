@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Plus, Loader2, Check, FileText, X, Calendar } from 'lucide-react';
+import { Plus, Loader2, Check, FileText, X } from 'lucide-react';
 import { useAuth } from '../../features/auth/AuthContext';
 import type { CreateProjectFormInput } from '../../features/operations/apiMappers';
 import { getApiErrorMessage } from '../../features/operations/apiMappers';
@@ -21,17 +21,18 @@ import type {
   Role,
   LinkResource,
   TopicChecklist,
-  SubjectMatterExpertType,
 } from '../../types/domain';
 import { cn } from '../ui/tokens';
-import {
-  addBusinessDays,
-  FACTORY_DELIVERY_BUSINESS_DAYS,
-  toDateInputValue,
-} from '../../utils/businessDays';
-import { formatDate } from '../../utils/formatters';
+import { OFFICIAL_SCHOOL_NAMES } from '../../constants/officialSchools';
+import { catalogsApi } from '../../services/catalogsApi';
+import type { ApiSchoolCatalogItem } from '../../services/types/catalogsApi.types';
 
 const DEFAULT_PRIORITY = 'MEDIUM' as const;
+
+const MOCK_SCHOOL_OPTIONS: ApiSchoolCatalogItem[] = OFFICIAL_SCHOOL_NAMES.map((name, index) => ({
+  id: `mock-school-${index}`,
+  name,
+}));
 
 interface CreateProjectModalProps {
   isOpen: boolean;
@@ -42,15 +43,6 @@ interface FormSemester extends SemesterSubjectsWizardSemester {
   number: number;
   subjects: SemesterFormSubject[];
 }
-
-const schools = [
-  'Escuela de Ingenierias',
-  'Escuela de Ciencias Administrativas',
-  'Escuela de Comunicacion y Bellas Artes',
-  'Escuela de Ciencias de la Salud',
-  'Escuela de Derecho y Ciencias Politicas',
-  'Escuela de Educacion',
-];
 
 const subjectChecklistLabels = [
   'Presentacion de la asignatura',
@@ -90,10 +82,12 @@ export function CreateProjectModal({ isOpen, onClose }: CreateProjectModalProps)
   const [errors, setErrors] = useState<string[]>([]);
 
   const [school, setSchool] = useState('');
+  const [schoolOptions, setSchoolOptions] = useState<ApiSchoolCatalogItem[]>([]);
+  const [schoolsLoading, setSchoolsLoading] = useState(false);
+  const [schoolsLoadError, setSchoolsLoadError] = useState<string | null>(null);
   const [program, setProgram] = useState('');
   const [modality, setModality] = useState('Virtual');
-  const [subjectMatterExpertType, setSubjectMatterExpertType] =
-    useState<SubjectMatterExpertType>('INTERNAL');
+  const [expectedDeliveryDate, setExpectedDeliveryDate] = useState('');
   const [productOwner, setProductOwner] = useState(user?.name ?? '');
 
   useEffect(() => {
@@ -102,15 +96,44 @@ export function CreateProjectModal({ isOpen, onClose }: CreateProjectModalProps)
     }
   }, [isOpen, user?.name, productOwner]);
 
+  useEffect(() => {
+    if (!isOpen) return;
+
+    if (!backendEnabled) {
+      setSchoolOptions(MOCK_SCHOOL_OPTIONS);
+      setSchoolsLoading(false);
+      setSchoolsLoadError(null);
+      return;
+    }
+
+    let cancelled = false;
+    setSchoolsLoading(true);
+    setSchoolsLoadError(null);
+    setSchoolOptions([]);
+
+    catalogsApi
+      .getSchools()
+      .then((items) => {
+        if (cancelled) return;
+        setSchoolOptions(items);
+        setSchoolsLoadError(items.length === 0 ? 'No se pudieron cargar las escuelas.' : null);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setSchoolOptions([]);
+        setSchoolsLoadError('No se pudieron cargar las escuelas.');
+      })
+      .finally(() => {
+        if (!cancelled) setSchoolsLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isOpen, backendEnabled]);
+
   const [observations, setObservations] = useState('');
   const [hasSyllabus, setHasSyllabus] = useState<boolean | null>(null);
-
-  const isInternalExpert = subjectMatterExpertType === 'INTERNAL';
-  const isExternalExpert = subjectMatterExpertType === 'EXTERNAL';
-  const previewDeliveryDate = useMemo(() => {
-    if (!isInternalExpert) return '';
-    return toDateInputValue(addBusinessDays(new Date(), FACTORY_DELIVERY_BUSINESS_DAYS));
-  }, [isInternalExpert]);
   const [syllabusLink, setSyllabusLink] = useState('');
   const [selectedSemesters, setSelectedSemesters] = useState<number[]>([]);
   const [semesters, setSemesters] = useState<FormSemester[]>([]);
@@ -140,6 +163,7 @@ export function CreateProjectModal({ isOpen, onClose }: CreateProjectModalProps)
     const newErrors: string[] = [];
     if (!school.trim()) newErrors.push('Selecciona una escuela.');
     if (!program.trim()) newErrors.push('Ingresa el nombre del programa.');
+    if (!expectedDeliveryDate.trim()) newErrors.push('Selecciona la fecha estimada de entrega.');
     if (!productOwner.trim()) newErrors.push('Ingresa el responsable Product.');
     if (hasSyllabus === null) newErrors.push('Indica si la solicitud tiene syllabus.');
     if (hasSyllabus === true && !syllabusLink.trim()) newErrors.push('Ingresa el link del syllabus.');
@@ -173,7 +197,7 @@ export function CreateProjectModal({ isOpen, onClose }: CreateProjectModalProps)
           school,
           program,
           modality,
-          subjectMatterExpertType,
+          expectedDeliveryDate,
           priority: DEFAULT_PRIORITY,
           observations: observations.trim() || undefined,
           hasSyllabus,
@@ -205,7 +229,7 @@ export function CreateProjectModal({ isOpen, onClose }: CreateProjectModalProps)
           status: 'PENDING',
           curriculumStatus: 'PENDIENTE' as ChecklistStatus,
           factoryStatus: 'PENDIENTE' as ChecklistStatus,
-          factoryExpectedDate: isExternalExpert ? '' : previewDeliveryDate,
+          factoryExpectedDate: expectedDeliveryDate,
           continuationDate: '',
           observations: '',
         });
@@ -255,14 +279,14 @@ export function CreateProjectModal({ isOpen, onClose }: CreateProjectModalProps)
         modality,
         requestType: 'Virtualizacion completa',
         priority: DEFAULT_PRIORITY,
-        status: isExternalExpert ? 'PENDING_SUBJECT_MATTER_EXPERT' : 'READY_FOR_PRODUCTION',
+        status: 'READY_FOR_PRODUCTION',
         progress: 0,
         createdAt: new Date().toISOString(),
-        expectedDeliveryDate: previewDeliveryDate,
-        subjectMatterExpertType,
-        subjectMatterExpertStatus: isExternalExpert ? 'PENDING' : 'READY',
-        activatedAt: isInternalExpert ? new Date().toISOString() : null,
-        expertConfirmedAt: isInternalExpert ? new Date().toISOString() : null,
+        expectedDeliveryDate,
+        subjectMatterExpertType: 'INTERNAL',
+        subjectMatterExpertStatus: 'READY',
+        activatedAt: new Date().toISOString(),
+        expertConfirmedAt: new Date().toISOString(),
         productOwner,
         factoryOwner: 'Por asignar',
         observations,
@@ -284,9 +308,12 @@ export function CreateProjectModal({ isOpen, onClose }: CreateProjectModalProps)
 
   const resetForm = () => {
     setSchool('');
+    setSchoolOptions([]);
+    setSchoolsLoading(false);
+    setSchoolsLoadError(null);
     setProgram('');
     setModality('Virtual');
-    setSubjectMatterExpertType('INTERNAL');
+    setExpectedDeliveryDate('');
     setProductOwner(user?.name ?? '');
     setObservations('');
     setHasSyllabus(null);
@@ -332,14 +359,24 @@ export function CreateProjectModal({ isOpen, onClose }: CreateProjectModalProps)
         <div className="grid gap-4 md:grid-cols-2">
           <div>
             <label className={labelClass}>Escuela</label>
-            <select className={inputClass} value={school} onChange={(e) => setSchool(e.target.value)}>
-              <option value="">Seleccionar escuela...</option>
-              {schools.map((s) => (
-                <option key={s} value={s}>
-                  {s}
+            <select
+              className={inputClass}
+              value={school}
+              onChange={(e) => setSchool(e.target.value)}
+              disabled={schoolsLoading || Boolean(schoolsLoadError) || schoolOptions.length === 0}
+            >
+              <option value="">
+                {schoolsLoading ? 'Cargando escuelas...' : 'Seleccionar escuela...'}
+              </option>
+              {schoolOptions.map((item) => (
+                <option key={item.id} value={item.name}>
+                  {item.name}
                 </option>
               ))}
             </select>
+            {schoolsLoadError ? (
+              <p className="mt-1.5 text-[11px] font-medium text-rose-600">{schoolsLoadError}</p>
+            ) : null}
           </div>
           <div>
             <label className={labelClass}>Programa</label>
@@ -358,63 +395,18 @@ export function CreateProjectModal({ isOpen, onClose }: CreateProjectModalProps)
               <option>Híbrida</option>
             </select>
           </div>
-          <div className="md:col-span-2">
-            <label className={labelClass}>Experto temático</label>
-            <div className="flex gap-2">
-              {(['INTERNAL', 'EXTERNAL'] as const).map((type) => {
-                const selected = subjectMatterExpertType === type;
-                const label = type === 'INTERNAL' ? 'Interno' : 'Externo';
-                return (
-                  <button
-                    key={type}
-                    type="button"
-                    onClick={() => setSubjectMatterExpertType(type)}
-                    className={cn(
-                      'flex-1 rounded-2xl border px-4 py-3 text-sm font-bold transition-all',
-                      selected
-                        ? 'border-orange-300 bg-orange-50 text-orange-700 ring-2 ring-orange-100'
-                        : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300',
-                    )}
-                  >
-                    {label}
-                  </button>
-                );
-              })}
-            </div>
-            {isInternalExpert ? (
-              <p className="mt-1.5 text-[11px] font-medium text-slate-500">
-                La solicitud se activará inmediatamente.
-              </p>
-            ) : (
-              <p className="mt-1.5 rounded-xl bg-violet-50 px-3 py-2 text-[11px] font-medium leading-relaxed text-violet-800">
-                La solicitud quedará pausada hasta confirmar el experto temático. Los{' '}
-                {FACTORY_DELIVERY_BUSINESS_DAYS} días hábiles empezarán a contar desde la activación.
-              </p>
-            )}
-          </div>
           <div>
-            <label className={labelClass}>Fecha Entrega Esperada por Fábrica</label>
-            <div
-              className={cn(
-                inputClass,
-                'flex items-center gap-2 border-orange-200 bg-orange-50/30 text-slate-700',
-              )}
-              aria-live="polite"
-            >
-              <Calendar className="h-4 w-4 shrink-0 text-orange-500" />
-              {isInternalExpert && previewDeliveryDate ? (
-                <span className="font-bold">
-                  Entrega estimada: {formatDate(previewDeliveryDate)}
-                </span>
-              ) : isExternalExpert ? (
-                <span className="font-bold text-violet-700">Pendiente de activación</span>
-              ) : (
-                <span className="font-medium text-slate-400">—</span>
-              )}
-            </div>
+            <label className={labelClass}>Fecha estimada de entrega</label>
+            <input
+              required
+              type="date"
+              className={inputClass}
+              value={expectedDeliveryDate}
+              onChange={(e) => setExpectedDeliveryDate(e.target.value)}
+              aria-label="Selecciona la fecha acordada para entrega"
+            />
             <p className="mt-1.5 text-[11px] font-medium leading-relaxed text-slate-500">
-              Se calcula automáticamente a {FACTORY_DELIVERY_BUSINESS_DAYS} días hábiles desde la
-              activación de la solicitud.
+              La fecha debe corresponder al compromiso estimado definido para la solicitud.
             </p>
           </div>
           <div>
@@ -435,7 +427,7 @@ export function CreateProjectModal({ isOpen, onClose }: CreateProjectModalProps)
               className={cn(inputClass, 'min-h-[70px] resize-none')}
               value={observations}
               onChange={(e) => setObservations(e.target.value)}
-              placeholder="Contexto o detalles importantes..."
+              placeholder="Contexto, experto temático, acuerdos o detalles importantes…"
             />
           </div>
         </div>

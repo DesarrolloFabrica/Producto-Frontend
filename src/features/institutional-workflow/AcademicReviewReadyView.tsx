@@ -27,8 +27,8 @@ export function AcademicReviewReadyView({ workspace }: AcademicReviewReadyViewPr
             <h2 className="mt-1 text-xl font-black text-slate-950">Revisión académica lista para iniciar</h2>
             <p className="mt-2 text-sm font-medium text-slate-600">
               Planeación validó la carga en LMS. Vaya al flujo operacional del semestre {workspace.semesterNumber},
-              pulse &quot;Iniciar revisión académica&quot; y el sistema lo llevará directamente al checklist de la
-              primera asignatura.
+              pulse <span className="font-semibold text-slate-800">Iniciar revisión</span> y el sistema habilitará la
+              revisión de todas las asignaturas del paquete.
             </p>
             <div className="mt-3 flex flex-wrap gap-2">
               <InstitutionalStateBadge state={workspace.operationalState} />
@@ -41,7 +41,7 @@ export function AcademicReviewReadyView({ workspace }: AcademicReviewReadyViewPr
             to={semesterOpsUrl}
             className="inline-flex items-center justify-center gap-1.5 rounded-[12px] bg-linear-to-br from-[#FF6B00] to-[#FF852D] px-5 py-2.5 text-xs font-bold text-white shadow-[0_4px_14px_0_rgba(255,107,0,0.39)]"
           >
-            Iniciar revisión académica
+            Ir a Flujo operacional
             <ArrowRight className="h-4 w-4" />
           </Link>
         </div>

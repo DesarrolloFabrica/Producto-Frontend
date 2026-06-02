@@ -1,10 +1,12 @@
 import { useEffect, useState } from 'react';
-import { Loader2, Plus } from 'lucide-react';
+import { Loader2, Plus, Trash2 } from 'lucide-react';
 import { Drawer } from '../../components/ui/Drawer';
 import { Button } from '../../components/ui/Button';
 import type { OperationalObservation, Role } from '../../types/domain';
 import { formatDate } from '../../utils/formatters';
 import {
+  canProductDeleteObservation,
+  isProductFactoryCorrectionPendingValidation,
   observationBadgeLabels,
   observationStatusLabels,
   type ObservationDeliverableBadgeState,
@@ -23,6 +25,7 @@ type DeliverableObservationsDrawerProps = {
   openedFromReject?: boolean;
   onCreateObservation: (text: string) => Promise<void>;
   onValidateObservation?: (observation: OperationalObservation) => Promise<void>;
+  onDeleteObservation?: (observation: OperationalObservation) => Promise<void>;
   onMarkCorrectionApplied?: (observation: OperationalObservation) => Promise<void>;
 };
 
@@ -38,10 +41,12 @@ export function DeliverableObservationsDrawer({
   openedFromReject = false,
   onCreateObservation,
   onValidateObservation,
+  onDeleteObservation,
   onMarkCorrectionApplied,
 }: DeliverableObservationsDrawerProps) {
   const [text, setText] = useState('');
   const [error, setError] = useState('');
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
 
   const hasPendingDraft = observations.some(
     (obs) => obs.status === 'ABIERTA' && obs.notificationStatus === 'PENDING',
@@ -51,6 +56,7 @@ export function DeliverableObservationsDrawer({
     if (!isOpen) {
       setText('');
       setError('');
+      setConfirmDeleteId(null);
       return;
     }
     if (draftSuggestion && !hasPendingDraft) {
@@ -99,7 +105,43 @@ export function DeliverableObservationsDrawer({
                 </div>
                 <p className="mt-2 text-sm font-medium text-slate-800">{observation.text}</p>
                 <div className="mt-3 flex flex-wrap gap-2">
-                  {role === 'PRODUCT' && observation.status === 'EN_CORRECCION' && onValidateObservation && (
+                  {role === 'PRODUCT' &&
+                    canProductDeleteObservation(observation) &&
+                    onDeleteObservation &&
+                    (confirmDeleteId === observation.id ? (
+                      <>
+                        <Button
+                          size="sm"
+                          variant="secondary"
+                          disabled={saving}
+                          onClick={() => setConfirmDeleteId(null)}
+                        >
+                          Cancelar
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="danger"
+                          disabled={saving}
+                          onClick={() => void onDeleteObservation(observation).finally(() => setConfirmDeleteId(null))}
+                        >
+                          {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Confirmar eliminación'}
+                        </Button>
+                      </>
+                    ) : (
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="text-rose-600 hover:bg-rose-50 hover:text-rose-700"
+                        disabled={saving}
+                        onClick={() => setConfirmDeleteId(observation.id)}
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                        Eliminar borrador
+                      </Button>
+                    ))}
+                  {role === 'PRODUCT' &&
+                    isProductFactoryCorrectionPendingValidation(observation) &&
+                    onValidateObservation && (
                     <Button
                       size="sm"
                       variant="secondary"
@@ -132,8 +174,9 @@ export function DeliverableObservationsDrawer({
           <div className="mt-auto border-t border-slate-100 pt-4">
             {hasPendingDraft ? (
               <p className="mb-3 rounded-xl border border-amber-200 bg-amber-50/80 px-3 py-2 text-xs font-medium text-amber-900">
-                Este entregable ya tiene un borrador pendiente. Cuando termines todas las revisiones, usa
-                &quot;Enviar observaciones a Fábrica&quot; para notificar a Fábrica en un solo envío.
+                Este entregable ya tiene un borrador pendiente. Puedes eliminarlo con &quot;Eliminar borrador&quot; si te
+                equivocaste. Cuando termines todas las revisiones, usa &quot;Enviar observaciones a Fábrica&quot; para
+                notificar a Fábrica en un solo envío.
               </p>
             ) : (
               <>

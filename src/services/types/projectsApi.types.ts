@@ -180,10 +180,10 @@ export interface ApiCreateProjectPayload {
   school: string;
   program: string;
   modality: ApiModality;
-  subjectMatterExpertType: 'INTERNAL' | 'EXTERNAL';
+  subjectMatterExpertType?: 'INTERNAL' | 'EXTERNAL';
   requestType: string;
   priority: ApiPriority;
-  expectedDeliveryDate?: string;
+  expectedDeliveryDate: string;
   factoryOwnerId?: string;
   observations?: string;
   syllabus?: ApiCreateProjectSyllabus;

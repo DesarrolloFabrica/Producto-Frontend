@@ -1,6 +1,7 @@
 import { Check, CornerDownLeft } from 'lucide-react';
 import type { InstitutionalOperationalState } from '../../../types/domain';
 import { cn } from '../../../components/ui/tokens';
+import { isReducedInstitutionalFlow } from '../../../config/env';
 import {
   pipelineConnectorClass,
   pipelineContainer,
@@ -31,7 +32,32 @@ const STEPS: Array<{ id: StepId; label: string; short: string }> = [
   { id: 'FINALIZED', label: 'Finalizado', short: 'Fin.' },
 ];
 
-function currentStep(state: InstitutionalOperationalState): StepId {
+const REDUCED_STEPS: Array<{ id: StepId; label: string; short: string }> = [
+  { id: 'PRODUCT_CREATE', label: 'Solicitud', short: 'Sol.' },
+  { id: 'FACTORY', label: 'Producción Fábrica', short: 'Fáb.' },
+  { id: 'PRODUCT_REVIEW', label: 'Radicación Product', short: 'Prod.' },
+  { id: 'FINALIZED', label: 'Finalizado', short: 'Fin.' },
+];
+
+function currentStep(state: InstitutionalOperationalState, reduced = isReducedInstitutionalFlow()): StepId {
+  if (reduced) {
+    switch (state) {
+      case 'PENDING_FACTORY':
+      case 'IN_FACTORY_PRODUCTION':
+      case 'CHANGES_REQUESTED_BY_PRODUCT':
+      case 'RETURNED_TO_FACTORY_FROM_PLANNING':
+        return 'FACTORY';
+      case 'PENDING_PRODUCT_ACADEMIC_REVIEW':
+      case 'IN_PRODUCT_ACADEMIC_REVIEW':
+      case 'PENDING_PROJECT_RADICATION':
+        return 'PRODUCT_REVIEW';
+      case 'FINALIZED':
+        return 'FINALIZED';
+      default:
+        return 'PRODUCT_CREATE';
+    }
+  }
+
   switch (state) {
     case 'PENDING_PLANNING_INITIAL_VALIDATION':
     case 'RETURNED_TO_PRODUCT_FROM_PLANNING':
@@ -71,8 +97,10 @@ function isReturnedState(state: InstitutionalOperationalState): boolean {
 
 /** Índice 0–7 del paso activo en el pipeline institucional (reutilizado por Admin tracking). */
 export function institutionalPipelineStepIndex(state: InstitutionalOperationalState): number {
-  const cur = currentStep(state);
-  return STEPS.findIndex((s) => s.id === cur);
+  const reduced = isReducedInstitutionalFlow();
+  const steps = reduced ? REDUCED_STEPS : STEPS;
+  const cur = currentStep(state, reduced);
+  return steps.findIndex((s) => s.id === cur);
 }
 
 export function isInstitutionalReturnedState(state: InstitutionalOperationalState): boolean {
@@ -92,8 +120,10 @@ export function OperationalPipelineInstitutional({
   const micro = variant === 'micro';
   const compact = variant === 'compact' || micro;
   const headerVisible = showHeader ?? !(compact || row || micro);
-  const cur = currentStep(state);
-  const curIndex = STEPS.findIndex((s) => s.id === cur);
+  const reduced = isReducedInstitutionalFlow();
+  const steps = reduced ? REDUCED_STEPS : STEPS;
+  const cur = currentStep(state, reduced);
+  const curIndex = steps.findIndex((s) => s.id === cur);
   const returned = isReturnedState(state);
 
   return (
@@ -119,7 +149,7 @@ export function OperationalPipelineInstitutional({
             row ? 'w-full min-w-0' : micro ? 'min-w-[168px]' : compact ? 'min-w-[520px]' : 'min-w-[640px]',
           )}
         >
-          {STEPS.map((step, idx) => {
+          {steps.map((step, idx) => {
             const done = idx < curIndex || (cur === 'FINALIZED' && idx <= curIndex);
             const active = idx === curIndex;
             const upcoming = idx > curIndex;
@@ -180,7 +210,7 @@ export function OperationalPipelineInstitutional({
                   </p>
                 </div>
 
-                {idx < STEPS.length - 1 ? (
+                {idx < steps.length - 1 ? (
                   <div
                     className={cn(
                       'rounded-full',

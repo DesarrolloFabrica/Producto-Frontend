@@ -28,6 +28,9 @@ export const observationsApi = {
   reopenObservation: (observationId: string, reason: string) =>
     apiClient.post<ApiObservationStatusResponse>(`/observations/${observationId}/reopen`, { reason }),
 
+  deleteObservationDraft: (observationId: string) =>
+    apiClient.delete<void>(`/observations/${observationId}`),
+
   sendObservationsToFactory: (subjectId: string) =>
     apiClient.post<{ id: string; observationCount: number }>(
       `/subjects/${subjectId}/observation-batches/send-to-factory`,

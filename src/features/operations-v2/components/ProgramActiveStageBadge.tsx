@@ -11,6 +11,9 @@ export function ProgramActiveStageBadge({
   variant?: 'default' | 'compact';
 }) {
   const active = stages.filter((s) => s.count > 0);
+  const isFullyComplete =
+    active.length === 1 && active[0]?.label === 'Completadas' && active[0].count > 0;
+
   if (active.length === 0) {
     return (
       <span
@@ -32,7 +35,12 @@ export function ProgramActiveStageBadge({
         {active.slice(0, 2).map((stage) => (
           <span
             key={stage.label}
-            className="inline-flex shrink-0 rounded-md bg-slate-100/80 px-1.5 py-0.5 text-[9px] font-medium text-slate-600 ring-1 ring-slate-200/60"
+            className={cn(
+              'inline-flex shrink-0 rounded-md px-1.5 py-0.5 text-[9px] font-medium ring-1',
+              stage.label === 'Completadas'
+                ? 'bg-emerald-50 text-emerald-700 ring-emerald-100'
+                : 'bg-slate-100/80 text-slate-600 ring-slate-200/60',
+            )}
           >
             {stage.label} · {stage.count}
           </span>
@@ -51,7 +59,12 @@ export function ProgramActiveStageBadge({
   return (
     <div className="flex flex-col gap-1.5">
       <span
-        className="inline-flex w-fit rounded-full bg-orange-50 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide text-orange-700 ring-1 ring-orange-100"
+        className={cn(
+          'inline-flex w-fit rounded-full px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide ring-1',
+          isFullyComplete
+            ? 'bg-emerald-50 text-emerald-700 ring-emerald-100'
+            : 'bg-orange-50 text-orange-700 ring-orange-100',
+        )}
         title={summary}
       >
         {summary}
@@ -61,7 +74,10 @@ export function ProgramActiveStageBadge({
           <span
             key={stage.label}
             className={cn(
-              'inline-flex rounded-md bg-slate-50 px-2 py-0.5 text-[10px] font-semibold text-slate-600 ring-1 ring-slate-200/80',
+              'inline-flex rounded-md px-2 py-0.5 text-[10px] font-semibold ring-1',
+              stage.label === 'Completadas'
+                ? 'bg-emerald-50 text-emerald-700 ring-emerald-100'
+                : 'bg-slate-50 text-slate-600 ring-slate-200/80',
             )}
           >
             {stage.label} · {stage.count}

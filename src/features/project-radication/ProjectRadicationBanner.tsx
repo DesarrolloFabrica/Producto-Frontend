@@ -7,6 +7,7 @@ import { Button } from '../../components/ui/Button';
 import { projectRadicationApi } from '../../services/projectRadicationApi';
 import { cn } from '../../components/ui/tokens';
 import { projectRadicationKeys } from './ProjectRadicationPanel';
+import { isReducedInstitutionalFlow } from '../../config/env';
 
 export function projectRadicationUrl(projectId: string): string {
   return `/projects/${projectId}#radication`;
@@ -40,6 +41,7 @@ export function ProjectRadicationBanner({
   const { role } = useAuth();
   const showRadication = role === 'PRODUCT';
   const macroComplete = isMacroScopeComplete(macroProgress);
+  const reducedFlow = isReducedInstitutionalFlow();
 
   const readinessQuery = useQuery({
     queryKey: projectRadicationKeys.readiness(projectId),
@@ -123,7 +125,9 @@ export function ProjectRadicationBanner({
           <div>
             <p className="text-sm font-bold text-emerald-900">Solicitud finalizada</p>
             <p className="mt-1 text-xs text-emerald-800">
-              Planeación validó el radicado. Consulte el detalle en la solicitud.
+              {reducedFlow
+                ? 'Product registró el radicado. Consulte el detalle en la solicitud.'
+                : 'Planeación validó el radicado. Consulte el detalle en la solicitud.'}
             </p>
             <Link
               to={projectRadicationUrl(projectId)}
@@ -174,7 +178,10 @@ export function ProjectRadicationBanner({
               </p>
               <p className="mt-1 text-xs text-slate-600">
                 Alcance: {data.scope.subjectsApproved}/{data.scope.subjectsTotal} materias aprobadas ·{' '}
-                {data.scope.semesters} semestre(s). Registre el radicado institucional para enviar a Planeación.
+                {data.scope.semesters} semestre(s).{' '}
+                {reducedFlow
+                  ? 'Registre el radicado institucional para cerrar la solicitud.'
+                  : 'Registre el radicado institucional para enviar a Planeación.'}
               </p>
             </div>
           </div>

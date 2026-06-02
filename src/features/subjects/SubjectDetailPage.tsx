@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Navigate, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { ContextBackLink } from '../../navigation/ContextBackLink';
-import { ArrowLeft, BookOpen, CheckCircle2, MessageSquare, Plus, X, Loader2, AlertCircle, ChevronDown, Check } from 'lucide-react';
+import { ArrowLeft, BookOpen, CheckCircle2, MessageSquare, Plus, X, Loader2, AlertCircle, ChevronDown, Check, Trash2 } from 'lucide-react';
 import { Modal } from '../../components/ui/Modal';
 import type { BulkApproveSectionScope } from '../../services/checklistApi';
 import {
@@ -51,9 +51,19 @@ import { subjectsApi } from '../../services/subjectsApi';
 import { DeliverableObservationsDrawer } from '../observations/DeliverableObservationsDrawer';
 import { ObservationDeliverableButton } from '../observations/ObservationDeliverableButton';
 import {
+  canProductReopenObservation,
   countPendingProductObservations,
+  canProductDeleteObservation,
   filterObservationsForChecklistItem,
+  getEffectiveProductReviewStatus,
+  getEffectiveProductChecklistCounts,
   getObservationBadgeState,
+  getProductActiveCorrectionPresentation,
+  hasActiveDeliverableObservations,
+  isChecklistItemOutOfSync,
+  isProductFactoryCorrectionPendingValidation,
+  mergeSubjectObservationsForProduct,
+  resolveDeliverableChecklistItemId,
 } from '../observations/observationDeliverableHelpers';
 import type { OperationalObservation } from '../../types/domain';
 import { useOperationalWorkspaceQuery } from '../queries/useOperationalWorkspaceQuery';
@@ -113,6 +123,7 @@ interface ChecklistItemCardProps {
   onUpdate: (item: ChecklistItem, newStatus: ProductReviewStatus) => void | Promise<void>;
   onOpenObservations: (item: ChecklistItem) => void;
   selectorDisabled?: boolean;
+  outOfSync?: boolean;
 }
 
 function ChecklistItemCard({
@@ -122,6 +133,7 @@ function ChecklistItemCard({
   onUpdate,
   onOpenObservations,
   selectorDisabled = false,
+  outOfSync = false,
 }: ChecklistItemCardProps) {
   const config = reviewStatusConfig[status];
   const observationState = getObservationBadgeState(itemObservations);
@@ -149,6 +161,9 @@ function ChecklistItemCard({
               {reviewStatusLabels[status]}
             </span>
             <span className="text-[9px] font-medium text-slate-400">{item.ownerRole}</span>
+            {outOfSync ? (
+              <span className="text-[9px] font-medium text-amber-600">Pendiente de sincronizar</span>
+            ) : null}
           </div>
         </div>
         <ObservationDeliverableButton
@@ -342,7 +357,10 @@ function CategorySection({
   selectorDisabled?: boolean;
 }) {
   const categoryItems = checklist.filter((item) => getCategoryForItem(item.label) === categoryId);
-  const approved = categoryItems.filter((i) => toProductReviewStatus(i.status) === 'aprobado').length;
+  const approved = categoryItems.filter((item) => {
+    const itemObservations = filterObservationsForChecklistItem(subjectObservations, item.id);
+    return getEffectiveProductReviewStatus(item.status, itemObservations) === 'aprobado';
+  }).length;
   const total = categoryItems.length;
   const progress = total > 0 ? Math.round((approved / total) * 100) : 0;
   const bulkDisabled = !canBulkApprove || approvableCount === 0;
@@ -373,17 +391,20 @@ function CategorySection({
         <BulkApproveBlockHint message={bulkBlockMessage} variant="info" className="max-w-none" />
       ) : null}
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-        {categoryItems.map((item) => (
+        {categoryItems.map((item) => {
+          const itemObservations = filterObservationsForChecklistItem(subjectObservations, item.id);
+          return (
           <ChecklistItemCard
             key={item.id}
             item={item}
-            status={toProductReviewStatus(item.status)}
-            itemObservations={filterObservationsForChecklistItem(subjectObservations, item.id)}
+            status={getEffectiveProductReviewStatus(item.status, itemObservations)}
+            itemObservations={itemObservations}
+            outOfSync={isChecklistItemOutOfSync(item, itemObservations)}
             onUpdate={onUpdate}
             onOpenObservations={onOpenObservations}
-            selectorDisabled={selectorDisabled}
+            selectorDisabled={selectorDisabled || hasActiveDeliverableObservations(itemObservations)}
           />
-        ))}
+        )})}
       </div>
     </div>
   );
@@ -417,7 +438,10 @@ function TopicCard({
   selectorDisabled = false,
 }: TopicCardProps) {
   const [expanded, setExpanded] = useState(() => items.length > 0);
-  const approved = items.filter((i) => i.status === 'APROBADO').length;
+  const approved = items.filter((item) => {
+    const itemObservations = filterObservationsForChecklistItem(subjectObservations, item.id);
+    return getEffectiveProductReviewStatus(item.status, itemObservations) === 'aprobado';
+  }).length;
   const total = items.length;
   const bulkDisabled = !canBulkApprove || approvableCount === 0;
   const showBlockHint = bulkDisabled && bulkBlockMessage !== null;
@@ -476,9 +500,10 @@ function TopicCard({
           </p>
           <div className="grid gap-3 sm:grid-cols-2">
             {items.map((item) => {
-              const status = toProductReviewStatus(item.status);
               const itemObservations = filterObservationsForChecklistItem(subjectObservations, item.id);
+              const status = getEffectiveProductReviewStatus(item.status, itemObservations);
               const observationState = getObservationBadgeState(itemObservations);
+              const blockStatusChange = hasActiveDeliverableObservations(itemObservations);
               return (
                 <div
                   key={item.id}
@@ -495,7 +520,7 @@ function TopicCard({
                   <div className="mt-2 flex justify-end border-t border-slate-50 pt-2">
                     <StatusSelector
                       value={status}
-                      disabled={selectorDisabled}
+                      disabled={selectorDisabled || blockStatusChange}
                       onChange={(newStatus) => void onUpdate(topic.name, item, newStatus)}
                     />
                   </div>
@@ -523,11 +548,11 @@ export function SubjectDetailPage() {
     resolveObservation,
     refreshProjects,
     createObservationFromApi,
+    deleteObservationFromApi,
     approveSubjectFromApi,
     requestSubjectCorrectionFromApi,
     reopenObservation,
     sendObservationsBatchToFactoryFromApi,
-    validateObservationFromApi,
     markObservationCorrectionAppliedFromApi,
     backendEnabled,
     isMutating,
@@ -602,6 +627,7 @@ export function SubjectDetailPage() {
   const [observationDrawerFromReject, setObservationDrawerFromReject] = useState(false);
   const [observationDrawerTopicName, setObservationDrawerTopicName] = useState<string | null>(null);
   const [sendingObservationBatch, setSendingObservationBatch] = useState(false);
+  const [confirmDeleteObservationId, setConfirmDeleteObservationId] = useState<string | null>(null);
   const observationsSectionRef = useRef<HTMLDivElement | null>(null);
   const correctionActiveRef = useRef<HTMLDivElement | null>(null);
   const observationTextareaRef = useRef<HTMLTextAreaElement | null>(null);
@@ -618,26 +644,18 @@ export function SubjectDetailPage() {
   }, [correctionPanelHighlighted]);
 
   const combinedObservations = useMemo(() => {
-    const byId = new Map<string, (typeof projectObservations)[number]>();
-    for (const observation of projectObservations) {
-      if (observation.subjectId !== subject?.id) continue;
-      byId.set(observation.id, observation);
-    }
-    for (const observation of workspaceObservations) {
-      const existing = byId.get(observation.id);
-      if (!existing) {
-        byId.set(observation.id, observation);
-        continue;
-      }
-      if (
-        existing.notificationStatus === 'PENDING' &&
-        observation.notificationStatus === 'SENT'
-      ) {
-        byId.set(observation.id, observation);
-      }
-    }
-    return Array.from(byId.values());
+    if (!subject?.id) return [];
+    return mergeSubjectObservationsForProduct(workspaceObservations, projectObservations, subject.id);
   }, [projectObservations, subject?.id, workspaceObservations]);
+
+  useEffect(() => {
+    if (!correctionTargetObservationId) return;
+    const observation = combinedObservations.find((item) => item.id === correctionTargetObservationId);
+    if (!observation || !canProductReopenObservation(observation)) {
+      setCorrectionTargetObservationId(null);
+      setObservationError('');
+    }
+  }, [combinedObservations, correctionTargetObservationId]);
 
   const subjectObservations = useMemo(
     () =>
@@ -673,9 +691,10 @@ export function SubjectDetailPage() {
             subject,
             unresolvedObservationCount: subjectObservations.length,
             topicsCount,
+            observations: combinedObservations.filter((obs) => obs.subjectId === subject.id),
           })
         : [],
-    [subject, subjectObservations.length, topicsCount],
+    [subject, subjectObservations.length, topicsCount, combinedObservations],
   );
 
   if (role === 'PLANEACION' || role === 'LMS') {
@@ -826,10 +845,12 @@ export function SubjectDetailPage() {
     academicChecklistEnabled && canProductRequestSubjectCorrection(subject.status);
 
   const productChecklist = subject.checklist.filter((item) => item.ownerRole === 'PRODUCT');
-  const totalChecklist = productChecklist.length;
-  const approvedChecklist = productChecklist.filter((c) => c.status === 'APROBADO').length;
-  const pendingChecklist = productChecklist.filter((c) => toProductReviewStatus(c.status) === 'pendiente').length;
-  const rejectedChecklist = productChecklist.filter((c) => c.status === 'RECHAZADO').length;
+  const subjectScopedObservations = combinedObservations.filter((obs) => obs.subjectId === subject.id);
+  const checklistCounts = getEffectiveProductChecklistCounts(productChecklist, subjectScopedObservations);
+  const totalChecklist = checklistCounts.total;
+  const approvedChecklist = checklistCounts.approved;
+  const pendingChecklist = checklistCounts.pending;
+  const rejectedChecklist = checklistCounts.rejected;
   const subjectProgress = subject.progress ?? 0;
 
   const resolvedObservations = combinedObservations.filter(
@@ -853,6 +874,7 @@ export function SubjectDetailPage() {
       subject,
       unresolvedObservationCount: subjectObservations.length,
       topicsCount: topics.length,
+      observations: subjectScopedObservations,
     });
 
   const needsTopicDefinition = academicChecklistEnabled && topics.length === 0;
@@ -922,6 +944,65 @@ export function SubjectDetailPage() {
     } finally {
       setSavingObservation(false);
     }
+  };
+
+  const handleDeleteDeliverableObservation = async (observation: OperationalObservation) => {
+    if (!project) return;
+    setSavingObservation(true);
+    try {
+      await deleteObservationFromApi(
+        observation.id,
+        project.id,
+        subject.id,
+        resolveDeliverableChecklistItemId(observation),
+      );
+      setConfirmDeleteObservationId(null);
+      showToast('Borrador eliminado');
+    } catch (error) {
+      showToast(getApiErrorMessage(error), 'error');
+    } finally {
+      setSavingObservation(false);
+    }
+  };
+
+  const renderObservationDraftDeleteActions = (observation: OperationalObservation) => {
+    if (!canProductDeleteObservation(observation)) return null;
+
+    if (confirmDeleteObservationId === observation.id) {
+      return (
+        <>
+          <Button
+            size="sm"
+            variant="secondary"
+            disabled={savingObservation || isMutating}
+            onClick={() => setConfirmDeleteObservationId(null)}
+          >
+            Cancelar
+          </Button>
+          <Button
+            size="sm"
+            variant="danger"
+            disabled={savingObservation || isMutating}
+            onClick={() => void handleDeleteDeliverableObservation(observation)}
+          >
+            {savingObservation ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : 'Confirmar eliminación'}
+          </Button>
+        </>
+      );
+    }
+
+    return (
+      <Button
+        size="sm"
+        variant="ghost"
+        className="text-rose-600 hover:bg-rose-50 hover:text-rose-700"
+        disabled={savingObservation || isMutating}
+        onClick={() => setConfirmDeleteObservationId(observation.id)}
+      >
+        <Trash2 className="h-3.5 w-3.5" />
+        Eliminar borrador
+      </Button>
+    );
   };
 
   const handleSendObservationsBatch = async () => {
@@ -1129,6 +1210,13 @@ export function SubjectDetailPage() {
     setSubjectAction('reject');
     try {
       if (targetedCorrectionObservation) {
+        if (!canProductReopenObservation(targetedCorrectionObservation)) {
+          const message =
+            'Esta corrección ya fue reabierta. Envía el reajuste a Fábrica o espera su nueva respuesta antes de solicitar otro ajuste.';
+          setObservationError(message);
+          showToast(message, 'error');
+          return;
+        }
         await reopenObservation(project.id, targetedCorrectionObservation.id, targetedCorrectionObservation, reason);
       } else {
         await requestSubjectCorrectionFromApi(subject.id, project.id, reason);
@@ -1138,7 +1226,11 @@ export function SubjectDetailPage() {
       setRequestCorrectionMode(false);
       setCorrectionTargetObservationId(null);
       setObservationError('');
-      showToast(targetedCorrectionObservation ? 'Corrección reabierta para Fábrica' : 'Corrección solicitada a Fábrica');
+      showToast(
+        targetedCorrectionObservation
+          ? 'Reajuste registrado. Envíalo a Fábrica cuando estés listo.'
+          : 'Corrección solicitada a Fábrica',
+      );
     } catch (error) {
       const message = getApiErrorMessage(error);
       setObservationError(message);
@@ -1151,7 +1243,8 @@ export function SubjectDetailPage() {
 
   const filteredChecklist = productChecklist.filter((item) => {
     if (checklistFilter === 'todos') return true;
-    const productStatus = toProductReviewStatus(item.status);
+    const itemObservations = filterObservationsForChecklistItem(subjectScopedObservations, item.id);
+    const productStatus = getEffectiveProductReviewStatus(item.status, itemObservations);
     return productStatus === checklistFilter;
   });
 
@@ -1311,6 +1404,7 @@ export function SubjectDetailPage() {
               <p className="text-sm font-black text-slate-950">Observaciones pendientes de envío</p>
               <p className="text-xs text-slate-500">
                 {pendingObservationSendCount} observación(es) en borrador. Fábrica las verá al enviar el lote.
+                Puedes eliminarlas desde las tarjetas de correcciones activas si te equivocaste.
               </p>
             </div>
             <Button
@@ -1602,61 +1696,59 @@ export function SubjectDetailPage() {
                 </span>
                 <p className="text-[10px] font-black uppercase tracking-widest text-orange-600">Correcciones activas · {activeCorrectionObservations.length}</p>
               </div>
-              {activeCorrectionObservations.map((observation, index) => (
+              {activeCorrectionObservations.map((observation, index) => {
+                const presentation = getProductActiveCorrectionPresentation(observation);
+                return (
                 <div
                   key={observation.id}
                   ref={index === 0 ? correctionActiveRef : undefined}
-                  className={cn('rounded-[22px] border p-5 shadow-sm transition-all duration-500', observation.status === 'EN_CORRECCION' ? 'border-sky-200 bg-sky-50/40' : 'border-amber-200 bg-amber-50/40')}
+                  className={cn(
+                    'rounded-[22px] border p-5 shadow-sm transition-all duration-500',
+                    presentation.cardTone === 'sky' ? 'border-sky-200 bg-sky-50/40' : 'border-amber-200 bg-amber-50/40',
+                  )}
                 >
                   <div className="flex flex-wrap items-start justify-between gap-3">
                     <div className="min-w-0 flex-1">
                       <p className="text-[10px] font-black uppercase tracking-widest text-orange-500">Corrección individual</p>
-                      <h3 className="mt-1 text-sm font-bold text-slate-950">
-                        {observation.status === 'EN_CORRECCION'
-                          ? 'Corrección enviada por Fábrica'
-                          : 'Corrección pendiente de Fábrica'}
-                      </h3>
+                      <h3 className="mt-1 text-sm font-bold text-slate-950">{presentation.title}</h3>
                       <p className="mt-3 text-base font-bold leading-relaxed text-slate-900">{observation.text}</p>
                       <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-                        <MetaBox label="Estado" value={observation.status === 'EN_CORRECCION' ? 'Corrección enviada' : 'Fábrica debe corregir'} />
+                        <MetaBox label="Estado" value={presentation.statusLabel} />
                         <MetaBox label="Fecha" value={formatDate(observation.createdAt)} />
                         <MetaBox label="Responsable" value="Fábrica" />
                         <MetaBox label="Última actualización" value={formatDate(observation.updatedAt ?? observation.createdAt)} />
                       </div>
                       <div className="mt-3 flex flex-wrap items-center gap-3 text-[10px] font-medium text-slate-500">
                         <span>{observation.author} · {observation.role}</span>
-                        <span className="font-bold text-slate-700">
-                          {observation.status === 'EN_CORRECCION'
-                            ? 'Pendiente de validación individual por Product'
-                            : 'Fábrica debe corregir esta observación'}
-                        </span>
+                        <span className="font-bold text-slate-700">{presentation.footerHint}</span>
                       </div>
                     </div>
                     <div className="flex flex-wrap gap-2">
-                      {observation.status === 'EN_CORRECCION' && (
-                        <>
-                          <Button size="sm" onClick={() => handleResolveObservation(observation.id, observation)} disabled={isMutating} className="shadow-[0_12px_24px_-18px_rgba(249,115,22,0.5)]">
-                            <Check className="h-3.5 w-3.5" /> Validar corrección
-                          </Button>
-                          <Button size="sm" variant="secondary" className="border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100" onClick={() => {
-                            setRequestCorrectionMode(true);
-                            setCorrectionTargetObservationId(observation.id);
-                            setShowObservationForm(true);
-                            setObservationError('');
-                            setObservationForm({ text: '', level: 'subject', topicId: '' });
-                            requestAnimationFrame(() => {
-                              scrollToObservations();
-                              setTimeout(() => observationTextareaRef.current?.focus(), 180);
-                            });
-                          }}>
-                            <AlertCircle className="h-3.5 w-3.5" /> Solicitar nuevo ajuste
-                          </Button>
-                        </>
+                      {renderObservationDraftDeleteActions(observation)}
+                      {presentation.canValidate && (
+                        <Button size="sm" onClick={() => handleResolveObservation(observation.id, observation)} disabled={isMutating} className="shadow-[0_12px_24px_-18px_rgba(249,115,22,0.5)]">
+                          <Check className="h-3.5 w-3.5" /> Validar corrección
+                        </Button>
+                      )}
+                      {presentation.canRequestReadjustment && (
+                        <Button size="sm" variant="secondary" className="border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100" onClick={() => {
+                          setRequestCorrectionMode(true);
+                          setCorrectionTargetObservationId(observation.id);
+                          setShowObservationForm(true);
+                          setObservationError('');
+                          setObservationForm({ text: '', level: 'subject', topicId: '' });
+                          requestAnimationFrame(() => {
+                            scrollToObservations();
+                            setTimeout(() => observationTextareaRef.current?.focus(), 180);
+                          });
+                        }}>
+                          <AlertCircle className="h-3.5 w-3.5" /> Solicitar nuevo ajuste
+                        </Button>
                       )}
                     </div>
                   </div>
                 </div>
-              ))}
+              )})}
             </div>
           )}
 
@@ -1675,7 +1767,7 @@ export function SubjectDetailPage() {
               <div className="space-y-2">
                 {subjectObservations.filter((obs) => !activeCorrectionObservations.some((active) => active.id === obs.id)).map((obs) => {
                   const isTopicObs = topics.some((t) => obs.relatedEntity === t.name);
-                  const canValidate = obs.status === 'EN_CORRECCION';
+                  const canValidate = isProductFactoryCorrectionPendingValidation(obs);
                   return (
                     <div key={obs.id} className={cn('rounded-xl border p-4', canValidate ? 'border-emerald-100/60 bg-emerald-50/20' : 'border-amber-100/60 bg-amber-50/30')}>
                       <div className="flex items-start justify-between gap-3">
@@ -1703,19 +1795,22 @@ export function SubjectDetailPage() {
                             </span>
                           </div>
                         </div>
-                        <button
-                          type="button"
-                          onClick={() => handleResolveObservation(obs.id, obs)}
-                          disabled={!canValidate || isMutating}
-                          className={cn(
-                            'shrink-0 inline-flex items-center gap-1.5 rounded-xl border px-3 py-2 text-[10px] font-bold transition-all',
-                            canValidate
-                              ? 'border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
-                              : 'cursor-not-allowed border-slate-200 bg-slate-50 text-slate-400',
-                          )}
-                        >
-                          <Check className="h-3.5 w-3.5" /> Validar resuelta
-                        </button>
+                        <div className="flex shrink-0 flex-col items-end gap-2">
+                          {renderObservationDraftDeleteActions(obs)}
+                          <button
+                            type="button"
+                            onClick={() => handleResolveObservation(obs.id, obs)}
+                            disabled={!canValidate || isMutating}
+                            className={cn(
+                              'inline-flex items-center gap-1.5 rounded-xl border px-3 py-2 text-[10px] font-bold transition-all',
+                              canValidate
+                                ? 'border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
+                                : 'cursor-not-allowed border-slate-200 bg-slate-50 text-slate-400',
+                            )}
+                          >
+                            <Check className="h-3.5 w-3.5" /> Validar resuelta
+                          </button>
+                        </div>
                       </div>
                     </div>
                   );
@@ -1777,8 +1872,10 @@ export function SubjectDetailPage() {
         draftSuggestion={observationDraftSuggestion}
         openedFromReject={observationDrawerFromReject}
         onCreateObservation={handleCreateDeliverableObservation}
+        onDeleteObservation={handleDeleteDeliverableObservation}
         onValidateObservation={async (observation) => {
-          await validateObservationFromApi(observation.id, project?.id);
+          if (!project) return;
+          await resolveObservation(project.id, observation.id, observation);
           showToast('Observación validada');
         }}
       />

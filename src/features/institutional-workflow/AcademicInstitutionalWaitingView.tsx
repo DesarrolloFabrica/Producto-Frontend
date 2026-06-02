@@ -9,8 +9,10 @@ import type { SlaStatusV2 } from '../../types/operationalWorkflow';
 import { Card } from '../../components/ui/Card';
 import type { InstitutionalOperationalState } from '../../types/domain';
 import { semesterHubPath } from './institutionalNavigation';
+import { isReducedInstitutionalFlow } from '../../config/env';
 
 function progressBullets(state: InstitutionalOperationalState): string[] {
+  const reducedFlow = isReducedInstitutionalFlow();
   const preFactory = [
     'PENDING_PLANNING_INITIAL_VALIDATION',
     'RETURNED_TO_PRODUCT_FROM_PLANNING',
@@ -28,6 +30,9 @@ function progressBullets(state: InstitutionalOperationalState): string[] {
     return ['Solicitud en validación inicial de Planeación', 'Fábrica y LMS pendientes', 'Product será notificado al habilitarse la revisión académica'];
   }
   if (inFactory) {
+    if (reducedFlow) {
+      return ['Producción en curso o pendiente en Fábrica', 'Product será notificado al finalizar producción', 'La radicación cerrará la solicitud'];
+    }
     return ['Producción en curso o pendiente en Fábrica', 'LMS y validación académica pendientes', 'Product será notificado automáticamente'];
   }
   if (inProductionValidation) {
@@ -79,8 +84,9 @@ export function AcademicInstitutionalWaitingView({
               Revisión académica aún no habilitada
             </h2>
             <p className="mt-2 text-sm font-medium leading-relaxed text-slate-600">
-              La materia continúa en flujo institucional. Planeación y LMS deben finalizar validaciones antes de
-              habilitar la revisión de Product.
+              {isReducedInstitutionalFlow()
+                ? 'La materia continúa en producción de Fábrica. Product será notificado cuando pueda revisar y radicar.'
+                : 'La materia continúa en flujo institucional. Planeación y LMS deben finalizar validaciones antes de habilitar la revisión de Product.'}
             </p>
             <div className="mt-4 flex flex-wrap items-center gap-2">
               <InstitutionalStateBadge state={workspace.operationalState} />

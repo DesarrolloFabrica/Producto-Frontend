@@ -1,5 +1,5 @@
-import { useMemo } from 'react';
-import { useLocation, useParams } from 'react-router-dom';
+import { useEffect, useMemo } from 'react';
+import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { ContextBackLink } from '../../navigation/ContextBackLink';
 import { ContextLink } from '../../navigation/ContextLink';
 import { useUrlTab } from '../../navigation/useUrlTab';
@@ -37,8 +37,14 @@ const tabs = [
 export function FactoryProjectDetail() {
   const { projectId } = useParams();
   const location = useLocation();
+  const navigate = useNavigate();
   const { projectObservations, notifications, refreshProjects, backendEnabled } = useOperations();
-  const { project, isLoading, error, notFound } = useEnsureProjectDetail(projectId);
+  const { project, isLoading, error, notFound, redirectProjectId } = useEnsureProjectDetail(projectId);
+
+  useEffect(() => {
+    if (!redirectProjectId) return;
+    navigate(`/projects/${redirectProjectId}`, { replace: true });
+  }, [redirectProjectId, navigate]);
   const factoryProgramsQuery = useFactoryProgramsQuery(
     { page: 1, limit: 100, projectId },
     Boolean(projectId && backendEnabled),

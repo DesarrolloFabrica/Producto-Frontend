@@ -1,6 +1,6 @@
 import { useState } from 'react';
 
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient, type UseQueryResult } from '@tanstack/react-query';
 
 import { AlertTriangle, CheckCircle2, Clock3, FileCheck2, Loader2, Send } from 'lucide-react';
 
@@ -27,6 +27,7 @@ import {
 import { invalidatePlanningDashboard } from '../planning/planningInvalidation';
 
 import { cn } from '../../components/ui/tokens';
+import { isReducedInstitutionalFlow } from '../../config/env';
 
 
 
@@ -141,7 +142,13 @@ export function RadicationProgressBar({
 
 
 
-export function ProjectRadicationPanel({ projectId }: { projectId: string }) {
+export function ProjectRadicationPanel({
+  projectId,
+  readinessQuery: readinessQueryProp,
+}: {
+  projectId: string;
+  readinessQuery?: UseQueryResult<ProjectRadicationReadinessDto>;
+}) {
 
   const { showToast } = useToast();
 
@@ -150,6 +157,20 @@ export function ProjectRadicationPanel({ projectId }: { projectId: string }) {
   const [showModal, setShowModal] = useState(false);
 
   const [saving, setSaving] = useState(false);
+
+  const internalReadinessQuery = useQuery({
+
+    queryKey: projectRadicationKeys.readiness(projectId),
+
+    queryFn: () => projectRadicationApi.getReadiness(projectId),
+
+    enabled: !readinessQueryProp,
+
+    retry: 1,
+
+  });
+
+  const readinessQuery = readinessQueryProp ?? internalReadinessQuery;
 
   const [form, setForm] = useState<RegisterProjectRadicationBody>({
 
@@ -165,19 +186,10 @@ export function ProjectRadicationPanel({ projectId }: { projectId: string }) {
 
 
 
-  const readinessQuery = useQuery({
-
-    queryKey: projectRadicationKeys.readiness(projectId),
-
-    queryFn: () => projectRadicationApi.getReadiness(projectId),
-
-  });
-
-
-
   const data = readinessQuery.data;
+  const reducedFlow = isReducedInstitutionalFlow();
 
-  if (readinessQuery.isLoading) {
+  if (readinessQuery.isLoading && !data) {
 
     return (
 
@@ -191,6 +203,20 @@ export function ProjectRadicationPanel({ projectId }: { projectId: string }) {
 
     );
 
+  }
+
+  if (readinessQuery.isError && !data) {
+    return (
+      <Card className="border-amber-200 bg-amber-50/70 p-6 text-center text-sm text-amber-950">
+        <AlertTriangle className="mx-auto h-5 w-5 text-amber-600" />
+        <p className="mt-2 font-semibold">No se pudo cargar el cierre de solicitud</p>
+        <p className="mt-1 text-xs text-amber-900">
+          {readinessQuery.error instanceof Error
+            ? readinessQuery.error.message
+            : 'Use el botón «Actualizar datos» en la parte superior para reintentar.'}
+        </p>
+      </Card>
+    );
   }
 
 
@@ -253,7 +279,11 @@ export function ProjectRadicationPanel({ projectId }: { projectId: string }) {
 
         await projectRadicationApi.register(projectId, body);
 
-        showToast('Solicitud radicada correctamente. Planeación validará el cierre.');
+        showToast(
+          reducedFlow
+            ? 'Solicitud radicada y finalizada correctamente.'
+            : 'Solicitud radicada correctamente. Planeación validará el cierre.',
+        );
 
       }
 
@@ -262,7 +292,9 @@ export function ProjectRadicationPanel({ projectId }: { projectId: string }) {
       await queryClient.invalidateQueries({ queryKey: projectRadicationKeys.readiness(projectId) });
       await queryClient.invalidateQueries({ queryKey: projectRadicationKeys.productWork() });
 
-      await invalidatePlanningDashboard(queryClient);
+      if (!reducedFlow) {
+        await invalidatePlanningDashboard(queryClient);
+      }
 
       await queryClient.invalidateQueries({ queryKey: ['institutional-work'] });
 
@@ -318,7 +350,7 @@ export function ProjectRadicationPanel({ projectId }: { projectId: string }) {
 
                 Último paso de Product: registra el radicado del paquete completo (semestres y asignaturas del
 
-                alcance) para enviarlo a Planeación y cerrar el flujo.
+                alcance) {reducedFlow ? 'para cerrar el flujo.' : 'para enviarlo a Planeación y cerrar el flujo.'}
 
               </p>
 
@@ -398,7 +430,9 @@ export function ProjectRadicationPanel({ projectId }: { projectId: string }) {
 
                         ? 'Planeación devolvió el radicado. Actualice número y fecha, luego reenvíe.'
 
-                        : 'Todas las materias del alcance están listas. Al radicar, la solicitud pasa a validación final de Planeación (fase 8).'}
+                        : reducedFlow
+                          ? 'Todas las materias del alcance están listas. Al radicar, la solicitud se cerrará inmediatamente.'
+                          : 'Todas las materias del alcance están listas. Al radicar, la solicitud pasa a validación final de Planeación (fase 8).'}
 
                     </p>
 
@@ -470,7 +504,9 @@ export function ProjectRadicationPanel({ projectId }: { projectId: string }) {
 
                 <p className="mt-1 text-xs text-emerald-800">
 
-                  Planeación validó el radicado. El proceso institucional quedó cerrado.
+                  {reducedFlow
+                    ? 'Product registró el radicado. El proceso institucional quedó cerrado.'
+                    : 'Planeación validó el radicado. El proceso institucional quedó cerrado.'}
 
                 </p>
 
@@ -586,7 +622,11 @@ export function ProjectRadicationPanel({ projectId }: { projectId: string }) {
 
         title={data.canResubmitRadication ? 'Radicar solicitud de nuevo' : 'Radicar solicitud'}
 
-        description="Registre el número y la fecha del radicado institucional. La solicitud completa pasará a Planeación para la validación final del proceso."
+        description={
+          reducedFlow
+            ? 'Registre el número y la fecha del radicado institucional. La solicitud completa se cerrará inmediatamente.'
+            : 'Registre el número y la fecha del radicado institucional. La solicitud completa pasará a Planeación para la validación final del proceso.'
+        }
 
         size="md"
 
@@ -644,7 +684,7 @@ export function ProjectRadicationPanel({ projectId }: { projectId: string }) {
 
               onChange={(e) => setForm((f) => ({ ...f, comment: e.target.value }))}
 
-              placeholder="Opcional: notas para Planeación"
+              placeholder={reducedFlow ? 'Opcional: notas de cierre' : 'Opcional: notas para Planeación'}
 
             />
 
@@ -717,15 +757,18 @@ export function ProjectRadicationScopeLockHint({ projectId }: { projectId: strin
   if (canRadicate) {
     return (
       <p className="text-xs text-amber-700">
-        El alcance quedó bloqueado tras la validación inicial de Planeación. El cierre de la solicitud se
-        gestiona en el panel de radicación institucional arriba.
+        {isReducedInstitutionalFlow()
+          ? 'El alcance quedó bloqueado al iniciar el flujo de Fábrica. El cierre de la solicitud se gestiona en el panel de radicación institucional arriba.'
+          : 'El alcance quedó bloqueado tras la validación inicial de Planeación. El cierre de la solicitud se gestiona en el panel de radicación institucional arriba.'}
       </p>
     );
   }
 
   return (
     <p className="text-xs text-amber-700">
-      El alcance quedó bloqueado tras la validación inicial de Planeación.{' '}
+      {isReducedInstitutionalFlow()
+        ? 'El alcance quedó bloqueado al iniciar el flujo de Fábrica.'
+        : 'El alcance quedó bloqueado tras la validación inicial de Planeación.'}{' '}
       <button
         type="button"
         className="font-bold underline hover:text-amber-900"

@@ -1,5 +1,4 @@
 import { useNavigate } from 'react-router-dom';
-import { useContextNavigate } from '../../navigation/useContextNavigate';
 import { AlertCircle, MessageSquare } from 'lucide-react';
 import { useRef, useState } from 'react';
 import { useAuth } from '../auth/AuthContext';
@@ -16,6 +15,7 @@ import { OperationalPipelineInstitutional } from './components/OperationalPipeli
 import { OperationalTimelineExecutive } from './components/OperationalTimelineExecutive';
 import { InstitutionalOperationalChecks } from './components/InstitutionalOperationalChecks';
 import { OperationalTurnIndicator } from './components/OperationalTurnIndicator';
+import { RequestProductOwnerMeta } from './components/RequestProductOwnerMeta';
 import { SemesterSubjectsTable } from './components/SemesterSubjectsTable';
 import {
   isSemesterProductAcademicReviewPhase,
@@ -23,16 +23,12 @@ import {
   shouldShowSemesterAcademicRequirements,
 } from './institutionalCopy';
 import {
-  factorySubjectWorkPath,
-  pickFactoryWorkSubject,
-  pickProductChecklistSubject,
-  productSubjectChecklistReviewPath,
   semesterHubPath,
 } from './institutionalNavigation';
-import type { SemesterSubjectOperationalDto } from '../../services/institutionalWorkflowApi';
 import { useSemesterOperationalWorkspaceQuery } from '../queries/useSemesterOperationalWorkspaceQuery';
 import { useSemesterInstitutionalTransitionMutation } from '../queries/useSemesterInstitutionalTransitionMutation';
 import type { OperationalCheckKeyV2, SlaStatusV2 } from '../../types/operationalWorkflow';
+import { isReducedInstitutionalFlow } from '../../config/env';
 
 function isReturnOrRejectAction(action: InstitutionalOperationalAction): boolean {
   return action.includes('RETURN') || action === 'PRODUCT_REQUEST_CHANGES';
@@ -52,9 +48,11 @@ export type SemesterOperationsWorkspaceProps = {
   /** Sin tabla de asignaturas (hub Product). */
   showSubjectsTable?: boolean;
   /** En hub de semestre: cambiar a tab asignaturas. */
-  onGoToSubjectsTab?: (options?: { reviewStarted?: boolean }) => void;
+  onGoToSubjectsTab?: (options?: { reviewStarted?: boolean; focusObservations?: boolean }) => void;
   /** Ocultar badges superiores cuando la página padre ya los muestra. */
   showTopStatus?: boolean;
+  /** Responsable Product (fallback si el workspace aún no lo trae). */
+  requestOwnerName?: string | null;
 };
 
 export function SemesterOperationsWorkspace({
@@ -62,9 +60,9 @@ export function SemesterOperationsWorkspace({
   showSubjectsTable = true,
   onGoToSubjectsTab,
   showTopStatus = true,
+  requestOwnerName,
 }: SemesterOperationsWorkspaceProps) {
   const navigate = useNavigate();
-  const contextNavigate = useContextNavigate();
   const { role } = useAuth();
   const [modal, setModal] = useState<ModalRequestV2>(null);
   const subjectsSectionRef = useRef<HTMLElement>(null);
@@ -72,26 +70,7 @@ export function SemesterOperationsWorkspace({
   const workspaceQuery = useSemesterOperationalWorkspaceQuery(semesterId);
   const transitionMutation = useSemesterInstitutionalTransitionMutation(semesterId);
   const workspace = workspaceQuery.data;
-
-  const navigateToFactorySubjectWork = (subjects: SemesterSubjectOperationalDto[], toastMessage?: string) => {
-    const target = pickFactoryWorkSubject(subjects);
-    if (!target) {
-      if (onGoToSubjectsTab) {
-        onGoToSubjectsTab();
-      } else {
-        subjectsSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-      }
-      showToast('Revise las asignaturas del paquete para completar la producción del semestre.');
-      return;
-    }
-    contextNavigate(factorySubjectWorkPath(target), {
-      state: { fromSemesterOperations: true, semesterId },
-    });
-    showToast(
-      toastMessage ??
-        'Abra cada asignatura, marque la producción interna al 100% y luego confirme la entrega del semestre.',
-    );
-  };
+  const reducedFlow = isReducedInstitutionalFlow();
 
   const goToSubjectsPanel = (options?: { reviewStarted?: boolean }) => {
     if (onGoToSubjectsTab) {
@@ -105,17 +84,6 @@ export function SemesterOperationsWorkspace({
     });
   };
 
-  const goToProductChecklistReview = () => {
-    const firstSubject = pickProductChecklistSubject(workspace?.subjects ?? []);
-    if (firstSubject) {
-      contextNavigate(productSubjectChecklistReviewPath(firstSubject.subjectId), {
-        state: { reviewStarted: true },
-      });
-      return;
-    }
-    goToSubjectsPanel({ reviewStarted: true });
-  };
-
   const runTransition = async (params: {
     action: InstitutionalOperationalAction;
     comment?: string;
@@ -123,29 +91,21 @@ export function SemesterOperationsWorkspace({
   }) => {
     if (!semesterId) return;
     try {
-      const updated = await transitionMutation.mutateAsync({
+      await transitionMutation.mutateAsync({
         action: params.action,
         comment: params.comment,
         returnReason: params.comment,
         evidenceUrl: params.evidenceUrl,
       });
       if (params.action === 'PRODUCT_START_ACADEMIC_REVIEW') {
-        const firstSubject = pickProductChecklistSubject(updated.subjects ?? []);
-        if (firstSubject) {
-          contextNavigate(productSubjectChecklistReviewPath(firstSubject.subjectId), {
-            state: { reviewStarted: true },
-          });
-          showToast('Revisión académica iniciada. Valide los entregables de la asignatura.');
-          return;
-        }
         goToSubjectsPanel({ reviewStarted: true });
-        showToast('Revisión académica iniciada. Elija una asignatura para continuar.');
+        showToast('Revisión académica iniciada. Elija cada asignatura para validar entregables, temas y cierre.');
         return;
       }
       if (params.action === 'FACTORY_START_PRODUCTION') {
-        navigateToFactorySubjectWork(
-          updated.subjects ?? [],
-          'Producción iniciada. Trabaje cada asignatura hasta completar la producción interna.',
+        goToSubjectsPanel();
+        showToast(
+          'Producción iniciada. Trabaje cada asignatura del semestre hasta completar la producción interna.',
         );
         return;
       }
@@ -193,7 +153,16 @@ export function SemesterOperationsWorkspace({
 
   const hasActions = workspace.availableActions.length > 0;
   const isFactoryView = role === 'FABRICA';
+  const isProductView = role === 'PRODUCT';
   const isInstitutionalReader = role === 'PLANEACION' || role === 'LMS';
+  const productReviewActive =
+    isProductView &&
+    (workspace.operationalState === 'IN_PRODUCT_ACADEMIC_REVIEW' ||
+      workspace.operationalState === 'CHANGES_REQUESTED_BY_PRODUCT');
+  const productSubjectsPendingReview = Math.max(
+    0,
+    workspace.metrics.subjectsTotal - workspace.metrics.subjectsApproved,
+  );
   const showAcademicRequirements = shouldShowSemesterAcademicRequirements(role, workspace.operationalState);
   const blockers = filterSemesterSubjectBlockers(workspace.readiness?.blockers ?? [], showAcademicRequirements);
   const deliverBlocked =
@@ -208,16 +177,14 @@ export function SemesterOperationsWorkspace({
   const subjectsWithObservations = workspace.subjects.filter(
     (s) => s.internalState === 'HAS_OBSERVATIONS' || (s.openObservationsCount ?? 0) > 0,
   );
-  const factoryWorkTarget = isFactoryView ? pickFactoryWorkSubject(workspace.subjects) : null;
   const factoryNeedsSubjectWork =
     isFactoryView &&
     workspace.operationalState === 'IN_FACTORY_PRODUCTION' &&
-    subjectsPendingProduction > 0 &&
-    factoryWorkTarget !== null;
+    subjectsPendingProduction > 0;
 
   const scrollToSubjectsWithObservations = () => {
     if (onGoToSubjectsTab) {
-      onGoToSubjectsTab();
+      onGoToSubjectsTab({ focusObservations: true });
       return;
     }
     const first = subjectsWithObservations[0];
@@ -242,6 +209,11 @@ export function SemesterOperationsWorkspace({
             variant="compact"
           />
           <SlaBadgeV2 status={workspace.slaStatus as SlaStatusV2} />
+          <RequestProductOwnerMeta
+            name={workspace.productOwnerName ?? requestOwnerName}
+            compact
+            className="sm:ml-auto"
+          />
         </div>
       ) : null}
 
@@ -287,40 +259,49 @@ export function SemesterOperationsWorkspace({
           className={cn(
             'rounded-xl bg-white p-4 text-left ring-1 ring-slate-200 transition-colors',
             workspace.metrics.openObservations > 0 &&
-              'cursor-pointer hover:bg-amber-50/80 hover:ring-amber-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500',
+              'cursor-pointer hover:bg-slate-50 hover:ring-slate-300 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-400',
             workspace.metrics.openObservations === 0 && 'cursor-default',
           )}
         >
           <p className="text-xs font-semibold uppercase text-slate-400">Observaciones abiertas</p>
-          <p className="mt-1 text-2xl font-bold text-amber-700">{workspace.metrics.openObservations}</p>
+          <p className="mt-1 inline-flex items-center gap-1.5 text-2xl font-bold text-slate-900">
+            {workspace.metrics.openObservations}
+            {workspace.metrics.openObservations > 0 ? (
+              <span className="inline-block h-2 w-2 rounded-full bg-amber-500" />
+            ) : null}
+          </p>
           {workspace.metrics.openObservations > 0 ? (
-            <p className="mt-1 text-[10px] font-medium text-amber-700">
-              {onGoToSubjectsTab ? 'Clic para ver asignaturas' : 'Clic para ir a la asignatura'}
+            <p className="mt-1 text-[10px] font-medium text-slate-500">
+              {onGoToSubjectsTab ? 'Ver asignaturas' : 'Ir a la asignatura'}
             </p>
           ) : null}
         </button>
       </div>
 
       {workspace.metrics.openObservations > 0 && isFactoryView ? (
-        <div className="flex items-start gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-          <MessageSquare className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
-          <div className="min-w-0 flex-1">
-            <p className="font-semibold">
-              Hay {workspace.metrics.openObservations} observación
-              {workspace.metrics.openObservations !== 1 ? 'es' : ''} de Product sin resolver en este semestre.
-            </p>
-            <p className="mt-1 text-xs text-amber-800">
-              Las asignaturas afectadas aparecen como «Observaciones de Product». Usa «Ver observaciones» para aplicar
-              cada corrección.
-            </p>
-          </div>
-          <button
-            type="button"
-            onClick={scrollToSubjectsWithObservations}
-            className="shrink-0 rounded-lg bg-amber-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-amber-700"
-          >
-            Ir a asignaturas
-          </button>
+        <div className="flex items-start gap-2.5 rounded-xl border border-slate-200/90 bg-slate-50/50 px-3.5 py-2.5 text-xs text-slate-600">
+          <MessageSquare className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-600" />
+          <p className="min-w-0 flex-1 leading-5">
+            <span className="font-medium text-slate-800">
+              {workspace.metrics.openObservations === 1
+                ? '1 observación pendiente'
+                : `${workspace.metrics.openObservations} observaciones pendientes`}
+            </span>
+            {subjectsWithObservations.length > 0 ? (
+              <>
+                {' — '}
+                {subjectsWithObservations.map((subject) => subject.subjectName).join(', ')}
+              </>
+            ) : null}
+            {'. '}
+            <button
+              type="button"
+              onClick={scrollToSubjectsWithObservations}
+              className="font-semibold text-orange-700 underline-offset-2 hover:underline"
+            >
+              Ver asignaturas
+            </button>
+          </p>
         </div>
       ) : null}
 
@@ -347,10 +328,12 @@ export function SemesterOperationsWorkspace({
           ) : null}
           {productionDelivered ? (
             <p className="mt-4 rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-xs text-sky-900">
-              Producción entregada. Pendiente validación de producción.
+              {reducedFlow
+                ? 'Producción entregada. Product puede iniciar revisión y radicación.'
+                : 'Producción entregada. Pendiente validación de producción.'}
             </p>
           ) : null}
-          {factoryNeedsSubjectWork && factoryWorkTarget ? (
+          {factoryNeedsSubjectWork ? (
             <div className="mt-4 space-y-2">
               <p className="text-xs leading-relaxed text-amber-900">
                 Complete la producción interna de cada asignatura del semestre. Cuando todas estén al 100%, podrá
@@ -360,24 +343,29 @@ export function SemesterOperationsWorkspace({
                 size="sm"
                 variant="primary"
                 className="w-full justify-center font-medium"
-                onClick={() => navigateToFactorySubjectWork(workspace.subjects)}
+                onClick={() => goToSubjectsPanel()}
               >
-                Trabajar asignatura
-                {subjectsPendingProduction > 1
-                  ? ` (${subjectsPendingProduction} pendientes)`
-                  : `: ${factoryWorkTarget.subjectName}`}
+                Ver asignaturas
+                {subjectsPendingProduction > 1 ? ` (${subjectsPendingProduction} pendientes)` : ''}
               </Button>
             </div>
           ) : null}
-          {isSemesterProductAcademicReviewPhase(workspace.operationalState) && role === 'PRODUCT' ? (
-            <div className="mt-4">
+          {productReviewActive ? (
+            <div className="mt-4 space-y-2">
+              <p className="text-xs leading-relaxed text-amber-900">
+                Revise cada asignatura del semestre: valide entregables, defina temas y apruebe o solicite correcciones
+                antes de cerrar el paquete.
+              </p>
               <Button
                 size="sm"
                 variant="primary"
                 className="w-full justify-center font-medium"
-                onClick={() => goToProductChecklistReview()}
+                onClick={() => goToSubjectsPanel({ reviewStarted: true })}
               >
-                Validar checklist del semestre
+                Ver asignaturas
+                {productSubjectsPendingReview > 0
+                  ? ` (${productSubjectsPendingReview} pendiente${productSubjectsPendingReview !== 1 ? 's' : ''})`
+                  : ''}
               </Button>
             </div>
           ) : null}
@@ -407,7 +395,7 @@ export function SemesterOperationsWorkspace({
                 );
               })}
             </div>
-          ) : !factoryNeedsSubjectWork ? (
+          ) : !factoryNeedsSubjectWork && !productReviewActive ? (
             <p className="mt-4 text-sm text-slate-600">No hay acciones pendientes de su rol en esta etapa.</p>
           ) : null}
           </div>
@@ -427,7 +415,9 @@ export function SemesterOperationsWorkspace({
               {showAcademicRequirements
                 ? 'Revise temas, granularidad y checklist académico por asignatura antes de aprobar el paquete.'
                 : isFactoryView
-                  ? 'Marca la producción interna de cada asignatura. La validación académica la realiza Product en la fase 7 del flujo.'
+                  ? reducedFlow
+                    ? 'Marca la producción interna de cada asignatura. Product realiza la revisión y radicación final.'
+                    : 'Marca la producción interna de cada asignatura. La validación académica la realiza Product en la fase 7 del flujo.'
                   : 'Avance de producción del paquete por asignatura. Los requisitos académicos se validan en la fase de revisión Product.'}
             </p>
           </div>

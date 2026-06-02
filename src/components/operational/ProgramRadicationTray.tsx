@@ -3,6 +3,7 @@ import { Card } from '../ui/Card';
 import type { ProjectRadicationWorkItemDto } from '../../services/projectRadicationApi';
 import { formatDate } from '../../utils/formatters';
 import { OperationalRequestItemHeading } from './OperationalRequestItemHeading';
+import { isReducedInstitutionalFlow } from '../../config/env';
 
 const TRAY_LIMIT = 4;
 
@@ -14,6 +15,7 @@ export function ProgramRadicationTray({
   onOpenRadication: (projectId: string) => void;
 }) {
   const visible = items.slice(0, TRAY_LIMIT);
+  const reducedFlow = isReducedInstitutionalFlow();
 
   return (
     <Card
@@ -34,7 +36,9 @@ export function ProgramRadicationTray({
           </div>
           <h2 className="truncate text-sm font-bold text-slate-900">Listas para radicar</h2>
           <p className="mt-0.5 line-clamp-2 text-[10px] leading-snug text-slate-600">
-            Solicitudes con alcance completo. Registre el radicado institucional para enviar a Planeación.
+            {reducedFlow
+              ? 'Solicitudes con alcance completo. Registre el radicado institucional para cerrar.'
+              : 'Solicitudes con alcance completo. Registre el radicado institucional para enviar a Planeación.'}
           </p>
         </div>
       </div>

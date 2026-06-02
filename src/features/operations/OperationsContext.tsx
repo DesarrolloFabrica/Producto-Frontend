@@ -29,6 +29,7 @@ import {
   mapCreateProjectToApi,
   mapNotificationsFromApi,
   mapObservationsFromApi,
+  mapObservationFromApi,
   mapProjectDetailFromApi,
   mapProjectsFromApi,
   mapSubjectWorkspaceProjectFromApi,
@@ -41,6 +42,7 @@ import {
   NOTIFICATION_MAX_LOADED,
   NOTIFICATION_READ_RETENTION_DAYS,
 } from './notificationInbox';
+import { resolveDeliverableChecklistItemId } from '../observations/observationDeliverableHelpers';
 import { ProjectsBootstrap } from './ProjectsBootstrap';
 import type {
   ActivityEvent,
@@ -360,6 +362,7 @@ type OperationsAction =
   | { type: 'RESOLVE_OBSERVATION'; payload: { projectId: string; observationId: string; observation: OperationalObservation } }
   | { type: 'MARK_OBSERVATION_CORRECTION_APPLIED'; payload: { projectId: string; observationId: string; observation: OperationalObservation } }
   | { type: 'REOPEN_OBSERVATION'; payload: { projectId: string; observationId: string; observation: OperationalObservation; reason: string } }
+  | { type: 'REMOVE_OBSERVATION'; payload: { projectId: string; observationId: string; checklistItemId?: string } }
   | { type: 'UPDATE_TOPIC_CHECKLIST_ITEM'; payload: { projectId: string; subjectId: string; topicName: string; checklistItemId: string; newStatus: ChecklistStatus } }
   | { type: 'MARK_SUBJECT_DELIVERED'; payload: { projectId: string; subjectId: string } }
   | { type: 'UPDATE_SUBJECT_PRODUCTION_STATUS'; payload: { projectId: string; subjectId: string; status: SubjectStatus } }
@@ -935,8 +938,14 @@ function operationsReducer(state: OperationsState, action: OperationsAction): Op
       };
     case 'RESOLVE_OBSERVATION':
       {
+        const resolvedObservation = {
+          ...(state.projectObservations.find((item) => item.id === action.payload.observationId) ??
+            action.payload.observation),
+          ...action.payload.observation,
+          status: 'RESUELTA' as const,
+        };
         const nextObservations = state.projectObservations.map((o) =>
-          o.id === action.payload.observationId ? { ...o, status: 'RESUELTA' as const } : o,
+          o.id === action.payload.observationId ? resolvedObservation : o,
         );
         return {
           ...state,
@@ -945,7 +954,7 @@ function operationsReducer(state: OperationsState, action: OperationsAction): Op
           observationsByProject: {
             ...state.observationsByProject,
             [action.payload.projectId]: (state.observationsByProject[action.payload.projectId] ?? []).map((o) =>
-              o.id === action.payload.observationId ? { ...o, status: 'RESUELTA' as const } : o,
+              o.id === action.payload.observationId ? resolvedObservation : o,
             ),
           },
         auditLogs: [
@@ -977,6 +986,40 @@ function operationsReducer(state: OperationsState, action: OperationsAction): Op
         ],
         };
       }
+    case 'REMOVE_OBSERVATION': {
+      const nextObservations = state.projectObservations.filter(
+        (item) => item.id !== action.payload.observationId,
+      );
+      const projects = state.projects.map((project) => {
+        if (project.id !== action.payload.projectId) return project;
+        let updated = recalcProject(project, nextObservations);
+        if (action.payload.checklistItemId) {
+          updated = {
+            ...updated,
+            subjects: updated.subjects.map((subject) => ({
+              ...subject,
+              checklist: subject.checklist.map((item) =>
+                item.id === action.payload.checklistItemId && item.status === 'RECHAZADO'
+                  ? { ...item, status: 'PENDIENTE' as const }
+                  : item,
+              ),
+            })),
+          };
+        }
+        return updated;
+      });
+      return {
+        ...state,
+        projects,
+        projectObservations: nextObservations,
+        observationsByProject: {
+          ...state.observationsByProject,
+          [action.payload.projectId]: (state.observationsByProject[action.payload.projectId] ?? []).filter(
+            (item) => item.id !== action.payload.observationId,
+          ),
+        },
+      };
+    }
     case 'MARK_OBSERVATION_CORRECTION_APPLIED':
       {
         const nextObservations = state.projectObservations.map((o) =>
@@ -1157,12 +1200,18 @@ interface OperationsContextValue extends OperationsState {
       projectDetailFromApi?: ApiProjectDetail;
     },
   ) => Promise<void>;
-  refreshProjects: () => Promise<void>;
+  refreshProjects: (force?: boolean) => Promise<void>;
   createProjectFromApi: (input: CreateProjectFormInput) => Promise<void>;
   confirmSubjectMatterExpertFromApi: (projectId: string) => Promise<VirtualizationProject>;
   createObservationFromApi: (input: CreateObservationInput) => Promise<void>;
   markObservationCorrectionAppliedFromApi: (observationId: string, projectId?: string) => Promise<void>;
   validateObservationFromApi: (observationId: string, projectId?: string) => Promise<void>;
+  deleteObservationFromApi: (
+    observationId: string,
+    projectId: string,
+    subjectId?: string,
+    checklistItemId?: string,
+  ) => Promise<void>;
   reopenObservationFromApi: (observationId: string, reason: string, projectId?: string) => Promise<void>;
   sendObservationsBatchToFactoryFromApi: (subjectId: string, projectId: string) => Promise<number>;
   notifyCorrectionsBatchFromApi: (
@@ -1268,14 +1317,18 @@ export function OperationsProvider({ children }: { children: ReactNode }) {
     notificationSummaryRef.current = state.notificationSummary;
   }, [state.notifications, state.notificationSummary]);
 
-  const loadProjects = useCallback(async () => {
+  const loadProjects = useCallback(async (options?: { force?: boolean }) => {
     if (!state.backendEnabled) return;
     dispatch({ type: 'LOAD_PROJECTS_START' });
     try {
+      if (options?.force) {
+        await queryClient.invalidateQueries({ queryKey: queryKeys.projects() });
+        await queryClient.invalidateQueries({ queryKey: queryKeys.institutionalWork.productTrackingPrograms() });
+      }
       const apiProjects = await queryClient.fetchQuery({
         queryKey: queryKeys.projects(),
         queryFn: () => projectsApi.getProjects(),
-        staleTime: projectsListStaleTime,
+        staleTime: options?.force ? 0 : projectsListStaleTime,
       });
       dispatch({ type: 'LOAD_PROJECTS_SUCCESS', payload: mapProjectsFromApi(apiProjects) });
     } catch (error) {
@@ -1301,6 +1354,15 @@ export function OperationsProvider({ children }: { children: ReactNode }) {
         });
         applyProjectDetailFromApi(apiProject);
       } catch (error) {
+        const status =
+          error && typeof error === 'object' && 'status' in error
+            ? (error as { status: number }).status
+            : undefined;
+        if (status === 404) {
+          await queryClient.invalidateQueries({ queryKey: queryKeys.project(projectId) });
+          await queryClient.invalidateQueries({ queryKey: queryKeys.projects() });
+          await queryClient.invalidateQueries({ queryKey: queryKeys.institutionalWork.productTrackingPrograms() });
+        }
         dispatch({ type: 'LOAD_PROJECT_DETAIL_ERROR', payload: getApiErrorMessage(error) });
       }
     },
@@ -1501,9 +1563,12 @@ export function OperationsProvider({ children }: { children: ReactNode }) {
     ],
   );
 
-  const refreshProjects = useCallback(async () => {
-    await loadProjects();
-  }, [loadProjects]);
+  const refreshProjects = useCallback(
+    async (force = false) => {
+      await loadProjects(force ? { force: true } : undefined);
+    },
+    [loadProjects],
+  );
 
   const createProjectFromApi = useCallback(
     async (input: CreateProjectFormInput) => {
@@ -1641,18 +1706,88 @@ export function OperationsProvider({ children }: { children: ReactNode }) {
         const response = await observationsApi.validateObservation(observationId);
         const resolvedProjectId = projectId ?? response.projectId ?? response.observation.projectId;
         const resolvedSubjectId = subjectId ?? response.observation.subjectId ?? undefined;
-        await refreshWorkflowContext({
-          projectId: resolvedProjectId,
-          subjectId: resolvedSubjectId,
-          scopes: resolvedSubjectId
-            ? ['detail', 'projectObservations', 'subjectObservations', 'notifications']
-            : ['detail', 'projectObservations', 'notifications'],
+        const mappedObservation = mapObservationFromApi(response.observation);
+        const checklistItemId = resolveDeliverableChecklistItemId(mappedObservation);
+
+        dispatch({
+          type: 'RESOLVE_OBSERVATION',
+          payload: {
+            projectId: resolvedProjectId,
+            observationId,
+            observation: mappedObservation,
+          },
         });
+
+        if (resolvedSubjectId && checklistItemId) {
+          queryClient.setQueryData<ApiSubjectWorkspace>(
+            queryKeys.subjectWorkspace(resolvedSubjectId),
+            (current) => patchChecklistStatusInWorkspace(current, checklistItemId, 'APROBADO'),
+          );
+          queryClient.setQueryData<ApiProjectDetail>(
+            queryKeys.project(resolvedProjectId),
+            (current) => patchChecklistStatusInProjectDetail(current, checklistItemId, 'APROBADO'),
+          );
+        }
+
+        await Promise.all([
+          refreshWorkflowContext({
+            projectId: resolvedProjectId,
+            scopes: ['projectObservations'],
+          }),
+          resolvedSubjectId
+            ? queryClient.refetchQueries({ queryKey: queryKeys.subjectWorkspace(resolvedSubjectId) })
+            : Promise.resolve(),
+          queryClient.invalidateQueries({ queryKey: ['semester-operational-workspace'] }),
+        ]);
       } finally {
         dispatch({ type: 'SET_MUTATING', payload: false });
       }
     },
-    [state.backendEnabled, refreshWorkflowContext],
+    [state.backendEnabled, refreshWorkflowContext, queryClient],
+  );
+
+  const deleteObservationFromApi = useCallback(
+    async (
+      observationId: string,
+      projectId: string,
+      subjectId?: string,
+      checklistItemId?: string,
+    ) => {
+      if (!state.backendEnabled) throw new Error('Backend deshabilitado.');
+      dispatch({ type: 'SET_MUTATING', payload: true });
+      try {
+        await observationsApi.deleteObservationDraft(observationId);
+        dispatch({
+          type: 'REMOVE_OBSERVATION',
+          payload: { projectId, observationId, checklistItemId },
+        });
+
+        if (subjectId && checklistItemId) {
+          queryClient.setQueryData<ApiSubjectWorkspace>(
+            queryKeys.subjectWorkspace(subjectId),
+            (current) => patchChecklistStatusInWorkspace(current, checklistItemId, 'PENDIENTE'),
+          );
+          queryClient.setQueryData<ApiProjectDetail>(
+            queryKeys.project(projectId),
+            (current) => patchChecklistStatusInProjectDetail(current, checklistItemId, 'PENDIENTE'),
+          );
+        }
+
+        await Promise.all([
+          refreshWorkflowContext({
+            projectId,
+            scopes: ['projectObservations'],
+          }),
+          subjectId
+            ? queryClient.refetchQueries({ queryKey: queryKeys.subjectWorkspace(subjectId) })
+            : Promise.resolve(),
+          queryClient.invalidateQueries({ queryKey: ['semester-operational-workspace'] }),
+        ]);
+      } finally {
+        dispatch({ type: 'SET_MUTATING', payload: false });
+      }
+    },
+    [state.backendEnabled, refreshWorkflowContext, queryClient],
   );
 
   const reopenObservationFromApi = useCallback(
@@ -1670,11 +1805,14 @@ export function OperationsProvider({ children }: { children: ReactNode }) {
             ? ['detail', 'projectObservations', 'subjectObservations', 'notifications']
             : ['detail', 'projectObservations', 'notifications'],
         });
+        if (resolvedSubjectId) {
+          await queryClient.invalidateQueries({ queryKey: queryKeys.subjectWorkspace(resolvedSubjectId) });
+        }
       } finally {
         dispatch({ type: 'SET_MUTATING', payload: false });
       }
     },
-    [state.backendEnabled, refreshWorkflowContext],
+    [state.backendEnabled, refreshWorkflowContext, queryClient],
   );
 
   const sendObservationsBatchToFactoryFromApi = useCallback(
@@ -1704,11 +1842,15 @@ export function OperationsProvider({ children }: { children: ReactNode }) {
       dispatch({ type: 'SET_MUTATING', payload: true });
       try {
         const response = await observationsApi.notifyCorrectionsToProduct(subjectId, observationIds);
-        await refreshWorkflowContext({
-          projectId,
-          subjectId,
-          scopes: ['detail', 'projectObservations', 'subjectObservations', 'notifications'],
-        });
+        await Promise.all([
+          refreshWorkflowContext({
+            projectId,
+            subjectId,
+            scopes: ['detail', 'projectObservations', 'subjectObservations', 'notifications'],
+          }),
+          queryClient.invalidateQueries({ queryKey: queryKeys.subjectWorkspace(subjectId) }),
+          queryClient.refetchQueries({ queryKey: queryKeys.subjectWorkspace(subjectId) }),
+        ]);
         markFactoryQueriesStale(queryClient);
         return response.observationCount;
       } finally {
@@ -1955,7 +2097,7 @@ export function OperationsProvider({ children }: { children: ReactNode }) {
 
   const resolveObservation = useCallback(async (projectId: string, observationId: string, observation: OperationalObservation) => {
     if (state.backendEnabled) {
-      await validateObservationFromApi(observationId, projectId);
+      await validateObservationFromApi(observationId, projectId, observation.subjectId);
       return;
     }
     dispatch({ type: 'RESOLVE_OBSERVATION', payload: { projectId, observationId, observation } });
@@ -2374,7 +2516,7 @@ export function OperationsProvider({ children }: { children: ReactNode }) {
 
   const reopenObservation = useCallback(async (projectId: string, observationId: string, observation: OperationalObservation, reason: string) => {
     if (state.backendEnabled) {
-      await reopenObservationFromApi(observationId, reason, projectId);
+      await reopenObservationFromApi(observationId, reason, projectId, observation.subjectId);
       return;
     }
     dispatch({
@@ -2458,6 +2600,7 @@ export function OperationsProvider({ children }: { children: ReactNode }) {
       createObservationFromApi,
       markObservationCorrectionAppliedFromApi,
       validateObservationFromApi,
+      deleteObservationFromApi,
       reopenObservationFromApi,
       sendObservationsBatchToFactoryFromApi,
       notifyCorrectionsBatchFromApi,
@@ -2511,6 +2654,7 @@ export function OperationsProvider({ children }: { children: ReactNode }) {
       createObservationFromApi,
       markObservationCorrectionAppliedFromApi,
       validateObservationFromApi,
+      deleteObservationFromApi,
       reopenObservationFromApi,
       sendObservationsBatchToFactoryFromApi,
       notifyCorrectionsBatchFromApi,

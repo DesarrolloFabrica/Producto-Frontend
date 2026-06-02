@@ -64,6 +64,7 @@ export interface ProgramOperationalWorkItemDto {
   projectId: string;
   program: string;
   school: string;
+  productOwnerName?: string | null;
   totalSemesters: number;
   completedSemesters: number;
   totalSubjects: number;
@@ -97,6 +98,7 @@ export interface OperationalWorkItemDto {
   actionUrl: string;
   subjectsTotal?: number;
   subjectsReady?: number;
+  subjectsApproved?: number;
   openObservations?: number;
 }
 
@@ -117,6 +119,7 @@ export interface SemesterOperationalWorkspaceDto {
   projectId: string;
   program: string;
   school: string;
+  productOwnerName?: string | null;
   operationalState: InstitutionalOperationalState;
   currentResponsibleRole: Role;
   academicReviewEnabled: boolean;

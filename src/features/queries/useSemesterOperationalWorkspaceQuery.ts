@@ -6,5 +6,7 @@ export function useSemesterOperationalWorkspaceQuery(semesterId?: string) {
     queryKey: ['semester-operational-workspace', semesterId],
     queryFn: () => institutionalWorkflowApi.getSemesterWorkspace(semesterId!),
     enabled: Boolean(semesterId),
+    staleTime: 45_000,
+    refetchOnWindowFocus: false,
   });
 }

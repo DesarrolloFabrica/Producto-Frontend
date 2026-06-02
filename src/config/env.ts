@@ -17,6 +17,14 @@ export const env = {
   googleClientId: (import.meta.env.VITE_GOOGLE_CLIENT_ID as string | undefined) ?? '',
   googleAuthEnabled: readFlag('VITE_GOOGLE_AUTH_ENABLED'),
   devEmailLoginEnabled: readFlag('VITE_DEV_EMAIL_LOGIN_ENABLED'),
+  institutionalFlowMode:
+    (import.meta.env.VITE_INSTITUTIONAL_FLOW_MODE as 'full' | 'reduced' | undefined) === 'reduced'
+      ? 'reduced'
+      : 'full',
   /** @deprecated UI no longer uses email/password; kept for internal compatibility */
   emailPasswordLoginEnabled: readFlag('VITE_EMAIL_PASSWORD_LOGIN_ENABLED'),
 };
+
+export function isReducedInstitutionalFlow(): boolean {
+  return env.institutionalFlowMode === 'reduced';
+}

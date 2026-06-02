@@ -4,16 +4,19 @@ import { useEffect, useMemo } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { ContextBackLink } from '../../navigation/ContextBackLink';
 import { homePathForRole } from '../../navigation/roleNavigation';
+import { useOperations } from '../../features/operations/OperationsContext';
 import { useAuth } from '../auth/AuthContext';
 import { Card } from '../../components/ui/Card';
+import { cn } from '../../components/ui/tokens';
 import { PageHeader } from '../../components/ui/PageHeader';
 import { Skeleton } from '../../components/ui/Skeleton';
 import { formatDate } from '../../utils/formatters';
 import type { ProgramOperationalWorkItemDto } from '../../services/institutionalWorkflowApi';
 import {
   formatProgramProgress,
+  formatSemesterSubjectProgress,
 } from './institutionalCopy';
-import { productSemesterOperationsPath, semesterOperationsPath } from './institutionalNavigation';
+import { productSemesterOperationsPath, semesterHubPath, semesterOperationsPath } from './institutionalNavigation';
 import { ProgramActiveStageBadge } from '../operations-v2/components/ProgramActiveStageBadge';
 import { SlaBadgeV2 } from '../operations-v2/components/SlaBadgeV2';
 import { OperationalTurnIndicator } from './components/OperationalTurnIndicator';
@@ -34,6 +37,12 @@ import { useQuery } from '@tanstack/react-query';
 import { PlanningProjectRadicationReviewPanel } from '../planning/components/PlanningProjectRadicationReviewPanel';
 import { ProjectInstitutionalClosurePanel } from './components/ProjectInstitutionalClosurePanel';
 import { queryKeys } from '../queries/queryKeys';
+import { RequestProductOwnerMeta } from './components/RequestProductOwnerMeta';
+import {
+  FactoryObservationsMetricHighlight,
+  FactoryObservationsProgramAlert,
+  type FactoryObservationSemesterRef,
+} from './components/FactoryObservationsGuidance';
 
 type LocationState = {
   from?: string;
@@ -70,7 +79,9 @@ function resolveProgramTurnContext(
   operationalState: InstitutionalOperationalState;
   responsibleRole: Role;
 } | null {
-  const active = program.semesters.filter((s) => s.operationalState !== 'FINALIZED');
+  const active = program.semesters.filter(
+    (s) => s.operationalState !== 'FINALIZED' && s.operationalState !== 'PENDING_PROJECT_RADICATION',
+  );
   const pool = active.length > 0 ? active : program.semesters;
   if (pool.length === 0) return null;
 
@@ -97,6 +108,7 @@ export function ProjectProgramOperationsPage() {
   const location = useLocation();
   const queryClient = useQueryClient();
   const { role } = useAuth();
+  const { projects } = useOperations();
   const roleHome = homePathForRole(role);
   const state = (location.state ?? {}) as LocationState;
 
@@ -191,6 +203,14 @@ export function ProjectProgramOperationsPage() {
 
   const displayProgram = institutionalProgram;
 
+  const requestOwnerName = useMemo(() => {
+    return (
+      displayProgram?.productOwnerName ??
+      projects.find((project) => project.id === projectId)?.productOwner ??
+      null
+    );
+  }, [displayProgram?.productOwnerName, projects, projectId]);
+
   const planningRadicationReview =
     role === 'PLANEACION' && Boolean(projectId);
 
@@ -222,6 +242,18 @@ export function ProjectProgramOperationsPage() {
     [displayProgram, role],
   );
 
+  const semestersWithOpenObservations = useMemo((): FactoryObservationSemesterRef[] => {
+    if (!displayProgram) return [];
+    return displayProgram.semesters
+      .filter((semester) => (semester.openObservations ?? 0) > 0 && semester.semesterId)
+      .map((semester) => ({
+        semesterId: semester.semesterId!,
+        semesterNumber: semester.semesterNumber,
+        semesterLabel: semester.subjectName,
+        count: semester.openObservations ?? 0,
+      }));
+  }, [displayProgram]);
+
   return (
     <div className="mx-auto max-w-5xl space-y-5 px-4 py-6 sm:px-6">
       <ContextBackLink fallback={backTarget} className={backLinkClassName}>
@@ -252,11 +284,14 @@ export function ProjectProgramOperationsPage() {
         </Card>
       ) : (
         <>
-          <PageHeader
-            eyebrow={displayProgram.school}
-            title={displayProgram.program}
-            description="Centro operacional del programa. Revisa el avance macro y entra al detalle de cada semestre."
-          />
+          <div className="space-y-2">
+            <PageHeader
+              eyebrow={displayProgram.school}
+              title={displayProgram.program}
+              description="Centro operacional del programa. Revisa el avance macro y entra al detalle de cada semestre."
+            />
+            <RequestProductOwnerMeta name={requestOwnerName} />
+          </div>
 
           <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             <MetricCard label="Avance macro" value={formatProgramProgress(displayProgram)} />
@@ -264,12 +299,24 @@ export function ProjectProgramOperationsPage() {
               label="Revisión académica"
               value={`${displayProgram.academicReviewPendingCount} sem.`}
             />
-            <MetricCard label="Observaciones abiertas" value={String(displayProgram.openObservations)} />
+            {role === 'FABRICA' ? (
+              <FactoryObservationsMetricHighlight count={displayProgram.openObservations} />
+            ) : (
+              <MetricCard label="Observaciones abiertas" value={String(displayProgram.openObservations)} />
+            )}
             <MetricCard
               label="Plazo más próximo"
               value={displayProgram.nearestDueDate ? formatDate(displayProgram.nearestDueDate) : '—'}
             />
           </section>
+
+          {role === 'FABRICA' && displayProgram.openObservations > 0 ? (
+            <FactoryObservationsProgramAlert
+              totalCount={displayProgram.openObservations}
+              semesters={semestersWithOpenObservations}
+              projectId={displayProgram.projectId}
+            />
+          ) : null}
 
           {isInstitutionalFinalized && projectId ? (
             <ProjectInstitutionalClosurePanel projectId={projectId} />
@@ -324,15 +371,34 @@ export function ProjectProgramOperationsPage() {
               </p>
             </div>
             <div className="divide-y divide-slate-100">
-              {displayProgram.semesters.map((semester) => (
+              {displayProgram.semesters.map((semester) => {
+                const semesterOpenObs = semester.openObservations ?? 0;
+                const hasOpenObservations = role === 'FABRICA' && semesterOpenObs > 0;
+                return (
                 <div
                   key={semester.semesterId ?? semester.subjectId}
-                  className="flex flex-wrap items-center justify-between gap-4 px-5 py-4 sm:px-6"
+                  className={cn(
+                    'flex flex-wrap items-center justify-between gap-4 px-5 py-4 sm:px-6',
+                    hasOpenObservations && 'bg-slate-50/80',
+                  )}
                 >
                   <div className="min-w-0 flex-1">
-                    <p className="font-semibold text-slate-900">{semester.subjectName}</p>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <p className="font-semibold text-slate-900">{semester.subjectName}</p>
+                      {role === 'FABRICA' && (semester.openObservations ?? 0) > 0 ? (
+                        <span className="inline-flex items-center gap-1 text-[10px] font-medium text-amber-700">
+                          <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
+                          {semester.openObservations} obs.
+                        </span>
+                      ) : null}
+                    </div>
                     <p className="mt-1 text-xs text-slate-500">
-                      {semester.subjectsReady ?? 0}/{semester.subjectsTotal ?? 0} producidas
+                      {formatSemesterSubjectProgress({
+                        operationalState: semester.operationalState as InstitutionalOperationalState,
+                        subjectsTotal: semester.subjectsTotal ?? 0,
+                        subjectsReady: semester.subjectsReady ?? 0,
+                        subjectsApproved: semester.subjectsApproved,
+                      })}
                     </p>
                     <div className="mt-2 space-y-2">
                       <OperationalTurnIndicator
@@ -352,19 +418,31 @@ export function ProjectProgramOperationsPage() {
                   {!isPlanningRadicationReview && semester.semesterId ? (
                     <Link
                       to={
-                        role === 'PRODUCT'
-                          ? productSemesterOperationsPath(displayProgram.projectId, semester.semesterNumber)
-                          : semesterOperationsPath(displayProgram.projectId, semester.semesterId)
+                        hasOpenObservations
+                          ? semesterHubPath(displayProgram.projectId, semester.semesterNumber)
+                          : role === 'PRODUCT'
+                            ? productSemesterOperationsPath(displayProgram.projectId, semester.semesterNumber)
+                            : semesterOperationsPath(displayProgram.projectId, semester.semesterId)
                       }
-                      state={{ from: location.pathname }}
-                      className="inline-flex shrink-0 items-center gap-1.5 rounded-xl border border-slate-200/80 bg-white px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                      state={
+                        hasOpenObservations
+                          ? { from: location.pathname, focusObservations: true }
+                          : { from: location.pathname }
+                      }
+                      className={cn(
+                        'inline-flex shrink-0 items-center gap-1.5 rounded-xl border px-4 py-2 text-xs font-semibold transition-colors',
+                        hasOpenObservations
+                          ? 'border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50'
+                          : 'border-slate-200/80 bg-white text-slate-700 hover:bg-slate-50',
+                      )}
                     >
-                      Ir al semestre
+                      {hasOpenObservations ? 'Ver semestre' : 'Ir al semestre'}
                       <ArrowRight className="h-3.5 w-3.5" />
                     </Link>
                   ) : null}
                 </div>
-              ))}
+              );
+              })}
             </div>
           </Card>
           ) : null}

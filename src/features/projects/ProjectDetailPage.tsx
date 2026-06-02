@@ -1,10 +1,9 @@
 import { useEffect, useState } from 'react';
-import { useLocation, useSearchParams } from 'react-router-dom';
+import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { ContextLink } from '../../navigation/ContextLink';
 import { DeepLinkNotFound } from '../../components/feedback/DeepLinkNotFound';
 import { ProjectsLoadNotice } from '../../components/feedback/ProjectsLoadNotice';
 import { useEnsureProjectDetail } from '../operations/useEnsureProjectDetail';
-import { useParams } from 'react-router-dom';
 import { StatusBadge } from '../../components/status/StatusBadge';
 import { Card } from '../../components/ui/Card';
 import { PageHeader } from '../../components/ui/PageHeader';
@@ -17,9 +16,12 @@ import { useOperations } from '../../features/operations/OperationsContext';
 import { SubjectMatterExpertPendingBanner } from '../../components/projects/SubjectMatterExpertPendingBanner';
 import { formatProjectExpectedDelivery } from '../../utils/projectSme';
 import { useAuth } from '../auth/AuthContext';
+import type { UseQueryResult } from '@tanstack/react-query';
+import type { ProjectRadicationReadinessDto } from '../../services/projectRadicationApi';
 import { formatDate } from '../../utils/formatters';
 import { ArrowRight, BookOpen, CalendarDays, ClipboardCheck, Eye, Plus, Loader2 } from 'lucide-react';
 import { Button } from '../../components/ui/Button';
+import { RefreshBackendButton } from '../../components/feedback/RefreshBackendButton';
 import { useToast } from '../../components/ui/ToastProvider';
 import { priorityLabels } from '../../utils/status';
 import { cn } from '../../components/ui/tokens';
@@ -35,12 +37,10 @@ import {
 import {
   ProjectRadicationPanel,
   ProjectRadicationScopeLockHint,
-  projectRadicationKeys,
   scrollToRadicationSection,
 } from '../project-radication/ProjectRadicationPanel';
 import { ProjectInstitutionalClosurePanel } from '../institutional-workflow/components/ProjectInstitutionalClosurePanel';
-import { useQuery } from '@tanstack/react-query';
-import { projectRadicationApi } from '../../services/projectRadicationApi';
+import { useProjectRadicationReadiness } from '../queries/useProjectRadicationReadiness';
 
 /** Scroll al panel cuando se llega con /projects/:id#radication (RR no hace scroll al hash). */
 function useScrollToRadicationOnHash(enabled: boolean, panelReady: boolean) {
@@ -76,21 +76,26 @@ function useLegacySummaryTabRedirect(projectId: string | undefined) {
 
 export function ProjectDetailPage() {
   const { projectId } = useParams();
+  const navigate = useNavigate();
   const { addSemesterToProject, refreshProjects, projectObservations, confirmSubjectMatterExpertFromApi } =
     useOperations();
   const { showToast } = useToast();
   const { role } = useAuth();
-  const { project, isLoading, error, notFound } = useEnsureProjectDetail(projectId);
+  const { project, isLoading, error, notFound, redirectProjectId } = useEnsureProjectDetail(projectId);
   useDismissNotificationsOnVisit({ projectId: project?.id });
   useLegacySummaryTabRedirect(projectId);
+
+  useEffect(() => {
+    if (!redirectProjectId) return;
+    navigate(`/projects/${redirectProjectId}`, { replace: true });
+  }, [redirectProjectId, navigate]);
   const [showInfoDrawer, setShowInfoDrawer] = useState(false);
   const [showAddSemesterModal, setShowAddSemesterModal] = useState(false);
 
-  const institutionalReadinessQuery = useQuery({
-    queryKey: projectRadicationKeys.readiness(projectId ?? ''),
-    queryFn: () => projectRadicationApi.getReadiness(projectId!),
-    enabled: Boolean(projectId) && role !== 'FABRICA',
-  });
+  const institutionalReadinessQuery = useProjectRadicationReadiness(
+    projectId,
+    role !== 'FABRICA',
+  );
 
   if (isLoading) {
     return (
@@ -128,6 +133,11 @@ export function ProjectDetailPage() {
   const isInstitutionalFinalized =
     institutionalReadinessQuery.data?.projectInstitutionalState === 'FINALIZED';
 
+  const refreshScope = {
+    semesterIds: project.semesters.map((semester) => semester.id),
+    subjectIds: project.subjects.map((subject) => subject.id),
+  };
+
   return (
     <div className="space-y-6">
       <PageHeader
@@ -135,6 +145,13 @@ export function ProjectDetailPage() {
         eyebrow={project.school}
         title={project.program}
         description={`${project.modality} · Responsable Product: ${project.productOwner}`}
+        action={
+          <RefreshBackendButton
+            projectId={project.id}
+            semesterIds={refreshScope.semesterIds}
+            subjectIds={refreshScope.subjectIds}
+          />
+        }
       />
 
       <SubjectMatterExpertPendingBanner
@@ -190,7 +207,7 @@ export function ProjectDetailPage() {
         <ProjectSemestersWorkspace
           project={project}
           projectId={project.id}
-          projectInsight={projectInsight}
+          readinessQuery={institutionalReadinessQuery}
           onAddSemester={() => setShowAddSemesterModal(true)}
         />
       )}
@@ -221,22 +238,16 @@ function InfoCompact({ label, children }: { label: string; children: React.React
 function ProjectSemestersWorkspace({
   project,
   projectId,
-  projectInsight,
+  readinessQuery,
   onAddSemester,
 }: {
   project: ReturnType<typeof useOperations>['projects'][number];
   projectId: string;
-  projectInsight: ReturnType<typeof analyzeProductProject>;
+  readinessQuery: UseQueryResult<ProjectRadicationReadinessDto>;
   onAddSemester: () => void;
 }) {
   const { role } = useAuth();
   const showRadication = role === 'PRODUCT';
-
-  const readinessQuery = useQuery({
-    queryKey: projectRadicationKeys.readiness(projectId),
-    queryFn: () => projectRadicationApi.getReadiness(projectId),
-    enabled: showRadication,
-  });
 
   const scopeLocked = Boolean(readinessQuery.data?.institutionalScopeLockedAt);
   const radicationPanelReady =
@@ -257,7 +268,9 @@ function ProjectSemestersWorkspace({
 
   return (
     <section className="space-y-5">
-      {showRadication && <ProjectRadicationPanel projectId={projectId} />}
+      {showRadication && (
+        <ProjectRadicationPanel projectId={projectId} readinessQuery={readinessQuery} />
+      )}
 
       <div className="flex items-center justify-between">
         <div>

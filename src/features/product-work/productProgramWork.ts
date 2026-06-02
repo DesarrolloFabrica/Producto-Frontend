@@ -10,6 +10,7 @@ import {
   type SubjectOperationalState,
   type SubjectWorkItem,
 } from '../operations/subjectOperationalState';
+import { isReducedInstitutionalFlow } from '../../config/env';
 
 /** Filtros de bandeja programática (compatibles con query params legacy `status`). */
 export type ProductProgramTrayFilter =
@@ -44,6 +45,11 @@ const FACTORY_STATES = new Set<InstitutionalOperationalState>([
   'CHANGES_REQUESTED_BY_PRODUCT',
 ]);
 
+const REDUCED_FACTORY_ACTIVE_STATES = new Set<InstitutionalOperationalState>([
+  'IN_FACTORY_PRODUCTION',
+  'CHANGES_REQUESTED_BY_PRODUCT',
+]);
+
 const ACADEMIC_REVIEW_STATES = new Set<InstitutionalOperationalState>([
   'PENDING_PRODUCT_ACADEMIC_REVIEW',
   'IN_PRODUCT_ACADEMIC_REVIEW',
@@ -73,11 +79,17 @@ export function matchesProductProgramTrayFilter(
   program: ProgramOperationalWorkItemDto,
   filter: ProductProgramTrayFilter,
 ): boolean {
+  const reducedFlow = isReducedInstitutionalFlow();
   switch (filter) {
     case 'NOT_STARTED':
-      return programHasSemesterState(program, PLANNING_INITIAL);
+      return reducedFlow
+        ? programHasSemesterState(program, 'PENDING_FACTORY')
+        : programHasSemesterState(program, PLANNING_INITIAL);
     case 'IN_PRODUCTION':
-      return programHasSemesterInStates(program, FACTORY_STATES);
+      return programHasSemesterInStates(
+        program,
+        reducedFlow ? REDUCED_FACTORY_ACTIVE_STATES : FACTORY_STATES,
+      );
     case 'IN_REVIEW':
       return program.academicReviewPendingCount > 0 || programHasSemesterInStates(program, ACADEMIC_REVIEW_STATES);
     case 'CORRECTION_SENT':
