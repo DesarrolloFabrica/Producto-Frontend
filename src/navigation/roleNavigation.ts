@@ -1,7 +1,7 @@
 import type { Role } from '../types/domain';
 import { ADMIN_DASHBOARD_PATH } from '../features/admin-tracking/adminNavigation';
 
-const ADMIN_ALLOWED_PREFIXES = ['/admin', '/notifications', '/audit'] as const;
+const ADMIN_ALLOWED_PREFIXES = ['/admin', '/notifications', '/audit', '/reports'] as const;
 
 export function homePathForRole(role: Role | null): string {
   switch (role) {

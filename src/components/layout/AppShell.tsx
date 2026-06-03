@@ -1,4 +1,4 @@
-import { Bell, ClipboardCheck, ClipboardList, CloudUpload, Factory, FolderKanban, Home, LogOut, ScrollText, Settings } from 'lucide-react';
+import { BarChart2, Bell, ClipboardCheck, ClipboardList, CloudUpload, Factory, FolderKanban, Home, LogOut, ScrollText, Settings } from 'lucide-react';
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useEffect } from 'react';
 import { ScrollRestoration } from '../../navigation/ScrollRestoration';
@@ -18,11 +18,13 @@ import { ADMIN_DASHBOARD_PATH } from '../../features/admin-tracking/adminNavigat
 const productLinks = [
   { to: '/product/dashboard', label: 'Dashboard', icon: Home },
   { to: '/projects', label: 'Solicitudes', icon: FolderKanban },
+  { to: '/reports', label: 'Reportes', icon: BarChart2 },
   { to: '/notifications', label: 'Notificaciones', icon: Bell },
 ];
 
 const adminLinks = [
   { to: ADMIN_DASHBOARD_PATH, label: 'Dashboard', icon: Home },
+  { to: '/reports', label: 'Reportes', icon: BarChart2 },
   { to: '/audit', label: 'Auditoría', icon: ScrollText },
 ];
 
@@ -30,6 +32,7 @@ const factoryLinks = [
   { to: '/factory/dashboard', label: 'Dashboard', icon: Factory },
   { to: '/factory/work', label: 'Bandeja', icon: ClipboardList },
   { to: '/projects', label: 'Proyectos', icon: FolderKanban },
+  { to: '/reports', label: 'Reportes', icon: BarChart2 },
   { to: '/notifications', label: 'Notificaciones', icon: Bell },
 ];
 

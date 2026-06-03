@@ -28,6 +28,8 @@ import { SubjectOperationsPage } from '../features/institutional-workflow/Subjec
 import { ProjectProgramOperationsPage } from '../features/institutional-workflow/ProjectProgramOperationsPage';
 import { SemesterOperationsPage } from '../features/institutional-workflow/SemesterOperationsPage';
 import { AdminProgramDetailPage } from '../features/admin-tracking/AdminProgramDetailPage';
+import { ReportsCatalogPage } from '../features/reports/ReportsCatalogPage';
+import { ReportDetailPage } from '../features/reports/ReportDetailPage';
 import type { Role } from '../types/domain';
 import { homePathForRole, isPathAllowedForRole } from '../navigation/roleNavigation';
 
@@ -120,6 +122,8 @@ export const router = createBrowserRouter([
       { path: 'notifications', element: <RoleScopeGuard><NotificationsPage /></RoleScopeGuard> },
       { path: 'notifications/settings', element: <RoleScopeGuard><NotificationSettings /></RoleScopeGuard> },
       { path: 'audit', element: <RoleScopeGuard><AuditPage /></RoleScopeGuard> },
+      { path: 'reports', element: <RoleScopeGuard><ReportsCatalogPage /></RoleScopeGuard> },
+      { path: 'reports/:reportId', element: <RoleScopeGuard><ReportDetailPage /></RoleScopeGuard> },
         ],
       },
       { path: '*', element: <Navigate to="/" replace /> },
