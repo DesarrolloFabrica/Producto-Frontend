@@ -1,21 +1,17 @@
 import { Package, ArrowRight, MessageSquare, CheckCircle2, AlertTriangle, Clock3 } from 'lucide-react';
-import { Link, useLocation } from 'react-router-dom';
-import { StatusBadge } from '../../components/status/StatusBadge';
+import { useLocation } from 'react-router-dom';
 import { Card } from '../../components/ui/Card';
 import { ProjectsLoadNotice } from '../../components/feedback/ProjectsLoadNotice';
 import { useOperations } from '../../features/operations/OperationsContext';
 import { analyzeFactoryProjects } from '../../features/operations/factoryProjectState';
 import { getProjectModificationLabel } from '../../features/operations/modificationBadges';
 import { getProjectSubjects } from '../../features/operations/subjectOperationalState';
-import { formatDate } from '../../utils/formatters';
 import { cn } from '../../components/ui/tokens';
 import { useMemo, useState } from 'react';
-import { ModificationBadge } from '../../components/project/ModificationBadge';
 import { useFactoryProgramsQuery } from '../queries/useFactoryProgramsQuery';
 import { toFactoryProgramOperationsNav } from '../factory-work/factoryProgramNavigation';
 import { isFactoryProgramFullyComplete } from '../factory-work/factoryProgramWork';
-import { formatProgramProgress } from '../institutional-workflow/institutionalCopy';
-import { ProgramActiveStageBadge } from '../operations-v2/components/ProgramActiveStageBadge';
+import { FactoryInsightCard, FactoryProgramCard } from './components/FactoryProgramCard';
 import type { SubjectOperationalState } from '../operations/subjectOperationalState';
 
 type FactoryFilter = 'all' | 'ready' | 'production' | 'corrections' | 'waiting' | 'completed';
@@ -174,58 +170,15 @@ export function FactoryProjectsList() {
             <p className="text-sm font-medium text-[#94A3B8]">No tienes programas para este filtro.</p>
           </Card>
         ) : (
-          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-            {factoryPrograms.map((program) => {
-              const operationsNav = toFactoryProgramOperationsNav(program, location.pathname);
-              const isComplete = isFactoryProgramFullyComplete(program);
-              return (
-              <div
+          <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
+            {factoryPrograms.map((program) => (
+              <FactoryProgramCard
                 key={program.projectId}
-                className={cn(
-                  'rounded-[20px] bg-white p-5 shadow-[0_4px_20px_-5px_rgba(0,0,0,0.05)] transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_12px_30px_-10px_rgba(0,0,0,0.1)]',
-                  isComplete && 'ring-1 ring-emerald-100',
-                )}
-              >
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0 flex-1">
-                    <h3 className="truncate text-base font-bold tracking-[-0.02em] text-[#1E293B]">{program.program}</h3>
-                    <p className="mt-1 text-[0.85rem] font-medium text-[#64748B]">{program.school}</p>
-                  </div>
-                  <span className="rounded-[10px] bg-orange-50 px-2.5 py-1 text-[10px] font-bold uppercase text-orange-700">
-                    {program.totalSemesters} sem.
-                  </span>
-                </div>
-                <p className="mt-2 text-xs font-medium text-slate-700">
-                  {formatProgramProgress({
-                    completedSemesters: program.completedSemesters,
-                    totalSemesters: program.totalSemesters,
-                    completedSubjects: program.completedSubjects,
-                    totalSubjects: program.totalSubjects,
-                  })}
-                </p>
-                <div className="mt-3">
-                  <ProgramActiveStageBadge stages={program.activeStageSummary} />
-                </div>
-                <div className="mt-3 flex items-center justify-between">
-                  <span className="text-[11px] font-medium text-[#94A3B8]">
-                    {program.nearestDueDate ? formatDate(program.nearestDueDate) : '—'}
-                  </span>
-                  <span className="rounded-[12px] bg-slate-50 px-2.5 py-1 text-[11px] font-medium text-slate-500">
-                    {program.openObservations} obs.
-                  </span>
-                </div>
-                <div className="mt-4 flex justify-end">
-                  <Link
-                    to={operationsNav.to}
-                    state={operationsNav.state}
-                    className="inline-flex items-center gap-1.5 rounded-[12px] bg-[#FF6B00] px-3 py-2 text-xs font-bold text-white shadow-lg shadow-[#FF6B00]/20 transition-all duration-200 hover:scale-105 hover:bg-[#E66000]"
-                  >
-                    Ver programa <ArrowRight className="h-3.5 w-3.5" />
-                  </Link>
-                </div>
-              </div>
-            );
-            })}
+                program={program}
+                operationsNav={toFactoryProgramOperationsNav(program, location.pathname)}
+                isComplete={isFactoryProgramFullyComplete(program)}
+              />
+            ))}
           </div>
         )
       ) : filtered.length === 0 ? (
@@ -234,86 +187,17 @@ export function FactoryProjectsList() {
           <p className="text-sm font-medium text-[#94A3B8]">No tienes solicitudes para este filtro.</p>
         </Card>
       ) : (
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+        <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
           {filtered.map((insight) => {
             const { project } = insight;
-            const subjectCount = getProjectSubjects(project).length;
-            const modificationLabel = getProjectModificationLabel(notifications, project.id);
-
             return (
-              <div
+              <FactoryInsightCard
                 key={project.id}
-                className={cn(
-                  'rounded-[20px] bg-white p-5 shadow-[0_4px_20px_-5px_rgba(0,0,0,0.05)] transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_12px_30px_-10px_rgba(0,0,0,0.1)]',
-                  insight.isFactoryWorkComplete && 'ring-1 ring-emerald-100',
-                )}
-              >
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0 flex-1">
-                    <h3 className="truncate text-base font-bold tracking-[-0.02em] text-[#1E293B]">{project.program}</h3>
-                    <p className="mt-1 text-[0.85rem] font-medium text-[#64748B]">{project.school}</p>
-                    {modificationLabel && (
-                      <div className="mt-2">
-                        <ModificationBadge label={modificationLabel} />
-                      </div>
-                    )}
-                  </div>
-                  <StatusBadge status={insight.displayStatus as any} />
-                </div>
-
-                <p className="mt-2 text-[11px] font-semibold text-[#64748B]">{insight.summaryLabel}</p>
-
-                <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-xs text-[#64748B]">
-                  <span>{project.modality}</span>
-                  <span>
-                    {project.semesters?.length ?? 1} semestre
-                    {(project.semesters?.length ?? 1) !== 1 ? 's' : ''}
-                  </span>
-                  <span>
-                    {subjectCount} asignatura{subjectCount !== 1 ? 's' : ''}
-                  </span>
-                </div>
-
-                {insight.correctionsCount > 0 && (
-                  <div className="mt-3 rounded-[12px] bg-rose-50 px-3 py-2 text-xs font-medium text-rose-600">
-                    {insight.correctionsCount} materia{insight.correctionsCount !== 1 ? 's' : ''} con correcciones
-                  </div>
-                )}
-
-                <div className="mt-3 flex items-center justify-between">
-                  <span className="text-[11px] font-medium text-[#94A3B8]">
-                    {formatDate(project.expectedDeliveryDate)}
-                  </span>
-                  <span
-                    className={cn(
-                      'rounded-[12px] px-2.5 py-1 text-[11px] font-medium',
-                      project.priority === 'CRITICAL' || project.priority === 'HIGH'
-                        ? 'bg-rose-50 text-rose-600'
-                        : project.priority === 'MEDIUM'
-                          ? 'bg-amber-50 text-amber-600'
-                          : 'bg-slate-50 text-slate-500',
-                    )}
-                  >
-                    {project.priority ?? 'NORMAL'}
-                  </span>
-                </div>
-
-                <div className="mt-4 flex justify-end">
-                  <Link
-                    to={insight.actionRoute}
-                    className={cn(
-                      'inline-flex items-center gap-1.5 rounded-[12px] px-3 py-2 text-xs font-bold text-white shadow-lg transition-all duration-200 hover:scale-105',
-                      insight.isFactoryWorkComplete
-                        ? 'bg-emerald-600 shadow-emerald-600/20 hover:bg-emerald-700'
-                        : insight.bucket === 'HAS_CORRECTIONS'
-                          ? 'bg-rose-600 shadow-rose-600/20 hover:bg-rose-700'
-                          : 'bg-[#FF6B00] shadow-[#FF6B00]/20 hover:bg-[#E66000]',
-                    )}
-                  >
-                    {insight.actionLabel} <ArrowRight className="h-3.5 w-3.5" />
-                  </Link>
-                </div>
-              </div>
+                insight={insight}
+                project={project}
+                subjectCount={getProjectSubjects(project).length}
+                modificationLabel={getProjectModificationLabel(notifications, project.id)}
+              />
             );
           })}
         </div>
