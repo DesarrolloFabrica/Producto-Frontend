@@ -99,7 +99,7 @@ function GoogleAuthButton({
           {label}
         </span>
       </div>
-      <div className="absolute inset-0 opacity-[0.01]">
+      <div className="absolute inset-0 overflow-hidden opacity-[0.01]">
         <GoogleLogin
           onSuccess={onSuccess}
           onError={onError}

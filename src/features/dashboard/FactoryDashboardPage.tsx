@@ -3,6 +3,7 @@ import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { AlertTriangle, CheckCircle2, Clock3, Package, Send, Sparkles } from 'lucide-react';
 import { MetricCard } from '../../components/cards/MetricCard';
 import { ProgramOperationalTray } from '../../components/operational/ProgramOperationalTray';
+import type { OperationalTrayVariant } from '../../components/ui/OperationalTrayCard';
 import { ProjectsLoadNotice } from '../../components/feedback/ProjectsLoadNotice';
 import { PageHeader } from '../../components/ui/PageHeader';
 import { useOperations } from '../../features/operations/OperationsContext';
@@ -25,6 +26,15 @@ const TRAY_BY_VIEW: Record<FactoryDashboardView, FactoryProgramTrayFilter[]> = {
   review: ['IN_REVIEW'],
   completed: ['APPROVED'],
   all: ['CHANGES_REQUESTED', 'CORRECTION_SENT', 'IN_PRODUCTION', 'NOT_STARTED', 'IN_REVIEW', 'APPROVED'],
+};
+
+const TRAY_FOLDER_VARIANT: Record<FactoryProgramTrayFilter, OperationalTrayVariant> = {
+  CHANGES_REQUESTED: 'corrections',
+  CORRECTION_SENT: 'corrections',
+  IN_PRODUCTION: 'production',
+  NOT_STARTED: 'pending',
+  IN_REVIEW: 'review',
+  APPROVED: 'completed',
 };
 
 export function FactoryDashboardPage() {
@@ -68,6 +78,18 @@ export function FactoryDashboardPage() {
   );
 
   const visibleTrayKeys = TRAY_BY_VIEW[view];
+
+  const viewCounts = useMemo(
+    () => ({
+      active:
+        trays.CHANGES_REQUESTED.length + trays.IN_PRODUCTION.length + trays.NOT_STARTED.length,
+      corrections: trays.CHANGES_REQUESTED.length + trays.CORRECTION_SENT.length,
+      review: trays.IN_REVIEW.length,
+      completed: trays.APPROVED.length,
+      all: programCounts.total,
+    }),
+    [trays, programCounts.total],
+  );
 
   const trayConfigs = useMemo(
     () => [
@@ -142,8 +164,9 @@ export function FactoryDashboardPage() {
   };
 
   return (
-    <div className="space-y-7">
+    <div className="space-y-5">
       <PageHeader
+        variant="executive"
         prominentEyebrow
         eyebrow="Centro de control"
         title="Dashboard Factory"
@@ -166,9 +189,10 @@ export function FactoryDashboardPage() {
         />
       )}
 
-      <section className="grid gap-3 md:grid-cols-4">
+      <section className="grid gap-3.5 sm:grid-cols-2 md:grid-cols-4 md:gap-4">
         <MetricCard
-          variant="subjectPanel"
+          executive
+          featured
           label="Programas asignados"
           value={isLoading ? '—' : programCounts.total}
           icon={Package}
@@ -177,7 +201,7 @@ export function FactoryDashboardPage() {
           onClick={() => setView('all')}
         />
         <MetricCard
-          variant="subjectPanel"
+          executive
           label="Correcciones pendientes"
           value={isLoading ? '—' : programCounts.corrections}
           icon={AlertTriangle}
@@ -186,7 +210,7 @@ export function FactoryDashboardPage() {
           onClick={() => setView('corrections')}
         />
         <MetricCard
-          variant="subjectPanel"
+          executive
           label="En producción"
           value={isLoading ? '—' : programCounts.inProduction}
           icon={Package}
@@ -195,7 +219,7 @@ export function FactoryDashboardPage() {
           onClick={() => setView('active')}
         />
         <MetricCard
-          variant="subjectPanel"
+          executive
           label="Próximas / vencidas"
           value={isLoading ? '—' : programCounts.upcoming}
           icon={Clock3}
@@ -210,6 +234,7 @@ export function FactoryDashboardPage() {
         search={search}
         onViewChange={setView}
         onSearchChange={setSearch}
+        viewCounts={viewCounts}
       />
 
       {visibleTrays.length > 0 ? (
@@ -234,6 +259,7 @@ export function FactoryDashboardPage() {
                 viewAllTo={tray.viewAllTo}
                 onOpenProgram={openProgram}
                 icon={tray.icon}
+                folderVariant={TRAY_FOLDER_VARIANT[tray.key]}
               />
             );
           })}
@@ -259,6 +285,7 @@ export function FactoryDashboardPage() {
             viewAllTo="/factory/work?origin=new"
             onOpenProgram={openProgram}
             icon={Sparkles}
+            folderVariant="pending"
           />
         </section>
       )}

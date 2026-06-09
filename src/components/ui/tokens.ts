@@ -54,6 +54,14 @@ export const text = {
   body: 'text-sm font-medium text-slate-600 leading-relaxed',
 };
 
+export const control = {
+  filterInput:
+    'h-8 w-full rounded-lg border-0 bg-white/55 px-2.5 text-[13px] text-slate-800 placeholder:text-slate-400 shadow-none ring-1 ring-slate-200/50 backdrop-blur-sm transition-[box-shadow,background-color,ring-color] focus:bg-white/90 focus:outline-none focus:ring-2 focus:ring-orange-400/25',
+  filterSelect:
+    'h-8 w-full cursor-pointer appearance-none rounded-lg border-0 bg-white/55 px-2.5 text-[13px] font-medium text-slate-700 shadow-none ring-1 ring-slate-200/50 backdrop-blur-sm transition-[box-shadow,background-color,ring-color] focus:bg-white/90 focus:outline-none focus:ring-2 focus:ring-orange-400/25',
+  filterLabel: 'block text-[10px] font-medium uppercase tracking-[0.08em] text-slate-400/90',
+};
+
 export type RoleAccent = 'product' | 'factory' | 'planning' | 'lms';
 
 export const roleAccent = {

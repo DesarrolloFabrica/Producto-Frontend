@@ -109,17 +109,19 @@ export function ProductWorkPage() {
         : null;
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-5">
       <PageHeader
+        variant="executive"
+        roleAccent="product"
         eyebrow="Bandeja de trabajo"
         title="Bandeja de programas"
         description="Gestiona solicitudes por programa, semestre y etapa operacional."
         action={
           <ContextBackLink
             fallback="/product/dashboard"
-            className="inline-flex h-10 items-center gap-2 rounded-[12px] border border-slate-200/80 bg-white px-4 text-xs font-bold text-[#475569] shadow-sm transition-colors hover:border-orange-200 hover:bg-orange-50/50 hover:text-orange-700"
+            className="inline-flex h-9 items-center gap-2 rounded-lg bg-white/55 px-3.5 text-[11px] font-semibold text-slate-600 ring-1 ring-white/60 backdrop-blur-sm transition-colors hover:bg-white/80 hover:text-slate-900"
           >
-            <LayoutDashboard className="h-4 w-4" />
+            <LayoutDashboard className="h-3.5 w-3.5" />
             Volver al dashboard
           </ContextBackLink>
         }

@@ -108,7 +108,10 @@ export function hasActiveFilters(query: FactorySubjectsQuery) {
 }
 
 export const filterInputClass =
-  'h-9 w-full rounded-[12px] border border-slate-200/70 bg-white px-3 text-sm text-[#1E293B] placeholder:text-[#94A3B8] transition-colors focus:border-[#FF6B00] focus:outline-none focus:ring-2 focus:ring-[#FF6B00]/15';
+  'h-8 w-full rounded-lg border-0 bg-white/55 px-2.5 text-[13px] text-slate-800 placeholder:text-slate-400 shadow-none ring-1 ring-slate-200/50 backdrop-blur-sm transition-[box-shadow,background-color,ring-color] focus:bg-white/90 focus:outline-none focus:ring-2 focus:ring-orange-400/25';
 
 export const filterSelectClass =
-  'h-9 w-full rounded-[12px] border border-slate-200/70 bg-white px-3 text-sm font-medium text-[#475569] transition-colors focus:border-[#FF6B00] focus:outline-none focus:ring-2 focus:ring-[#FF6B00]/15';
+  'h-8 w-full cursor-pointer appearance-none rounded-lg border-0 bg-white/55 px-2.5 text-[13px] font-medium text-slate-700 shadow-none ring-1 ring-slate-200/50 backdrop-blur-sm transition-[box-shadow,background-color,ring-color] focus:bg-white/90 focus:outline-none focus:ring-2 focus:ring-orange-400/25';
+
+export const filterLabelClass =
+  'block text-[10px] font-medium uppercase tracking-[0.08em] text-slate-400/90';

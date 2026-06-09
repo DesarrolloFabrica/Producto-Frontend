@@ -11,11 +11,13 @@ export function FactoryDashboardQuickNav({
   search,
   onViewChange,
   onSearchChange,
+  viewCounts,
 }: {
   view: FactoryDashboardView;
   search: string;
   onViewChange: (view: FactoryDashboardView) => void;
   onSearchChange: (search: string) => void;
+  viewCounts: Record<FactoryDashboardView, number>;
 }) {
   const trimmedSearch = search.trim();
   const fullSearchUrl = trimmedSearch
@@ -24,22 +26,41 @@ export function FactoryDashboardQuickNav({
 
   return (
     <div className="space-y-3">
-      <div className="flex flex-wrap gap-2">
-        {FACTORY_DASHBOARD_VIEWS.map((link) => (
-          <button
-            key={link.id}
-            type="button"
-            onClick={() => onViewChange(link.id)}
-            className={cn(
-              'rounded-xl px-3 py-2 text-xs font-semibold transition-all duration-200',
-              view === link.id
-                ? 'bg-amber-500 text-white shadow-sm'
-                : 'bg-white/80 text-slate-600 ring-1 ring-slate-200/60 hover:bg-slate-50',
-            )}
-          >
-            {link.label}
-          </button>
-        ))}
+      <div
+        className="inline-flex max-w-full flex-wrap gap-0.5 border-b border-slate-200/70"
+        role="tablist"
+        aria-label="Filtrar bandejas"
+      >
+        {FACTORY_DASHBOARD_VIEWS.map((link) => {
+          const isActive = view === link.id;
+          const count = viewCounts[link.id];
+
+          return (
+            <button
+              key={link.id}
+              type="button"
+              role="tab"
+              aria-selected={isActive}
+              onClick={() => onViewChange(link.id)}
+              className={cn(
+                'relative inline-flex items-center gap-1.5 px-3 py-2 text-[11px] transition-colors duration-180',
+                isActive
+                  ? 'font-semibold text-slate-900 after:absolute after:inset-x-3 after:bottom-0 after:h-0.5 after:rounded-full after:bg-[var(--fac-primary)]/75'
+                  : 'font-medium text-slate-500 hover:text-slate-800',
+              )}
+            >
+              <span>{link.label}</span>
+              <span
+                className={cn(
+                  'tabular-nums text-[10px] font-medium',
+                  isActive ? 'text-slate-600' : 'text-slate-400',
+                )}
+              >
+                ({count})
+              </span>
+            </button>
+          );
+        })}
       </div>
       <div className="flex flex-wrap items-center gap-3">
         <div className="relative min-w-[200px] flex-1">

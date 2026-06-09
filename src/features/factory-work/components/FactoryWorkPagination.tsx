@@ -1,4 +1,4 @@
-import { cn } from '../../../components/ui/tokens';
+import { cn, radius, surface } from '../../../components/ui/tokens';
 
 export function FactoryWorkPagination({
   page,
@@ -20,30 +20,28 @@ export function FactoryWorkPagination({
 
   const rangeLabel =
     totalItems === 0
-      ? 'Mostrando 0 de 0 materias'
+      ? 'Mostrando 0 de 0 programas'
       : start === end
-        ? `Mostrando ${start} de ${totalItems} materia${totalItems === 1 ? '' : 's'}`
-        : `Mostrando ${start}-${end} de ${totalItems} materias`;
+        ? `Mostrando ${start} de ${totalItems} programa${totalItems === 1 ? '' : 's'}`
+        : `Mostrando ${start}–${end} de ${totalItems} programas`;
 
   const btnBase =
-    'h-9 rounded-[12px] px-3.5 text-xs font-bold ring-1 transition-colors disabled:cursor-not-allowed';
+    'h-8 rounded-lg px-3 text-[11px] font-semibold ring-1 transition-colors disabled:cursor-not-allowed backdrop-blur-sm';
 
   return (
-    <div className="flex flex-wrap items-center justify-between gap-3 rounded-[16px] border border-slate-200/50 bg-white/80 px-4 py-3">
-      <p className="text-xs font-semibold text-[#64748B]">{rangeLabel}</p>
-      <div className="flex flex-wrap items-center gap-2">
-        <PaginationButton
-          label="Primero"
-          disabled={!canPrev}
-          onClick={() => onPageChange(1)}
-          className={btnBase}
-        />
+    <div className={cn('flex flex-wrap items-center justify-between gap-3 px-4 py-2.5', surface.roleGlass, radius.control)}>
+      <p className="text-xs font-medium text-slate-500">{rangeLabel}</p>
+      <div className="flex flex-wrap items-center gap-1.5">
+        <PaginationButton label="Primero" disabled={!canPrev} onClick={() => onPageChange(1)} className={btnBase} />
         <PaginationButton
           label="Anterior"
           disabled={!canPrev}
           onClick={() => onPageChange(page - 1)}
           className={btnBase}
         />
+        <span className="px-2 text-[11px] font-semibold tabular-nums text-slate-600">
+          {page} / {totalPages}
+        </span>
         <PaginationButton
           label="Siguiente"
           disabled={!canNext}
@@ -80,8 +78,8 @@ function PaginationButton({
       className={cn(
         className,
         disabled
-          ? 'bg-slate-50/80 text-slate-300 ring-slate-100'
-          : 'bg-white text-[#64748B] ring-slate-200/60 hover:bg-slate-50 hover:text-[#1E293B]',
+          ? 'bg-white/20 text-slate-300 ring-white/30'
+          : 'bg-white/55 text-slate-600 ring-white/55 hover:bg-white/80 hover:text-slate-900',
       )}
     >
       {label}

@@ -47,4 +47,4 @@ export function getProgramFilterChips(query: Record<string, unknown>) {
   return chips;
 }
 
-export { filterInputClass, filterSelectClass } from './productWorkConstants';
+export { filterInputClass, filterSelectClass, filterLabelClass } from './productWorkConstants';

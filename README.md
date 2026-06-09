@@ -33,3 +33,13 @@ View your app in AI Studio: https://ai.studio/apps/a37b9c18-9f63-4512-9977-37213
 3. Login como `FABRICA`, completar checklist y entregar asignatura a revisión.
 4. Login como `PRODUCT`, crear observación, validar corrección, aprobar checklist y aprobar asignatura.
 5. Revisar notificaciones reales y refrescar navegador para confirmar persistencia.
+
+## Documentación del flujo de usuario
+
+Documentación en la carpeta [`docs/`](../docs/) del repositorio:
+
+| Documento | Audiencia | Descripción |
+|-----------|-----------|-------------|
+| [FLUJO-USUARIO.md](../docs/FLUJO-USUARIO.md) | Desarrolladores, QA | Rutas, componentes, APIs, guardas y estado |
+| [GUIA-TUTORIAL-FLUJO.md](../docs/GUIA-TUTORIAL-FLUJO.md) | Capacitadores, videos | Mismo flujo en lenguaje humano, con guion y FAQ |
+| [RESUMEN-FLUJO-USUARIO.md](../docs/RESUMEN-FLUJO-USUARIO.md) | Referencia rápida | Una página: tablas, guion de 3 min, casos típicos |

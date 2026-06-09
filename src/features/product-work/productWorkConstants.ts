@@ -1,10 +1,13 @@
 import type { SubjectOperationalState } from '../operations/subjectOperationalState';
 
 export const filterInputClass =
-  'h-10 w-full rounded-[12px] border border-slate-200/70 bg-white px-3 text-sm font-semibold text-[#1E293B] placeholder:text-[#94A3B8] shadow-sm outline-none transition focus:border-orange-200 focus:ring-4 focus:ring-orange-100/60';
+  'h-8 w-full rounded-lg border-0 bg-white/55 px-2.5 text-[13px] text-slate-800 placeholder:text-slate-400 shadow-none ring-1 ring-slate-200/50 backdrop-blur-sm transition-[box-shadow,background-color,ring-color] focus:bg-white/90 focus:outline-none focus:ring-2 focus:ring-orange-400/25';
 
 export const filterSelectClass =
-  'h-10 w-full rounded-[12px] border border-slate-200/70 bg-white px-3 text-sm font-semibold text-[#1E293B] shadow-sm outline-none transition focus:border-orange-200 focus:ring-4 focus:ring-orange-100/60';
+  'h-8 w-full cursor-pointer appearance-none rounded-lg border-0 bg-white/55 px-2.5 text-[13px] font-medium text-slate-700 shadow-none ring-1 ring-slate-200/50 backdrop-blur-sm transition-[box-shadow,background-color,ring-color] focus:bg-white/90 focus:outline-none focus:ring-2 focus:ring-orange-400/25';
+
+export const filterLabelClass =
+  'block text-[10px] font-medium uppercase tracking-[0.08em] text-slate-400/90';
 
 export const statusOptions: Array<{ label: string; value?: SubjectOperationalState }> = [
   { label: 'Todos', value: undefined },

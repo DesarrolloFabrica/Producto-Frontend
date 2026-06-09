@@ -224,17 +224,17 @@ export function ProductDashboardPage() {
 
       <DashboardKpiGrid columns={6}>
 
-        <MetricCard compact label="Solicitudes activas" value={activeProjects} icon={FolderKanban} />
+        <MetricCard executive label="Solicitudes activas" value={activeProjects} icon={FolderKanban} tone="text-orange-500" />
 
-        <MetricCard compact label="Pend. experto temático" value={pendingSubjectMatterExpert} icon={ClipboardList} />
+        <MetricCard executive label="Pend. experto temático" value={pendingSubjectMatterExpert} icon={ClipboardList} tone="text-indigo-500" />
 
-        <MetricCard compact label="Solicitudes nuevas" value={trays.NOT_STARTED.length} icon={Sparkles} />
+        <MetricCard executive label="Solicitudes nuevas" value={trays.NOT_STARTED.length} icon={Sparkles} tone="text-amber-500" />
 
-        <MetricCard compact label="Programas por revisar" value={trays.IN_REVIEW.length} icon={ClipboardList} />
+        <MetricCard executive label="Programas por revisar" value={trays.IN_REVIEW.length} icon={ClipboardList} tone="text-violet-500" />
 
-        <MetricCard compact label="Correcciones por validar" value={trays.CORRECTION_SENT.length} icon={AlertTriangle} tone="text-rose-500" />
+        <MetricCard executive label="Correcciones por validar" value={trays.CORRECTION_SENT.length} icon={AlertTriangle} tone="text-rose-500" />
 
-        <MetricCard compact label="Proyectos atrasados" value={lateProjects} icon={AlertTriangle} tone="text-red-500" />
+        <MetricCard executive label="Proyectos atrasados" value={lateProjects} icon={AlertTriangle} tone="text-red-500" />
 
       </DashboardKpiGrid>
 
@@ -262,6 +262,8 @@ export function ProductDashboardPage() {
 
           icon={Sparkles}
 
+          folderVariant="pending"
+
         />
 
         <ProgramOperationalTray
@@ -281,6 +283,8 @@ export function ProductDashboardPage() {
           onOpenProgram={openProgramOperations}
 
           icon={Factory}
+
+          folderVariant="production"
 
         />
 
@@ -308,6 +312,8 @@ export function ProductDashboardPage() {
 
           icon={ClipboardList}
 
+          folderVariant="review"
+
         />
 
         <ProgramOperationalTray
@@ -331,6 +337,8 @@ export function ProductDashboardPage() {
           onOpenProgram={openProgramOperations}
 
           icon={AlertTriangle}
+
+          folderVariant="corrections"
 
         />
 
@@ -356,6 +364,8 @@ export function ProductDashboardPage() {
 
           onOpenProgram={openProgramOperations}
 
+          folderVariant="corrections"
+
         />
 
         <ProgramOperationalTray
@@ -375,6 +385,8 @@ export function ProductDashboardPage() {
           onOpenProgram={openProgramOperations}
 
           icon={AlertTriangle}
+
+          folderVariant="corrections"
 
         />
 
