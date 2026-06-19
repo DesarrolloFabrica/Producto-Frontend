@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import {
   ArrowRight,
   Building2,
@@ -75,10 +75,48 @@ function GoogleAuthButton({
   variant?: "default" | "institutional";
 }) {
   const isInstitutional = variant === "institutional";
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [buttonWidth, setButtonWidth] = useState<number | null>(null);
+
+  useEffect(() => {
+    const node = containerRef.current;
+    if (!node) return;
+
+    const updateWidth = () => {
+      const width = Math.floor(node.getBoundingClientRect().width);
+      if (width > 0) {
+        setButtonWidth((prev) => (prev === width ? prev : width));
+      }
+    };
+
+    updateWidth();
+    const observer = new ResizeObserver(updateWidth);
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, []);
+
+  const triggerGoogleLogin = useCallback(() => {
+    if (disabled) return;
+    const googleBtn = containerRef.current?.querySelector(
+      'div[role="button"]',
+    ) as HTMLElement | null;
+    googleBtn?.click();
+  }, [disabled]);
+
+  const handleContainerClick = (event: React.MouseEvent<HTMLDivElement>) => {
+    if (disabled) return;
+    const target = event.target as HTMLElement;
+    if (target.tagName === "IFRAME" || target.closest('div[role="button"]')) {
+      return;
+    }
+    triggerGoogleLogin();
+  };
 
   return (
     <div
-      className={`group relative w-full ${disabled ? "pointer-events-none opacity-60" : ""}`}
+      ref={containerRef}
+      className={`group relative w-full cursor-pointer ${disabled ? "pointer-events-none opacity-60" : ""}`}
+      onClick={handleContainerClick}
     >
       <div
         className={
@@ -99,16 +137,22 @@ function GoogleAuthButton({
           {label}
         </span>
       </div>
-      <div className="absolute inset-0 overflow-hidden opacity-[0.01]">
-        <GoogleLogin
-          onSuccess={onSuccess}
-          onError={onError}
-          text="continue_with"
-          size="large"
-          width="100%"
-          theme="outline"
-          shape={isInstitutional ? "rectangular" : "pill"}
-        />
+      <div className="google-auth-overlay absolute inset-0 z-[2] opacity-[0.01]">
+        {buttonWidth !== null && (
+          <GoogleLogin
+            onSuccess={onSuccess}
+            onError={onError}
+            text="continue_with"
+            size="large"
+            width={String(buttonWidth)}
+            theme="outline"
+            shape={isInstitutional ? "rectangular" : "pill"}
+            containerProps={{
+              className: "google-auth-host",
+              style: { height: "100%", width: "100%" },
+            }}
+          />
+        )}
       </div>
     </div>
   );

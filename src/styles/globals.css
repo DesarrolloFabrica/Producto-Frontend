@@ -217,6 +217,19 @@
     pointer-events: none;
   }
 
+  .google-auth-overlay {
+    display: flex;
+    align-items: stretch;
+  }
+
+  .google-auth-host,
+  .google-auth-host > div,
+  .google-auth-host iframe {
+    width: 100% !important;
+    height: 100% !important;
+    min-height: 100%;
+  }
+
   .login-sso-google-button {
     background: linear-gradient(
       180deg,
