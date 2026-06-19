@@ -7,6 +7,7 @@ export type AuthUser = {
   email: string;
   role: Role;
   status: 'ACTIVE' | 'INACTIVE';
+  permissions: string[];
   avatarUrl?: string | null;
 };
 

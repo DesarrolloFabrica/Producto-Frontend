@@ -30,6 +30,7 @@ import { SemesterOperationsPage } from '../features/institutional-workflow/Semes
 import { AdminProgramDetailPage } from '../features/admin-tracking/AdminProgramDetailPage';
 import { ReportsCatalogPage } from '../features/reports/ReportsCatalogPage';
 import { ReportDetailPage } from '../features/reports/ReportDetailPage';
+import { CDigitalUsersPage } from '../features/c-digital-users/CDigitalUsersPage';
 import type { Role } from '../types/domain';
 import { homePathForRole, isPathAllowedForRole } from '../navigation/roleNavigation';
 
@@ -62,6 +63,9 @@ function RoleScopeGuard({ children }: { children: React.ReactNode }) {
   if (isLoading) return <RouteLoadingScreen message="Validando sesión..." />;
   if (!isAuthenticated) return <Navigate to="/login" replace />;
   const currentPath = `${location.pathname}${location.search ?? ''}`;
+  if (location.pathname === '/usuarios-c-digital') {
+    return <>{children}</>;
+  }
   if (!isPathAllowedForRole(currentPath, role)) {
     return <Navigate to={homePathForRole(role)} replace />;
   }
@@ -124,6 +128,7 @@ export const router = createBrowserRouter([
       { path: 'audit', element: <RoleScopeGuard><AuditPage /></RoleScopeGuard> },
       { path: 'reports', element: <RoleScopeGuard><ReportsCatalogPage /></RoleScopeGuard> },
       { path: 'reports/:reportId', element: <RoleScopeGuard><ReportDetailPage /></RoleScopeGuard> },
+      { path: 'usuarios-c-digital', element: <RoleScopeGuard><CDigitalUsersPage /></RoleScopeGuard> },
         ],
       },
       { path: '*', element: <Navigate to="/" replace /> },

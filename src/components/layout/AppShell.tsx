@@ -1,4 +1,4 @@
-import { BarChart2, Bell, ClipboardCheck, ClipboardList, CloudUpload, Factory, FolderKanban, Home, LogOut, ScrollText, Settings } from 'lucide-react';
+import { BarChart2, Bell, ClipboardCheck, ClipboardList, CloudUpload, Factory, FolderKanban, Home, KeyRound, LogOut, ScrollText, Settings } from 'lucide-react';
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useEffect } from 'react';
 import { ScrollRestoration } from '../../navigation/ScrollRestoration';
@@ -14,6 +14,7 @@ import { isActionableNotification, isVisibleNotification } from '../../features/
 import { useNotificationSummaryQuery } from '../../features/queries/useNotificationSummaryQuery';
 import { homePathForRole } from '../../navigation/roleNavigation';
 import { ADMIN_DASHBOARD_PATH } from '../../features/admin-tracking/adminNavigation';
+import { PRODUCTO_C_DIGITAL_USERS_ACCESS, hasPermission } from '../../permissions';
 
 const productLinks = [
   { to: '/product/dashboard', label: 'Dashboard', icon: Home },
@@ -52,7 +53,7 @@ export function AppShell() {
   const summaryQuery = useNotificationSummaryQuery(Boolean(user));
   const navigate = useNavigate();
   const location = useLocation();
-  const links =
+  const baseLinks =
     role === 'ADMIN'
       ? adminLinks
       : role === 'FABRICA'
@@ -60,8 +61,11 @@ export function AppShell() {
         : role === 'PLANEACION'
           ? planningLinks
           : role === 'LMS'
-            ? lmsLinks
+          ? lmsLinks
             : productLinks;
+  const links = hasPermission(user, PRODUCTO_C_DIGITAL_USERS_ACCESS)
+    ? [...baseLinks, { to: '/usuarios-c-digital', label: 'Usuarios C Digital', icon: KeyRound }]
+    : baseLinks;
   const actionableBadge =
     summaryQuery.data?.actionableCount ??
     notificationSummary?.actionableCount ??
@@ -84,10 +88,13 @@ export function AppShell() {
     sessionStorage.setItem(key, '1');
 
     const home = homePathForRole(role);
+    if (location.pathname === '/usuarios-c-digital') {
+      return;
+    }
     if (location.pathname !== home) {
       navigate(home, { replace: true });
     }
-  }, [location.pathname, navigate, role]);
+  }, [location.pathname, navigate, role, user]);
 
   return (
     <ContextPanelProvider>
