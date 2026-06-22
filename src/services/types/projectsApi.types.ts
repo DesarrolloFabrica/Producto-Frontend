@@ -85,6 +85,20 @@ export interface ApiProjectListItem {
   subjectsSummary?: ApiSubjectSummary[];
 }
 
+export interface ApiPaginationMeta {
+  page: number;
+  limit: number;
+  total: number;
+  totalPages: number;
+  hasNextPage: boolean;
+  hasPreviousPage: boolean;
+}
+
+export interface ApiPaginatedProjectListResponse {
+  items: ApiProjectListItem[];
+  meta: ApiPaginationMeta;
+}
+
 export interface ApiChecklistItem {
   id: string;
   subjectId: string;

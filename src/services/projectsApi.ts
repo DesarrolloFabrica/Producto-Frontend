@@ -5,10 +5,22 @@ import type {
   ApiProjectActionResponse,
   ApiProjectDetail,
   ApiProjectListItem,
+  ApiPaginatedProjectListResponse,
 } from './types/projectsApi.types';
 
 export const projectsApi = {
-  getProjects: () => apiClient.get<ApiProjectListItem[]>('/projects'),
+  getProjectsPage: (params: { page?: number; limit?: number } = {}) => {
+    const query = new URLSearchParams();
+    if (params.page) query.set('page', String(params.page));
+    if (params.limit) query.set('limit', String(params.limit));
+    const qs = query.toString();
+    return apiClient.get<ApiPaginatedProjectListResponse>(`/projects${qs ? `?${qs}` : ''}`);
+  },
+
+  getProjects: async () => {
+    const response = await projectsApi.getProjectsPage({ page: 1, limit: 100 });
+    return response.items;
+  },
 
   getProjectById: (id: string) => apiClient.get<ApiProjectDetail>(`/projects/${id}`),
 

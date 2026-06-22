@@ -10,14 +10,34 @@ export type CDigitalUserRecord = {
   id: string;
   programName: string;
   username: string;
-  password: string;
+  passwordProtected: boolean;
   createdBy: CDigitalUserAuditUser;
   updatedBy: CDigitalUserAuditUser | null;
   createdAt: string;
   updatedAt: string;
 };
 
+export type PaginationMeta = {
+  page: number;
+  limit: number;
+  total: number;
+  totalPages: number;
+  hasNextPage: boolean;
+  hasPreviousPage: boolean;
+};
+
+export type PaginatedCDigitalUsersResponse = {
+  items: CDigitalUserRecord[];
+  meta: PaginationMeta;
+};
+
+export type CDigitalRevealPasswordResponse = {
+  password: string;
+};
+
 export type CDigitalUserFilters = {
+  page?: number;
+  limit?: number;
   programName?: string;
   username?: string;
   createdAt?: string;
@@ -41,13 +61,16 @@ function toQueryString(filters: CDigitalUserFilters): string {
 
 export const cDigitalUsersApi = {
   list: async (filters: CDigitalUserFilters = {}) =>
-    await apiClient.get<CDigitalUserRecord[]>(`/c-digital-users${toQueryString(filters)}`),
+    await apiClient.get<PaginatedCDigitalUsersResponse>(`/c-digital-users${toQueryString(filters)}`),
 
   create: async (payload: Required<CDigitalUserPayload>) =>
     await apiClient.post<CDigitalUserRecord>('/c-digital-users', payload),
 
   update: async (id: string, payload: CDigitalUserPayload) =>
     await apiClient.patch<CDigitalUserRecord>(`/c-digital-users/${id}`, payload),
+
+  revealPassword: async (id: string) =>
+    await apiClient.get<CDigitalRevealPasswordResponse>(`/c-digital-users/${id}/reveal-password`),
 
   remove: async (id: string) => await apiClient.delete<void>(`/c-digital-users/${id}`),
 };

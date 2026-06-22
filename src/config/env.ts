@@ -16,7 +16,7 @@ export const env = {
   useMocks: readUseMocks(),
   googleClientId: (import.meta.env.VITE_GOOGLE_CLIENT_ID as string | undefined) ?? '',
   googleAuthEnabled: readFlag('VITE_GOOGLE_AUTH_ENABLED'),
-  devEmailLoginEnabled: readFlag('VITE_DEV_EMAIL_LOGIN_ENABLED'),
+  devEmailLoginEnabled: !import.meta.env.PROD && readFlag('VITE_DEV_EMAIL_LOGIN_ENABLED'),
   institutionalFlowMode:
     (import.meta.env.VITE_INSTITUTIONAL_FLOW_MODE as 'full' | 'reduced' | undefined) === 'reduced'
       ? 'reduced'
