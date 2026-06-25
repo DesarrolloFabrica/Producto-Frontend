@@ -1,5 +1,8 @@
 import type { Role } from '../types/domain';
 import { ADMIN_DASHBOARD_PATH } from '../features/admin-tracking/adminNavigation';
+import { isCDigitalExclusiveUser } from '../permissions';
+
+const C_DIGITAL_HOME_PATH = '/usuarios-c-digital';
 
 const ADMIN_ALLOWED_PREFIXES = ['/admin', '/notifications', '/audit', '/reports'] as const;
 
@@ -17,6 +20,15 @@ export function homePathForRole(role: Role | null): string {
     default:
       return '/product/dashboard';
   }
+}
+
+export function homePathForUser(
+  user: { role: Role; permissions?: string[] | null } | null | undefined,
+): string {
+  if (isCDigitalExclusiveUser(user)) {
+    return C_DIGITAL_HOME_PATH;
+  }
+  return homePathForRole(user?.role ?? null);
 }
 
 function isAdminAllowedPath(path: string): boolean {
@@ -54,4 +66,14 @@ export function isPathAllowedForRole(path: string, role: Role | null): boolean {
   }
 
   return true;
+}
+
+export function isPathAllowedForUser(
+  path: string,
+  user: { role: Role; permissions?: string[] | null } | null | undefined,
+): boolean {
+  if (isCDigitalExclusiveUser(user)) {
+    return path === C_DIGITAL_HOME_PATH;
+  }
+  return isPathAllowedForRole(path, user?.role ?? null);
 }

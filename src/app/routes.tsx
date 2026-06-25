@@ -32,7 +32,8 @@ import { ReportsCatalogPage } from '../features/reports/ReportsCatalogPage';
 import { ReportDetailPage } from '../features/reports/ReportDetailPage';
 import { CDigitalUsersPage } from '../features/c-digital-users/CDigitalUsersPage';
 import type { Role } from '../types/domain';
-import { homePathForRole, isPathAllowedForRole } from '../navigation/roleNavigation';
+import { homePathForRole, homePathForUser, isPathAllowedForUser } from '../navigation/roleNavigation';
+import { hasCDigitalUsersPermission } from '../permissions';
 
 function RequireAuth() {
   const { isAuthenticated, isLoading } = useAuth();
@@ -51,23 +52,26 @@ function RequireAuth() {
 }
 
 function HomeRedirect() {
-  const { role, isAuthenticated, isLoading } = useAuth();
+  const { user, isAuthenticated, isLoading } = useAuth();
   if (isLoading) return <RouteLoadingScreen message="Validando sesión..." />;
   if (!isAuthenticated) return <Navigate to="/login" replace />;
-  return <Navigate to={homePathForRole(role)} replace />;
+  return <Navigate to={homePathForUser(user)} replace />;
 }
 
 function RoleScopeGuard({ children }: { children: React.ReactNode }) {
-  const { role, isAuthenticated, isLoading } = useAuth();
+  const { role, user, isAuthenticated, isLoading } = useAuth();
   const location = useLocation();
   if (isLoading) return <RouteLoadingScreen message="Validando sesión..." />;
   if (!isAuthenticated) return <Navigate to="/login" replace />;
   const currentPath = `${location.pathname}${location.search ?? ''}`;
   if (location.pathname === '/usuarios-c-digital') {
+    if (!hasCDigitalUsersPermission(user)) {
+      return <Navigate to={homePathForUser(user)} replace />;
+    }
     return <>{children}</>;
   }
-  if (!isPathAllowedForRole(currentPath, role)) {
-    return <Navigate to={homePathForRole(role)} replace />;
+  if (!isPathAllowedForUser(currentPath, user)) {
+    return <Navigate to={homePathForUser(user)} replace />;
   }
   return <>{children}</>;
 }

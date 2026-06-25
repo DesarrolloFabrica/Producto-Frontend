@@ -28,7 +28,7 @@ import {
   type CDigitalUserFilters,
   type CDigitalUserRecord,
 } from '../../services/cDigitalUsersApi';
-import { PRODUCTO_C_DIGITAL_USERS_ACCESS, hasPermission } from '../../permissions';
+import { hasCDigitalUsersPermission } from '../../permissions';
 
 type FormState = {
   programName: string;
@@ -59,7 +59,7 @@ function formatMetricDate(value?: string): string {
 
 export function CDigitalUsersPage() {
   const { user } = useAuth();
-  const allowed = hasPermission(user, PRODUCTO_C_DIGITAL_USERS_ACCESS);
+  const allowed = hasCDigitalUsersPermission(user);
   const { showToast } = useToast();
   const [records, setRecords] = useState<CDigitalUserRecord[]>([]);
   const [filters, setFilters] = useState<CDigitalUserFilters>(EMPTY_FILTERS);

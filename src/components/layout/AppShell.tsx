@@ -12,9 +12,17 @@ import { GlobalSearch } from '../search/GlobalSearch';
 import { useOperations } from '../../features/operations/OperationsContext';
 import { isActionableNotification, isVisibleNotification } from '../../features/operations/notificationInbox';
 import { useNotificationSummaryQuery } from '../../features/queries/useNotificationSummaryQuery';
-import { homePathForRole } from '../../navigation/roleNavigation';
+import { homePathForUser } from '../../navigation/roleNavigation';
 import { ADMIN_DASHBOARD_PATH } from '../../features/admin-tracking/adminNavigation';
-import { PRODUCTO_C_DIGITAL_USERS_ACCESS, hasPermission } from '../../permissions';
+import {
+  PRODUCTO_C_DIGITAL_USERS_ACCESS,
+  hasPermission,
+  isCDigitalExclusiveUser,
+} from '../../permissions';
+
+const cDigitalOnlyLinks = [
+  { to: '/usuarios-c-digital', label: 'Usuarios C Digital', icon: KeyRound },
+];
 
 const productLinks = [
   { to: '/product/dashboard', label: 'Dashboard', icon: Home },
@@ -63,9 +71,11 @@ export function AppShell() {
           : role === 'LMS'
           ? lmsLinks
             : productLinks;
-  const links = hasPermission(user, PRODUCTO_C_DIGITAL_USERS_ACCESS)
-    ? [...baseLinks, { to: '/usuarios-c-digital', label: 'Usuarios C Digital', icon: KeyRound }]
-    : baseLinks;
+  const links = isCDigitalExclusiveUser(user)
+    ? cDigitalOnlyLinks
+    : hasPermission(user, PRODUCTO_C_DIGITAL_USERS_ACCESS)
+      ? [...baseLinks, { to: '/usuarios-c-digital', label: 'Usuarios C Digital', icon: KeyRound }]
+      : baseLinks;
   const actionableBadge =
     summaryQuery.data?.actionableCount ??
     notificationSummary?.actionableCount ??
@@ -87,7 +97,7 @@ export function AppShell() {
     if (sessionStorage.getItem(key) === '1') return;
     sessionStorage.setItem(key, '1');
 
-    const home = homePathForRole(role);
+    const home = homePathForUser(user);
     if (location.pathname === '/usuarios-c-digital') {
       return;
     }
@@ -114,14 +124,16 @@ export function AppShell() {
               ))}
             </nav>
             <div className="flex items-center gap-2">
-              <GlobalSearch />
-              <NavLink
-                to="/notifications/settings"
-                className="header-icon-btn flex h-9 w-9 items-center justify-center rounded-xl text-slate-500 hover:text-slate-700"
-                title="Configuración"
-              >
-                <Settings className="h-4 w-4" />
-              </NavLink>
+              {!isCDigitalExclusiveUser(user) ? <GlobalSearch /> : null}
+              {!isCDigitalExclusiveUser(user) ? (
+                <NavLink
+                  to="/notifications/settings"
+                  className="header-icon-btn flex h-9 w-9 items-center justify-center rounded-xl text-slate-500 hover:text-slate-700"
+                  title="Configuración"
+                >
+                  <Settings className="h-4 w-4" />
+                </NavLink>
+              ) : null}
               <div className="header-user-card hidden items-center gap-2.5 rounded-2xl px-3 py-1.5 lg:flex">
                 <UserAvatar
                   seed={user?.id ?? user?.email ?? role ?? 'guest'}
